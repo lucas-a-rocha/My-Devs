@@ -1,0 +1,81 @@
+*&---------------------------------------------------------------------*
+*& Report ZBC_AJUDA_PESQUISA
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zbc_ajuda_pesquisa MESSAGE-ID 0k.
+
+TABLES: trdir. "Generated Table for View TRDIR
+
+PARAMETERS: program LIKE rs38m-programm. "ABAP program name
+
+DATA: i_content(1024) OCCURS 0 WITH HEADER LINE, msg(5000), answer.
+
+READ REPORT program INTO i_content.
+
+PERFORM editor.
+
+CLEAR msg.
+INSERT REPORT program FROM i_content.
+SELECT SINGLE * FROM trdir WHERE name = program.
+IF sy-subrc NE 0.
+  CLEAR trdir.
+  trdir-name = program.
+  trdir-clas = '$TMP'.
+  trdir-dbna = ' '.
+  trdir-fixpt = 'X'.
+  trdir-rstat = 'P'.
+  trdir-subc = '1'.
+  trdir-rmand = sy-mandt.
+  IF trdir-sqlx LT 'R'.
+    trdir-sqlx = 'R'.
+  ENDIF.
+  MODIFY trdir.
+ENDIF.
+CALL FUNCTION 'DB_COMMIT'.
+msg = 'Lïnea:'.
+GENERATE REPORT program LINE msg+10(10) MESSAGE msg+50.
+IF sy-subrc <> 0.
+  MESSAGE i000 WITH msg(50) msg+50(50) msg+100(50) msg+150(50).
+ENDIF.
+*---------------------------------------------------------------------*
+*  FORM EDITOR
+*---------------------------------------------------------------------*
+FORM editor.
+  DATA: u-index        LIKE sy-index, u-txtindex(50), u-title(50).
+  CONCATENATE 'Editando programa' program INTO u-title
+              SEPARATED BY space.
+  EDITOR-CALL FOR i_content TITLE u-title.
+  IF sy-subrc = 4. STOP. ENDIF.
+  CALL FUNCTION 'EDITOR_SYNTAX_CHECK'
+    EXPORTING
+      i_program       = program
+    IMPORTING
+      o_error_line    = u-index
+      o_error_message = msg
+    TABLES
+      i_source        = i_content.
+  IF NOT msg IS INITIAL.
+    u-txtindex = u-index - 2.
+    SHIFT u-txtindex LEFT DELETING LEADING space.
+    CONCATENATE 'Error de sintaxis en línea' u-txtindex INTO u-txtindex
+                SEPARATED BY space.
+    CALL FUNCTION 'POPUP_FOR_INTERACTION'
+      EXPORTING
+        headline       = u-txtindex
+        text1          = msg(60)
+        text2          = msg+60(60)
+        text3          = msg+120(60)
+        text4          = msg+180(60)
+        text5          = msg+240(60)
+        text6          = msg+300(60)
+        ticon          = 'E'
+        button_1       = 'Finalizar.'
+        button_2       = 'Volver al editor'
+      IMPORTING
+        button_pressed = answer
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF answer = '2'. PERFORM editor. ENDIF.
+  ENDIF.
+ENDFORM.                               " EDITOR
