@@ -1,0 +1,350 @@
+****************************************************************************************
+*                      Petram Tech                                                     *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 30.09.2019 09:54:35                                                       *
+****************************************************************************************
+* Descrição: Programa para listar requests com dependência.
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZREQLIST
+*&---------------------------------------------------------------------*
+REPORT zreqlist.
+
+TABLES: e070, e07t, e071.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_ord FOR FIELD s_ord.
+SELECT-OPTIONS: s_ord FOR e070-trkorr.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_tipo FOR FIELD s_tipo.
+SELECT-OPTIONS: s_tipo FOR e070-trfunction.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_sts FOR FIELD s_sts.
+SELECT-OPTIONS: s_sts FOR e070-trstatus.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_txt FOR FIELD s_txt.
+SELECT-OPTIONS: s_txt FOR e07t-as4text.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_dono FOR FIELD s_dono.
+SELECT-OPTIONS: s_dono FOR e070-as4user.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) ts_obj FOR FIELD s_obj.
+SELECT-OPTIONS: s_obj FOR e071-obj_name.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS: p_sel AS CHECKBOX .
+SELECTION-SCREEN COMMENT 5(25) tp_sel FOR FIELD p_sel.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+SELECTION-SCREEN SKIP.
+
+*SELECTION-SCREEN BEGIN OF LINE.
+*PARAMETERS: p_obj RADIOBUTTON GROUP bt01.
+*SELECTION-SCREEN COMMENT 10(40) tp_obj FOR FIELD p_obj.
+*SELECTION-SCREEN END OF LINE.
+
+*SELECTION-SCREEN: BEGIN OF BLOCK b2 WITH FRAME TITLE tblock2.
+*
+*SELECTION-SCREEN BEGIN OF LINE.
+*SELECTION-SCREEN COMMENT 1(20) ts_obj FOR FIELD s_obj.
+*SELECT-OPTIONS: s_obj FOR e071-obj_name.
+*SELECTION-SCREEN END OF LINE.
+*
+*SELECTION-SCREEN: END OF BLOCK b2.
+
+INITIALIZATION.
+  ts_obj = 'Nome dos Objetos'.
+  ts_ord = 'Ordem/tarefa'.
+  ts_sts = 'Status'.
+  ts_tipo = 'Tipo da ordem/tarefa'.
+  ts_txt = 'Descrição'.
+  ts_dono = 'Modificador'.
+  tp_sel = 'Seleção Complexa'.
+
+**********************************************************************
+* Definições da classe
+**********************************************************************
+CLASS lcl_requests DEFINITION.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_request,
+             trkorr     TYPE e070-trkorr,
+             trfunction TYPE e070-trfunction,
+             as4text    TYPE e07t-as4text,
+             as4date    TYPE e070-as4date,
+             as4time    TYPE e070-as4time,
+             as4user    TYPE e070-as4user,
+           END OF ty_request,
+
+           BEGIN OF ty_requests_lidas,
+             trkorr TYPE e070-trkorr,
+           END OF ty_requests_lidas.
+
+    TYPES:
+      tr_trkorr     TYPE RANGE OF e070-trkorr,
+      tr_trfunction TYPE RANGE OF e070-trfunction,
+      tr_trstatus   TYPE RANGE OF e070-trstatus,
+      tr_as4text    TYPE RANGE OF e07t-as4text,
+      tr_as4user    TYPE RANGE OF e070-as4user,
+      tr_obj_name   TYPE RANGE OF e071-obj_name.
+
+    METHODS: executar_programa
+      IMPORTING
+        !ir_trkorr     TYPE tr_trkorr
+        !ir_trfunction TYPE tr_trfunction
+        !ir_trstatus   TYPE tr_trstatus
+        !ir_as4text    TYPE tr_as4text
+        !ir_as4user    TYPE tr_as4user
+        !ir_obj_name   TYPE tr_obj_name
+        !iv_tipo_sel   TYPE char1
+        !iv_selecao    TYPE abap_bool.
+
+  PRIVATE SECTION.
+    DATA:
+      gt_request           TYPE STANDARD TABLE OF ty_request,
+      gt_requests_iniciais TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
+      gt_requests_lidas    TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
+      gt_objetos_lidos     TYPE SORTED TABLE OF e071v-obj_name WITH UNIQUE KEY table_line,
+      gr_obj_type          TYPE RANGE OF e071-object,
+      vg_busca_complexa    TYPE abap_bool.
+
+    DATA:
+      gr_trkorr     TYPE tr_trkorr,
+      gr_trfunction TYPE tr_trfunction,
+      gr_trstatus   TYPE tr_trstatus,
+      gr_as4text    TYPE tr_as4text,
+      gr_as4user    TYPE tr_as4user,
+      gr_obj_name   TYPE tr_obj_name.
+
+    METHODS: selecionar_dados_iniciais.
+
+    METHODS: realizar_busca_complexa.
+
+    METHODS: selecionar_por_request
+      IMPORTING !iv_request TYPE e070-trkorr.
+
+    METHODS: selecionar_por_objeto
+      IMPORTING !iv_objeto TYPE e071v-obj_name.
+
+    METHODS: selecionar_dados.
+
+    METHODS: display_alv.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_requests( )->executar_programa(
+    ir_trkorr     = s_ord[]
+    ir_trfunction = s_tipo[]
+    ir_trstatus   = s_sts[]
+    ir_as4text    = s_txt[]
+    ir_as4user    = s_dono[]
+    ir_obj_name   = s_obj[]
+    iv_tipo_sel   = 'R' "SWITCH #( p_req WHEN abap_true THEN 'R' ELSE 'O' )
+    iv_selecao    = p_sel
+  ).
+
+**********************************************************************
+* Implementação da classe
+**********************************************************************
+CLASS lcl_requests IMPLEMENTATION.
+  METHOD: executar_programa.
+    me->gr_trkorr     = ir_trkorr    .
+    me->gr_trfunction = ir_trfunction  .
+    me->gr_trstatus   = ir_trstatus  .
+    me->gr_as4user    = ir_as4user   .
+    me->gr_as4text    = ir_as4text   .
+    me->gr_obj_name   = ir_obj_name   .
+    me->vg_busca_complexa = iv_selecao.
+
+    me->selecionar_dados_iniciais( ).
+
+    IF me->gt_requests_iniciais[] IS INITIAL.
+      MESSAGE 'Nenhuma request encontrada' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    IF me->vg_busca_complexa EQ abap_true AND iv_tipo_sel EQ 'R'.
+      me->realizar_busca_complexa( ).
+    ENDIF.
+
+    me->selecionar_dados( ).
+
+    me->display_alv( ).
+  ENDMETHOD.
+
+  METHOD: selecionar_dados_iniciais.
+    SELECT e070~trkorr
+      FROM e070
+        INNER JOIN e07t ON e07t~trkorr EQ e070~trkorr
+                       AND e07t~langu  EQ @sy-langu
+        INNER JOIN e071 ON e071~trkorr EQ e070~trkorr
+    WHERE e070~trkorr     IN @me->gr_trkorr
+      AND e070~trfunction IN @me->gr_trfunction
+      AND e070~trstatus   IN @me->gr_trstatus
+      AND e070~as4user    IN @me->gr_as4user
+      AND e07t~as4text    IN @me->gr_as4text
+      AND e071~obj_name   IN @me->gr_obj_name
+*    ORDER BY as4date DESCENDING, as4time DESCENDING
+    ORDER BY e070~trkorr
+    INTO TABLE @DATA(tl_request).
+
+    DELETE ADJACENT DUPLICATES FROM tl_request COMPARING ALL FIELDS.
+
+    me->gt_requests_lidas = VALUE #( FOR wl_in_req IN tl_request ( trkorr = wl_in_req-trkorr ) ).
+    me->gt_requests_iniciais[] = me->gt_requests_lidas[].
+
+    me->gr_obj_type = VALUE #( sign = 'I' option = 'EQ'
+    ( low = 'MSAG' )
+    ( low = 'DOMA' )
+    ( low = 'DTEL' )
+    ( low = 'FUGR' )
+    ( low = 'PROG' )
+    ( low = 'SHLP' )
+    ( low = 'TABL' )
+    ( low = 'TRAN' )
+    ( low = 'CLAS' )
+    ( low = 'METH' )
+    ( low = 'INTF' )
+    ( low = 'CPRO' )
+    ( low = 'CLSD' )
+    ( low = 'CPRI' )
+    ( low = 'CPUB' )
+    ( low = 'CUAD' )
+    ( low = 'SPRX' ) ).
+
+  ENDMETHOD.
+
+  METHOD: realizar_busca_complexa.
+    LOOP AT me->gt_requests_iniciais ASSIGNING FIELD-SYMBOL(<fs_request>).
+      me->selecionar_por_request( iv_request = <fs_request>-trkorr ).
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD: selecionar_por_request.
+*    SELECT trkorr, obj_name
+*      FROM e071v
+*      WHERE trkorr = @iv_request
+*    INTO TABLE @DATA(tl_e071v).
+
+    SELECT e070~trkorr, e071~obj_name
+      FROM e070
+        INNER JOIN e071 ON e071~trkorr EQ e070~trkorr
+    WHERE e070~trkorr     EQ @iv_request
+      AND e070~trfunction IN @me->gr_trfunction
+      AND e070~trstatus   IN @me->gr_trstatus
+      AND e071~object     IN @me->gr_obj_type
+    ORDER BY e070~trkorr
+    INTO TABLE @DATA(tl_e071v).
+
+    IF tl_e071v[] IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    LOOP AT tl_e071v ASSIGNING FIELD-SYMBOL(<fs_e071v>).
+      READ TABLE me->gt_objetos_lidos WITH KEY table_line = <fs_e071v>-obj_name TRANSPORTING NO FIELDS BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        CONTINUE.
+      ENDIF.
+
+      INSERT <fs_e071v>-obj_name INTO TABLE me->gt_objetos_lidos.
+
+      me->selecionar_por_objeto( iv_objeto = <fs_e071v>-obj_name ).
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD: selecionar_por_objeto.
+*    SELECT trkorr, obj_name
+*      FROM e071v
+*      WHERE obj_name = @iv_objeto
+*    INTO TABLE @DATA(tl_e071v).
+
+    SELECT e070~trkorr, e071~obj_name
+      FROM e070
+        INNER JOIN e071 ON e071~trkorr EQ e070~trkorr
+    WHERE e071~obj_name   EQ @iv_objeto
+      AND e070~trfunction IN @me->gr_trfunction
+      AND e070~trstatus   IN @me->gr_trstatus
+      AND e071~object     IN @me->gr_obj_type
+    ORDER BY e070~trkorr
+    INTO TABLE @DATA(tl_e071v).
+
+    IF tl_e071v[] IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    LOOP AT tl_e071v ASSIGNING FIELD-SYMBOL(<fs_e071v>).
+      READ TABLE me->gt_requests_lidas WITH KEY table_line = <fs_e071v>-trkorr TRANSPORTING NO FIELDS BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        CONTINUE.
+      ENDIF.
+
+      INSERT VALUE #( trkorr = <fs_e071v>-trkorr ) INTO TABLE me->gt_requests_lidas.
+
+      me->selecionar_por_request( iv_request = <fs_e071v>-trkorr ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD: selecionar_dados.
+    SELECT e070~trkorr, e070~trfunction, e07t~as4text, e070~as4date, e070~as4time, e070~as4user
+      FROM e070
+        INNER JOIN e07t ON e07t~trkorr EQ e070~trkorr
+                       AND e07t~langu  EQ @sy-langu
+      FOR ALL ENTRIES IN @me->gt_requests_lidas
+    WHERE e070~trkorr     EQ @me->gt_requests_lidas-trkorr
+*      AND e070~trfunction IN @me->gr_trfunction
+*      AND e070~trstatus   IN @me->gr_trstatus
+*      AND e070~as4user    IN @me->gr_as4user
+*      AND e07t~as4text    IN @me->gr_as4text
+*    ORDER BY as4date DESCENDING, as4time DESCENDING
+    INTO TABLE @me->gt_request.
+
+    SORT me->gt_request BY as4date ASCENDING as4time ASCENDING .
+  ENDMETHOD.
+
+  METHOD: display_alv.
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(ol_salv_table)
+      CHANGING
+        t_table      = me->gt_request ).
+
+    IF ol_salv_table IS BOUND.
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      ol_salv_table->get_functions( )->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(ol_columns) = ol_salv_table->get_columns( ).
+      ol_columns->set_optimize( abap_true ).
+
+      DATA(ol_events) = ol_salv_table->get_event( ).
+
+*     " Ajusta o LAYOUT de acordo com o selecionado.
+      DATA wl_key TYPE salv_s_layout_key.
+      DATA(ol_layout) = ol_salv_table->get_layout( ).
+      wl_key-report = sy-repid.
+
+      ol_layout->set_key( wl_key ).
+      ol_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+      ol_layout->set_default( if_salv_c_bool_sap=>true ).
+
+      ol_salv_table->display( ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
