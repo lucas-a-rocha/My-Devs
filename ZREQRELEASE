@@ -1,0 +1,487 @@
+****************************************************************************************
+*                      Embrapa/Cast                                                    *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 10/08/2017                                                                *
+****************************************************************************************
+* Descrição: Programa para transporte de request                                       *
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+REPORT ZREQRELEASE.
+
+TABLES: e070, e071.
+
+*** SELECTION-SCREEN ***
+SELECTION-SCREEN : BEGIN OF SCREEN 200.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(23) treq FOR FIELD s_trtt.
+SELECT-OPTIONS s_trtt FOR e071-trkorr NO INTERVALS OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(23) ttrgt FOR FIELD s_trgt.
+SELECT-OPTIONS s_trgt FOR e070-tarsystem NO INTERVALS NO-EXTENSION OBLIGATORY DEFAULT '/ERQ/'.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(27) tlib FOR FIELD chk_lib.
+PARAMETERS: chk_lib  AS CHECKBOX DEFAULT space.
+*            chk_stms AS CHECKBOX.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN : END OF SCREEN 200.
+
+*** AT SELECTION-SCREEN ***
+AT SELECTION-SCREEN.
+
+*  IF chk_stms EQ 'X' AND chk_lib IS INITIAL.
+*    MESSAGE 'Opção liberar deve estar marcada quando opção STMS estiver selecionada' TYPE 'E'.
+*  ENDIF.
+
+INITIALIZATION.
+  tblock1 = 'Transporte de request'.
+  treq    = 'Requests:'.
+  ttrgt   = 'Ambiente de destino:'.
+  tlib    = 'Liberar para transporte?'.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_report DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+
+    TYPES: ty_range_trkorr TYPE RANGE OF e071-trkorr,
+
+           BEGIN OF ty_e071,
+             trkorr  TYPE e071-trkorr,
+             strkorr TYPE e070-strkorr,
+           END OF ty_e071.
+
+    DATA gt_e071 TYPE STANDARD TABLE OF ty_e071.
+
+    DATA gt_message          TYPE esp1_message_tab_type.
+
+    CLASS-METHODS: main.
+
+  PRIVATE SECTION.
+
+    CLASS-DATA lo_report TYPE REF TO lcl_report.
+
+    METHODS: pesquisa_request_task IMPORTING i_r_trkorr TYPE ty_range_trkorr,
+
+      cria_request_copia IMPORTING i_desc            TYPE e07t-as4text OPTIONAL
+                                   i_tipo_transporte TYPE trfunction
+                         RETURNING VALUE(r_request)  TYPE e070-trkorr,
+      adiciona_task      IMPORTING i_req_task TYPE e070-trkorr
+                                   i_req_dest TYPE e070-trkorr,
+      libera_request     IMPORTING i_request TYPE e071-trkorr,
+
+      mostrar_mensagens,
+
+      verifica_continua RETURNING VALUE(r_continuar) TYPE flag,
+
+      incrementa_mensagem IMPORTING i_msgid TYPE sy-msgid
+                                    i_msgty TYPE sy-msgty
+                                    i_msgno TYPE sy-msgno
+                                    i_msgv1 TYPE sy-msgv1 OPTIONAL
+                                    i_msgv2 TYPE sy-msgv2 OPTIONAL
+                                    i_msgv3 TYPE sy-msgv3 OPTIONAL
+                                    i_msgv4 TYPE sy-msgv4 OPTIONAL.
+
+*             aciona_stms        IMPORTING i_request TYPE e070-trkorr.
+
+
+ENDCLASS.                    "lcl_report DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_report IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_report IMPLEMENTATION.
+
+  METHOD main.
+    "Incializa tela
+    CALL SELECTION-SCREEN 200.
+
+    CHECK sy-subrc EQ 0.
+    "Cria objeto report para acesso aos dados e métodos de instância
+    CREATE OBJECT lo_report.
+
+    FIELD-SYMBOLS <e071> TYPE ty_e071.
+    DATA l_request TYPE e070-trkorr.
+
+    "Pesquisa tasks e requests
+    lo_report->pesquisa_request_task( i_r_trkorr = s_trtt[] ).
+
+    "Cria cópia
+    l_request = lo_report->cria_request_copia( i_tipo_transporte = 'T' ).
+
+    "Adiciona tasks a request de cópia
+    LOOP AT lo_report->gt_e071 ASSIGNING <e071>.
+      lo_report->adiciona_task(
+        EXPORTING
+          i_req_task = <e071>-trkorr
+          i_req_dest = l_request ).
+    ENDLOOP.
+
+*    IF chk_lib EQ 'X'.
+    lo_report->libera_request( i_request = l_request ).
+*    ENDIF.
+
+*    IF chk_stms EQ 'X'.
+*      lo_report->aciona_stms( i_request =  ).
+*    ENDIF.
+
+    lo_report->mostrar_mensagens( ).
+
+    lcl_report=>main( ).
+
+  ENDMETHOD.                    "main
+
+*  METHOD aciona_stms.
+**      TMS_BCI_START_SERVICE
+*  ENDMETHOD.                    "aciona_stms
+
+  METHOD incrementa_mensagem.
+    FIELD-SYMBOLS <message> TYPE esp1_message_wa_type.
+
+    APPEND INITIAL LINE TO me->gt_message ASSIGNING <message>.
+    <message>-msgid  = i_msgid.
+    <message>-msgty  = i_msgty.
+    <message>-msgno  = i_msgno.
+    <message>-msgv1  = i_msgv1.
+    <message>-msgv2  = i_msgv2.
+    <message>-msgv3  = i_msgv3.
+    <message>-msgv4  = i_msgv4.
+
+  ENDMETHOD.                    "incrementa_mensagem
+
+  METHOD mostrar_mensagens.
+    CHECK me->gt_message[] IS NOT INITIAL.
+
+    CALL FUNCTION 'C14Z_MESSAGES_SHOW_AS_POPUP'
+      TABLES
+        i_message_tab = me->gt_message.
+
+  ENDMETHOD.                    "mostrar_mensagens
+
+  METHOD cria_request_copia.
+
+    CHECK lo_report->verifica_continua( ) EQ 'X'.
+
+    DATA: l_desc  TYPE e07t-as4text,
+          l_msgv2 TYPE sy-msgv2.
+
+    DATA ls_request_header TYPE trwbo_request_header.
+
+    FIELD-SYMBOLS <trtt> LIKE LINE OF s_trtt.
+
+    IF i_desc IS INITIAL.
+
+      LOOP AT s_trtt ASSIGNING <trtt>.
+        IF sy-tabix EQ 1.
+          l_desc = 'Cópia ' && ' ' && <trtt>-low.
+        ELSE.
+          l_desc = l_desc && ' ' && <trtt>-low.
+        ENDIF.
+      ENDLOOP.
+
+    ELSE.
+      l_desc = i_desc.
+    ENDIF.
+
+    CALL FUNCTION 'IW_C_CREATE_TRANSPORT_REQUEST'
+      EXPORTING
+        description    = l_desc
+        transport_kind = i_tipo_transporte
+        langu          = sy-langu
+      IMPORTING
+        commfile       = r_request.
+    IF sy-subrc <> 0.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Erro criar cópia').
+    ELSE.
+      l_msgv2 = r_request.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'S'
+          i_msgno = '001'
+          i_msgv1 = 'Sucesso ao criar request de cópia '
+          i_msgv2 = l_msgv2 ).
+    ENDIF.
+    "SETA DESTINO
+    "1 - Carrega
+    DATA: ls_request      TYPE trwbo_request.
+
+    ls_request-h-trkorr = r_request.
+    CALL FUNCTION 'TR_READ_REQUEST'
+      EXPORTING
+        iv_read_e070       = 'X'
+        iv_read_e07t       = 'X'
+        iv_read_e070c      = 'X'
+        iv_read_e070m      = 'X'
+        iv_read_objs_keys  = 'X'
+        iv_read_attributes = 'X'
+      CHANGING
+        cs_request         = ls_request
+      EXCEPTIONS
+        OTHERS             = 1.
+    IF sy-subrc <> 0.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Request não encontrada' ).
+    ENDIF.
+
+    DATA header TYPE trheader.
+    MOVE-CORRESPONDING ls_request-h TO header.
+
+    "2 - Altera
+    DATA: ls_e070             TYPE e070,
+          ls_e07t             TYPE e07t,
+          ls_e070c            TYPE e070c,
+          ls_e070m            TYPE e070m,
+          lv_sel_e070m        TYPE trboolean  VALUE ' ',
+          l_send_save_message TYPE trboolean.
+
+    MOVE-CORRESPONDING header TO ls_e070.
+    MOVE-CORRESPONDING header TO ls_e07t.
+    MOVE-CORRESPONDING header TO ls_e070c.
+
+    IF s_trgt-low IS INITIAL.
+      ls_e070-tarsystem = '/ERQ/'.
+    ELSE.
+      ls_e070-tarsystem = s_trgt-low.
+    ENDIF.
+*    DATA lr_target_system TYPE RANGE OF e070-tarsystem.
+*    SELECT sign opti low high
+*      INTO TABLE lr_target_system
+*      FROM tvarvc WHERE name EQ 'ZTARGET_SYSTEM'.
+
+*    SELECT SINGLE low
+*      INTO ls_e070-tarsystem
+*      FROM tvarvc WHERE name EQ 'ZTARGET_SYSTEM'.
+
+    IF ls_e070-tarsystem IS INITIAL.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Não foi gerado destino na STVARV.'
+          i_msgv2 = 'Gerar parâmetro ZTARGET_SYSTEM.' ).
+
+      RETURN.
+    ENDIF.
+
+    DATA trkorr TYPE trkorr.
+    trkorr = r_request.
+
+    CALL FUNCTION 'TRINT_UPDATE_COMM_HEADER'
+      EXPORTING
+        wi_e070      = ls_e070
+        wi_e07t      = ls_e07t
+        wi_e070c     = ls_e070c
+        is_e070m     = ls_e070m
+        wi_sel_e070  = 'X'
+        wi_sel_e07t  = 'X'
+        wi_sel_e070c = ' '
+        iv_sel_e070m = lv_sel_e070m
+      EXCEPTIONS
+        OTHERS       = 1.
+
+*    CALL FUNCTION 'TRINT_UPDATE_COMM'
+*      EXPORTING
+*        wi_trkorr = trkorr
+*        wi_e070   = ls_e070
+*      IMPORTING
+*        we_e070   = ls_e070.
+    IF sy-subrc <> 0.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Não foi possível destino da request' ).
+    ENDIF.
+
+  ENDMETHOD.                    "cria_request_copia
+
+  METHOD pesquisa_request_task.
+
+    SELECT 	   e71~trkorr
+               e70~strkorr
+      FROM e071 AS e71
+         INNER JOIN e070 AS e70 ON e71~trkorr = e70~trkorr
+              INTO TABLE me->gt_e071
+                  WHERE e70~strkorr IN s_trtt.
+    IF me->gt_e071[] IS INITIAL.
+      SELECT 	   e71~trkorr
+                 e70~strkorr
+        FROM e071 AS e71
+           INNER JOIN e070 AS e70 ON e71~trkorr = e70~trkorr
+                INTO TABLE me->gt_e071
+                    WHERE e70~trkorr IN s_trtt.
+      IF me->gt_e071[] IS INITIAL.
+        me->incrementa_mensagem(
+          EXPORTING
+            i_msgid = '00'
+            i_msgty = 'E'
+            i_msgno = '001'
+            i_msgv1 = 'Não foram encontrados registros').
+      ENDIF.
+    ENDIF.
+
+    SORT me->gt_e071[] BY trkorr.
+    DELETE ADJACENT DUPLICATES FROM me->gt_e071 COMPARING trkorr.
+
+  ENDMETHOD.                    "pesquisa_request_task
+
+  METHOD verifica_continua.
+
+    READ TABLE me->gt_message WITH KEY msgty = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc <> 0.
+      r_continuar = 'X'.
+    ENDIF.
+
+  ENDMETHOD.                    "verifica_continua
+
+  METHOD adiciona_task.
+
+    CHECK lo_report->verifica_continua( ) EQ 'X'.
+
+    CALL FUNCTION 'TR_COPY_COMM'
+      EXPORTING
+        wi_dialog                = 'X'
+        wi_trkorr_from           = i_req_task
+        wi_trkorr_to             = i_req_dest
+        wi_without_documentation = 'X'
+      EXCEPTIONS
+        OTHERS                   = 1.
+
+    IF sy-subrc <> 0.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Erro ao adicionar tasks' ).
+    ELSE.
+      me->incrementa_mensagem(
+      EXPORTING
+        i_msgid = '00'
+        i_msgty = 'S'
+        i_msgno = '001'
+        i_msgv1 = 'Task(s) adicionadas com sucesso' ).
+    ENDIF.
+
+  ENDMETHOD.                    "adiciona_task
+
+  METHOD libera_request.
+    DATA vl_simular TYPE abap_bool.
+
+*   " Caso preenchido, deverá realizar o transporte da request.
+    IF chk_lib EQ abap_true.
+      vl_simular = abap_false.
+    ELSE.
+      vl_simular = abap_true.
+    ENDIF.
+
+    CHECK lo_report->verifica_continua( ) EQ 'X'.
+    CALL FUNCTION 'TRINT_RELEASE_REQUEST'
+      EXPORTING
+        iv_trkorr                   = i_request
+        iv_dialog                   = 'X'
+        iv_as_background_job        = ''
+        iv_success_message          = 'X'
+        iv_without_objects_check    = 'X'
+        iv_without_docu             = 'X'
+        iv_without_locking          = 'X'
+        iv_display_export_log       = 'X'
+        iv_ignore_warnings          = ' '
+        iv_simulation               = vl_simular
+      EXCEPTIONS
+        cts_initialization_failure  = 1
+        enqueue_failed              = 2
+        no_authorization            = 3
+        invalid_request             = 4
+        request_already_released    = 5
+        repeat_too_early            = 6
+        object_lock_error           = 7
+        object_check_error          = 8
+        docu_missing                = 9
+        db_access_error             = 10
+        action_aborted_by_user      = 11
+        export_failed               = 12
+        execute_objects_check       = 13
+        release_in_bg_mode          = 14
+        release_in_bg_mode_w_objchk = 15
+        error_in_export_methods     = 16
+        object_lang_error           = 17
+        OTHERS                      = 18.
+
+    IF sy-subrc <> 0.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = sy-msgid
+          i_msgty = sy-msgty
+          i_msgno = sy-msgno
+          i_msgv1 = sy-msgv1
+          i_msgv2 = sy-msgv2
+          i_msgv3 = sy-msgv3
+          i_msgv4 = sy-msgv4 ).
+    ENDIF.
+
+*    CALL FUNCTION 'TR_RELEASE_REQUEST'
+*      EXPORTING
+*        iv_trkorr            = i_request
+*        iv_dialog            = ''
+*        iv_as_background_job = 'X'
+*        iv_success_message   = 'X'
+*      EXCEPTIONS
+*        OTHERS               = 0.
+
+    IF NOT lo_report->verifica_continua( ).
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'E'
+          i_msgno = '001'
+          i_msgv1 = 'Erro ao liberar request' ).
+    ELSE.
+      me->incrementa_mensagem(
+        EXPORTING
+          i_msgid = '00'
+          i_msgty = 'S'
+          i_msgno = '001'
+          i_msgv1 = 'Request liberada com sucesso' ).
+    ENDIF.
+
+
+  ENDMETHOD.                    "libera_request
+
+ENDCLASS.                    "lcl_report IMPLEMENTATION
+
+*** START-OF-SELECTION ***
+START-OF-SELECTION.
+
+  "Executa método principal do report, o correpondente ao start-of-selection
+  lcl_report=>main( ).
