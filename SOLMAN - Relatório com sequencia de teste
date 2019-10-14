@@ -1,0 +1,680 @@
+****************************************************************************************
+*                      PETRAM                                                  *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 17.07.2019 16:18:40                                                       *
+****************************************************************************************
+* Descrição: Criação de relatório com sequencia de teste
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report  ZSMA_001
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT zsma_001.
+
+TABLES: smt_d_tpln_root, smt_d_tpck_root, smt_d_tflw_root.
+**********************************************************************
+* TELA DE SELEÇÃO
+**********************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK selec WITH FRAME TITLE text-t01. " Seleções específicas do relatório
+SELECT-OPTIONS: s_tplnid FOR smt_d_tpln_root-tpln_id,
+                s_tpckid FOR smt_d_tpck_root-tpck_id,
+                s_tflwid FOR smt_d_tflw_root-tflw_id,
+                s_setid  FOR smt_d_tpln_root-test_set_id.
+SELECTION-SCREEN END OF BLOCK selec.
+
+**********************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK saida WITH FRAME TITLE text-t02. " Especificação de saída
+PARAMETERS:  p_layout LIKE disvariant-variant. "LAYOUT
+SELECTION-SCREEN END OF BLOCK saida.
+
+**********************************************************************
+* INICIALIZAÇÃO
+**********************************************************************
+INITIALIZATION.
+  PERFORM get_default_layout CHANGING p_layout.
+
+**********************************************************************
+* AT SELECTION-SCREEN ON VALUE-REQUEST                               *
+**********************************************************************
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_layout.
+  PERFORM f4_layouts CHANGING p_layout.
+
+**********************************************************************
+* Definições da classe
+**********************************************************************
+CLASS lcl_relatorio DEFINITION.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_relatorio,
+             tpln_id           TYPE smt_d_tpln_root-tpln_id,
+             tpln_text         TYPE smt_d_tpln_dscr-text,
+             test_set_id       TYPE smt_d_tpln_root-test_set_id,
+             tpck_id           TYPE smt_d_tpck_root-tpck_id,
+             tpck_text         TYPE smt_d_tpck_dscr-text,
+             tflw_id           TYPE smt_d_tflw_root-tflw_id,
+             tflw_text         TYPE smt_d_tflw_dscr-text,
+             seq               TYPE smt_v_seq_no,
+             tpln_resp_person  TYPE smt_d_tpln_root-resp_person,
+             tpln_resp_name    TYPE bu_name1tx,
+             tester_bp         TYPE smt_d_tcse_tstr-partner,
+             tester_bp_name    TYPE bu_name1tx,
+             format_tcse_id    TYPE  smt_v_tcse_id,
+             atividade         TYPE smt_d_tpln_dscr-text,
+             processo          TYPE smt_d_tpln_dscr-text,
+             status            TYPE smt_d_tsta_root-status_value,
+             status_text       TYPE /bofu/short_text,
+             tsta_changed_on   TYPE smt_d_tsta_root-changed_on,
+             test_ended_tmstmp TYPE smt_d_tsta_root-changed_on,
+             tpck_note         TYPE char4,
+             tsta_root_comment TYPE smt_d_tsta_root-comment,
+           END OF ty_relatorio.
+
+    TYPES: BEGIN OF ty_itens,
+             tpln_id                TYPE smt_d_tpln_root-tpln_id,
+             tpln_text              TYPE smt_d_tpln_dscr-text,
+             tpln_resp_person       TYPE smt_d_tpln_root-resp_person,
+             test_set_id            TYPE smt_d_tpln_root-test_set_id,
+             node_type              TYPE smt_d_tpln_node-node_type,
+             tpck_id                TYPE smt_d_tpck_root-tpck_id,
+             tpck_text              TYPE smt_d_tpck_dscr-text,
+             tflw_id                TYPE smt_d_tflw_root-tflw_id,
+             tflw_text              TYPE smt_d_tflw_dscr-text,
+             tester_bp              TYPE smt_d_tcse_tstr-partner,
+             tpln_node_key          TYPE smt_d_tflw_node-tpln_node_key,
+             previous_node          TYPE smt_d_tflw_node-previous_node,
+             successor_node         TYPE smt_d_tflw_node-successor_node,
+             exec_type              TYPE smt_d_tpln_exec-exec_type,
+             exec_key               TYPE smt_d_tpln_exec-exec_key,
+             status                 TYPE smt_d_tsta_root-status_value,
+             tsta_changed_on        TYPE smt_d_tsta_root-changed_on,
+             test_ended_tmstmp      TYPE smt_d_tsta_root-changed_on,
+             parent_key             TYPE smt_d_tpln_node-parent_key,
+             source_ref_owner_key_1 TYPE smt_d_tpln_node-source_ref_owner_key_1,
+             tpck_note              TYPE char4,
+             tsta_root_comment      TYPE smt_d_tsta_root-comment,
+           END OF ty_itens.
+
+    TYPES: tt_relatorio TYPE STANDARD TABLE OF ty_relatorio.
+    TYPES: tt_itens TYPE STANDARD TABLE OF ty_itens.
+
+    CONSTANTS c_dbkey_vazio TYPE smt_d_tpck_tnot-db_key VALUE '00000000000000000000000000000000'.
+
+    METHODS: gerar_relatorio.
+  PRIVATE SECTION.
+    DATA tg_relatorio  TYPE  tt_relatorio.
+    DATA gv_percent  TYPE i. " Controle de percentual
+
+    METHODS buscar_dados
+      EXPORTING
+        !et_itens TYPE tt_itens.
+
+    METHODS montar_relatorio
+      IMPORTING
+        !it_itens TYPE tt_itens.
+
+    METHODS: display.
+
+    METHODS columns_edit
+      IMPORTING
+        !io_columns TYPE REF TO cl_salv_columns_table
+      RAISING
+        cx_idm_error
+        cx_salv_data_error
+        cx_salv_not_found.
+
+    METHODS column_text
+      IMPORTING
+        !io_column  TYPE REF TO cl_salv_column_table
+        !iv_cur_txt TYPE scrtext_s
+        !iv_med_txt TYPE scrtext_m OPTIONAL
+        !iv_lon_txt TYPE scrtext_l OPTIONAL.
+
+    METHODS get_descricao
+      IMPORTING
+        !iv_parent_key  TYPE smt_d_tpln_node-parent_key
+        !iv_owner_key_1 TYPE smt_d_tpln_node-source_ref_owner_key_1
+      EXPORTING
+        !ev_atividade   TYPE smt_d_tpln_dscr-text
+        !ev_processo    TYPE smt_d_tpln_dscr-text.
+
+    METHODS progress_bar
+      IMPORTING
+        !iv_text   TYPE char40
+        !iv_index  TYPE sy-tabix
+        !iv_linhas TYPE i.
+
+ENDCLASS.
+
+**********************************************************************
+* START-OF-SELECTION.
+**********************************************************************
+START-OF-SELECTION.
+  NEW lcl_relatorio( )->gerar_relatorio( ).
+
+**********************************************************************
+* Implementação da classe
+**********************************************************************
+CLASS lcl_relatorio IMPLEMENTATION.
+  METHOD gerar_relatorio.
+
+*************************************************************************************
+*	  " Realiza a consulta no banco de dados.
+*************************************************************************************
+    me->buscar_dados(
+      IMPORTING
+        et_itens = DATA(tl_itens)
+    ).
+
+*************************************************************************************
+*	  " Monta os dados de acordo com o que deve ser apresentado em tela.
+*************************************************************************************
+    me->montar_relatorio( it_itens = tl_itens ).
+
+    IF me->tg_relatorio IS NOT INITIAL.
+      me->display( ).
+    ELSE.
+      MESSAGE 'A pesquisa não retornou dados.' TYPE 'S' DISPLAY LIKE 'W'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD buscar_dados.
+
+    SELECT
+      tpln_root~tpln_id,
+      tpln_dscr~text              AS tpln_text,
+      tpln_root~resp_person       AS tpln_resp_person,
+      tpln_root~test_set_id,
+      tpln_node~node_type,
+      tpck_root~tpck_id ,
+      tpck_dscr~text              AS tpck_text,
+      tflw_root~tflw_id ,
+      tflw_dscr~text              AS tflw_text,
+      tcse_tstr~partner           AS tester_bp,
+      tflw_node~tpln_node_key,
+      tflw_node~previous_node,
+      tflw_node~successor_node,
+      tpln_exec~exec_type,
+      tpln_exec~exec_key,
+      tsta_root~status_value      AS status,
+      tsta_root~changed_on        AS tsta_changed_on,
+      tsta_acex~test_ended_tmstmp AS test_ended_tmstmp,
+      tpln_node~parent_key        AS tpln_parent_key,
+      tpln_node~source_ref_owner_key_1,
+
+      CASE WHEN tpck_tnot~db_key <> @c_dbkey_vazio THEN 'Sim'
+           ELSE 'Não'
+        END AS tpck_note,
+
+      tsta_root~comment           AS tsta_root_comment
+
+    FROM smt_d_tflw_root AS tflw_root
+      INNER JOIN smt_d_tflw_node AS tflw_node
+        ON tflw_node~parent_key = tflw_root~db_key
+
+      INNER JOIN smt_d_tpln_node AS tpln_node
+        ON tpln_node~db_key = tflw_node~tpln_node_key
+
+      INNER JOIN smt_d_tpln_root AS tpln_root
+        ON tpln_root~db_key = tpln_node~parent_key
+
+      INNER JOIN smt_d_tpck_node AS tpck_node
+        ON tpck_node~tpln_node_key = tpln_node~db_key
+
+      INNER JOIN smt_d_tpck_root AS tpck_root
+        ON tpck_root~db_key = tpck_node~parent_key
+
+      INNER JOIN smt_d_tcse_tstr AS tcse_tstr
+        ON tcse_tstr~parent_key = tpck_node~db_key
+
+      INNER JOIN smt_d_tpln_exec AS tpln_exec
+        ON tpln_exec~parent_key = tpln_node~db_key
+
+      INNER JOIN smt_d_tpck_tsta AS tpck_tsta
+        ON tpck_tsta~parent_key	=	tcse_tstr~db_key
+
+      INNER JOIN smt_d_tsta_root AS tsta_root
+        ON tsta_root~db_key	=	tpck_tsta~tsta_root_key
+
+      LEFT OUTER JOIN smt_d_tp_nd_dscr AS tpln_dscr
+        ON tpln_dscr~parent_key    = tpln_node~db_key
+       AND tpln_dscr~language_code = @sy-langu
+
+      LEFT OUTER JOIN smt_d_tpck_dscr AS tpck_dscr
+        ON tpck_dscr~parent_key    = tpck_root~db_key
+       AND tpck_dscr~language_code = @sy-langu
+
+      LEFT OUTER JOIN smt_d_tflw_dscr AS tflw_dscr
+        ON tflw_dscr~parent_key    = tflw_root~db_key
+       AND tflw_dscr~language_code = @sy-langu
+
+      LEFT OUTER JOIN smt_d_tpck_tnot AS tpck_tnot
+        ON tpck_tnot~parent_key = tpck_node~db_key
+
+      LEFT OUTER JOIN smt_d_tsta_acex AS tsta_acex
+        ON tsta_acex~parent_key = tsta_root~db_key
+
+    INTO TABLE @et_itens
+    WHERE tpln_root~tpln_id IN @s_tplnid "= 'TIC2-C001.001'.
+      AND tpck_root~tpck_id IN @s_tpckid
+      AND tflw_root~tflw_id IN @s_tflwid
+      AND tpln_root~test_set_id IN @s_setid.
+  ENDMETHOD.
+
+  METHOD montar_relatorio.
+    DATA:
+      wl_relatorio  LIKE LINE OF tg_relatorio,
+      tl_itens_topo TYPE tt_itens.
+
+*************************************************************************************
+*	  " Monta a URL de execução
+*************************************************************************************
+    DATA:
+      lt_exec_ref           TYPE cl_smt_exec_util=>tts_exec_type_and_id,
+      ls_exec_ref           LIKE LINE OF lt_exec_ref,
+      lt_exec_type_id_2_fid TYPE cl_smt_exec_util=>tts_exec_type_and_id_2_fid,
+      ls_exec_type_id_2_fid TYPE cl_smt_exec_util=>ts_exec_type_and_id_2_fid.
+
+    LOOP AT it_itens ASSIGNING FIELD-SYMBOL(<fs_itens>).
+      IF <fs_itens>-node_type = if_smt_constants=>co_node_type-executable.
+        CLEAR ls_exec_ref.
+        READ TABLE lt_exec_ref INTO ls_exec_ref
+        WITH KEY v_type = <fs_itens>-exec_type v_id = <fs_itens>-exec_key BINARY SEARCH.
+        IF ls_exec_ref IS INITIAL.
+          ls_exec_ref-v_id    = <fs_itens>-exec_key.
+          ls_exec_ref-v_type  = <fs_itens>-exec_type.
+          INSERT ls_exec_ref INTO TABLE lt_exec_ref.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_exec_ref[] IS NOT INITIAL.
+      cl_smt_exec_util=>format_exec_id(
+       EXPORTING
+         it_type_and_id       = lt_exec_ref
+       IMPORTING
+         et_type_and_id_2_fid = lt_exec_type_id_2_fid
+     ).
+    ENDIF.
+
+*************************************************************************************
+*	  " Busca as possíveis descrições dos casos de testes
+*************************************************************************************
+    cl_smt_cust_util=>get_all_tcse_status_with_descr(
+      EXPORTING
+        it_language                = VALUE #( ( sy-langu ) )
+      IMPORTING
+        et_tcse_status_descr       = DATA(lt_tcse_status_dscr)
+    ).
+
+*************************************************************************************
+*	  Monta a sequencia dos itens existentes no relatório e o Relatório final
+*************************************************************************************
+    DATA:
+      vl_next       TYPE smt_d_tflw_node-successor_node,
+      vl_sequencial TYPE smt_v_seq_no.
+
+    APPEND LINES OF it_itens TO tl_itens_topo.
+
+    SORT tl_itens_topo BY previous_node.
+    DELETE tl_itens_topo WHERE previous_node NE '00000000000000000000000000000000'.
+
+
+*   " Controle de barra de progressão.
+    DATA vl_linha TYPE sy-tabix.
+    DESCRIBE TABLE it_itens LINES DATA(vl_total_linhas).
+    CLEAR me->gv_percent.
+
+    LOOP AT tl_itens_topo ASSIGNING FIELD-SYMBOL(<fs_itens_topo>).
+      vl_next = <fs_itens_topo>-successor_node.
+
+      CLEAR: wl_relatorio, vl_sequencial.
+
+      ADD 1 TO vl_linha.
+      me->progress_bar(
+          iv_text   = 'Gerando relatório...'
+          iv_index  = vl_linha
+          iv_linhas = vl_total_linhas
+      ).
+
+      wl_relatorio = CORRESPONDING #( <fs_itens_topo> ).
+      IF wl_relatorio-tpln_resp_person IS NOT INITIAL.
+        cl_smt_crm_facade=>query_bp_full_name_1(
+          EXPORTING iv_partner  =  wl_relatorio-tpln_resp_person
+          IMPORTING ev_full_name = wl_relatorio-tpln_resp_name ).
+      ENDIF.
+
+      IF wl_relatorio-tester_bp IS NOT INITIAL.
+        cl_smt_crm_facade=>query_bp_full_name_1(
+          EXPORTING iv_partner  =  wl_relatorio-tester_bp
+          IMPORTING ev_full_name = wl_relatorio-tester_bp_name ).
+      ENDIF.
+
+      IF <fs_itens_topo>-exec_key IS NOT INITIAL.
+        READ TABLE lt_exec_type_id_2_fid INTO ls_exec_type_id_2_fid
+        WITH KEY v_id = <fs_itens_topo>-exec_key v_type =  <fs_itens_topo>-exec_type.
+        IF sy-subrc EQ 0 .
+          wl_relatorio-format_tcse_id = ls_exec_type_id_2_fid-v_formatted_id.
+        ENDIF.
+      ENDIF.
+
+*     " Encontra a descrição do status.
+      READ TABLE lt_tcse_status_dscr INTO DATA(ls_status_descr) WITH KEY status = wl_relatorio-status.
+      IF sy-subrc EQ 0.
+        wl_relatorio-status_text = ls_status_descr-description.
+      ENDIF.
+
+      me->get_descricao(
+        EXPORTING
+          iv_parent_key  = <fs_itens_topo>-parent_key
+          iv_owner_key_1 = <fs_itens_topo>-source_ref_owner_key_1
+        IMPORTING
+          ev_atividade   = wl_relatorio-atividade
+          ev_processo    = wl_relatorio-processo
+      ).
+
+*      IF wl_relatorio-status EQ 'UNTESTED'. CLEAR wl_relatorio-tsta_changed_on. ENDIF.
+
+      ADD 1 TO vl_sequencial.
+      wl_relatorio-seq = vl_sequencial.
+      APPEND wl_relatorio TO tg_relatorio.
+
+      DO.
+        READ TABLE it_itens INTO DATA(wl_itens) WITH KEY tpln_node_key = vl_next.
+        IF sy-subrc NE 0.
+          EXIT.
+        ELSE.
+
+          ADD 1 TO vl_linha.
+          me->progress_bar(
+              iv_text   = 'Gerando relatório...'
+              iv_index  = vl_linha
+              iv_linhas = vl_total_linhas
+          ).
+
+          ADD 1 TO vl_sequencial.
+
+          vl_next = wl_itens-successor_node.
+
+          wl_relatorio = CORRESPONDING #( wl_itens ).
+          IF wl_relatorio-tpln_resp_person IS NOT INITIAL.
+            cl_smt_crm_facade=>query_bp_full_name_1(
+              EXPORTING iv_partner  =  wl_relatorio-tpln_resp_person
+              IMPORTING ev_full_name = wl_relatorio-tpln_resp_name ).
+          ENDIF.
+
+          IF wl_relatorio-tester_bp IS NOT INITIAL.
+            cl_smt_crm_facade=>query_bp_full_name_1(
+              EXPORTING iv_partner  =  wl_relatorio-tester_bp
+              IMPORTING ev_full_name = wl_relatorio-tester_bp_name ).
+          ENDIF.
+
+          IF wl_itens-exec_key IS NOT INITIAL.
+            READ TABLE lt_exec_type_id_2_fid INTO ls_exec_type_id_2_fid
+            WITH KEY v_id = wl_itens-exec_key v_type =  wl_itens-exec_type.
+            IF sy-subrc EQ 0 .
+              wl_relatorio-format_tcse_id = ls_exec_type_id_2_fid-v_formatted_id.
+            ENDIF.
+          ENDIF.
+
+*         " Encontra a descrição do status.
+          READ TABLE lt_tcse_status_dscr INTO ls_status_descr WITH KEY status = wl_relatorio-status.
+          IF sy-subrc EQ 0.
+            wl_relatorio-status_text = ls_status_descr-description.
+          ENDIF.
+
+          me->get_descricao(
+            EXPORTING
+              iv_parent_key  = wl_itens-parent_key
+              iv_owner_key_1 = wl_itens-source_ref_owner_key_1
+            IMPORTING
+              ev_atividade   = wl_relatorio-atividade
+              ev_processo    = wl_relatorio-processo
+          ).
+
+*          IF wl_relatorio-status EQ 'UNTESTED'. CLEAR wl_relatorio-tsta_changed_on. ENDIF.
+
+          wl_relatorio-seq = vl_sequencial.
+          APPEND wl_relatorio TO tg_relatorio.
+        ENDIF.
+
+        IF wl_itens-successor_node EQ '00000000000000000000000000000000'.
+          EXIT.
+        ENDIF.
+        CLEAR: wl_itens, wl_relatorio.
+      ENDDO.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD display.
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(ol_salv_table)
+      CHANGING
+        t_table      = me->tg_relatorio ).
+
+    IF ol_salv_table IS BOUND.
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      ol_salv_table->get_functions( )->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(ol_columns) = ol_salv_table->get_columns( ).
+      ol_columns->set_optimize( abap_true ).
+
+      TRY .
+          me->columns_edit( io_columns = ol_columns ).
+*          me->column_click( io_columns = ol_columns ).
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(ol_events) = ol_salv_table->get_event( ).
+
+*... §6.5 register to the event LINK_CLICK
+*      SET HANDLER me->on_link_click FOR ol_events.
+
+*     " Ajusta o LAYOUT de acordo com o selecionado.
+      DATA wl_key TYPE salv_s_layout_key.
+      DATA(ol_layout) = ol_salv_table->get_layout( ).
+      wl_key-report = sy-repid.
+
+      ol_layout->set_key( wl_key ).
+      ol_layout->set_initial_layout( p_layout ).
+      ol_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+      ol_layout->set_default( if_salv_c_bool_sap=>true ).
+
+      ol_salv_table->display( ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD columns_edit.
+    DATA(tl_columns) = io_columns->get( ).
+    DATA ol_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT tl_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      ol_column_table ?= <fs_columns>-r_column.
+
+      CASE <fs_columns>-columnname.
+        WHEN 'TPLN_TEXT'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'DescObjeto' iv_med_txt = 'Descrição do Objeto ' iv_lon_txt = 'Descrição do Plano' ).
+        WHEN 'TPCK_ID'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'ID Pacote ' iv_med_txt = 'ID do Pacote        ' iv_lon_txt = 'ID do Pacote' ).
+        WHEN 'TPCK_TEXT'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'DescPacote' iv_med_txt = 'Descrição do Pacote ' iv_lon_txt = 'Descrição do Pacote' ).
+        WHEN 'TFLW_TEXT'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'DescSeq   ' iv_med_txt = 'Descrição Sequência ' iv_lon_txt = 'Descrição Sequência' ).
+        WHEN 'SEQ'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Sequência ' iv_med_txt = 'Sequência           ' iv_lon_txt = 'Sequência' ).
+        WHEN 'FORMAT_TCSE_ID'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Objeto    ' iv_med_txt = 'Objeto Executável   ' iv_lon_txt = 'Objeto Executável' ).
+        WHEN 'TESTER_BP'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'TestadorUs' iv_med_txt = 'Testador User       ' iv_lon_txt = 'Testador User' ).
+        WHEN 'TESTER_BP_NAME'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'TestadorNm' iv_med_txt = 'Testador Nome       ' iv_lon_txt = 'Testador Nome' ).
+        WHEN 'TPLN_RESP_PERSON'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Resp.User ' iv_med_txt = 'Responsável User    ' iv_lon_txt = 'Responsável User' ).
+        WHEN 'TPLN_RESP_NAME'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Resp.Nome ' iv_med_txt = 'Responsável Nome    ' iv_lon_txt = 'Responsável Nome' ).
+        WHEN 'ATIVIDADE'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Atividade ' iv_med_txt = 'Atividade           ' iv_lon_txt = 'Atividade' ).
+        WHEN 'PROCESSO'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Processo  ' iv_med_txt = 'Processo            ' iv_lon_txt = 'Processo' ).
+        WHEN 'STATUS_TEXT'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'DescStatus' iv_med_txt = 'Desc. Status        ' iv_lon_txt = 'Descrição do Status do Caso de Teste' ).
+        WHEN 'TEST_ENDED_TMSTMP'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Dt.FimTst.' iv_med_txt = 'Dt.FimTeste         ' iv_lon_txt = 'Data Fim Teste' ).
+        WHEN 'TPCK_NOTE'.
+          me->column_text( io_column  = ol_column_table iv_cur_txt = 'Nota      ' iv_med_txt = 'Possui Nota?        ' iv_lon_txt = 'Possui Nota?' ).
+
+        WHEN OTHERS.
+
+      ENDCASE.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD column_text.
+    DATA:
+      vl_med_txt TYPE scrtext_m,
+      vl_lon_txt TYPE scrtext_l.
+
+    IF iv_med_txt IS INITIAL.
+      vl_med_txt = iv_cur_txt.
+    ELSE.
+      vl_med_txt = iv_med_txt.
+    ENDIF.
+
+    IF iv_lon_txt IS INITIAL.
+      vl_lon_txt = vl_med_txt.
+    ELSE.
+      vl_lon_txt = iv_lon_txt.
+    ENDIF.
+
+    io_column->set_short_text( value = iv_cur_txt ).
+    io_column->set_medium_text( value = vl_med_txt ).
+    io_column->set_long_text( value = vl_lon_txt ).
+    io_column->set_tooltip( value = vl_lon_txt ).
+  ENDMETHOD.
+
+  METHOD get_descricao.
+    IF iv_owner_key_1 IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE tpln_node~db_key, source_parent_key, source_type, text
+      FROM smt_d_tpln_node AS tpln_node
+        LEFT OUTER JOIN smt_d_tp_nd_dscr AS tpln_nd_dscr
+          ON tpln_nd_dscr~parent_key    = tpln_node~db_key
+         AND tpln_nd_dscr~language_code = @sy-langu
+    INTO @DATA(sl_tpln_node)
+    WHERE tpln_node~source_key EQ @iv_owner_key_1
+      AND tpln_node~parent_key EQ @iv_parent_key.
+
+    IF sl_tpln_node IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    IF sl_tpln_node-source_type EQ 'REF_PROCSTEP' AND ev_atividade IS INITIAL.
+      ev_atividade = sl_tpln_node-text.
+    ENDIF.
+
+    DO.
+
+      SELECT SINGLE tpln_node~db_key, source_parent_key, source_type, text
+        FROM smt_d_tpln_node AS tpln_node
+          LEFT OUTER JOIN smt_d_tp_nd_dscr AS tpln_nd_dscr
+            ON tpln_nd_dscr~parent_key    = tpln_node~db_key
+           AND tpln_nd_dscr~language_code = @sy-langu
+      INTO @sl_tpln_node
+      WHERE source_key EQ @sl_tpln_node-source_parent_key
+        AND tpln_node~parent_key EQ @iv_parent_key.
+
+      IF sy-subrc NE 0.
+        EXIT.
+      ENDIF.
+
+      IF sl_tpln_node-source_type EQ 'REF_PROCSTEP' AND ev_atividade IS INITIAL.
+        ev_atividade = sl_tpln_node-text.
+      ENDIF.
+
+      IF sl_tpln_node-source_type EQ 'PROC' AND ev_processo IS INITIAL.
+        ev_processo = sl_tpln_node-text.
+      ENDIF.
+
+      IF ev_atividade IS NOT INITIAL AND ev_processo IS NOT INITIAL  .
+        EXIT.
+      ENDIF.
+
+    ENDDO.
+  ENDMETHOD.
+
+  METHOD progress_bar.
+    DATA: vl_text(40),
+          vl_percentage      TYPE p,
+          vl_percent_char(3).
+
+    vl_percentage = ( iv_index / iv_linhas ) * 100.
+    vl_percent_char = vl_percentage.
+
+    SHIFT vl_percent_char LEFT DELETING LEADING ' '.
+    CONCATENATE iv_text vl_percent_char '% Carregados'(002) INTO vl_text.
+
+* This check needs to be in otherwise when looping around big tables
+* SAP will re-display indicator too many times causing report to run
+* very slow. (No need to re-display same percentage anyway)
+
+    IF vl_percentage GT gv_percent OR iv_index EQ 1.
+      CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+        EXPORTING
+          percentage = vl_percentage
+          text       = vl_text.
+
+      gv_percent = vl_percentage.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  f4_layouts
+*&---------------------------------------------------------------------*
+FORM f4_layouts CHANGING c_layout TYPE disvariant-variant.
+
+  DATA: ls_layout TYPE salv_s_layout_info,
+        ls_key    TYPE salv_s_layout_key.
+
+  ls_key-report = sy-repid.
+
+  ls_layout = cl_salv_layout_service=>f4_layouts(
+    s_key    = ls_key
+    restrict = if_salv_c_layout=>restrict_user_dependant ).
+
+  c_layout = ls_layout-layout.
+
+ENDFORM.                    " f4_layouts
+
+*&---------------------------------------------------------------------*
+*&      Form  get_default_layout
+*&---------------------------------------------------------------------*
+FORM get_default_layout CHANGING c_layout TYPE disvariant-variant.
+
+  DATA: ls_layout TYPE salv_s_layout_info,
+        ls_key    TYPE salv_s_layout_key.
+
+  ls_key-report = sy-repid.
+
+  ls_layout = cl_salv_layout_service=>get_default_layout(
+    s_key    = ls_key
+    restrict = if_salv_c_layout=>restrict_user_dependant ).
+
+  c_layout = ls_layout-layout.
+
+ENDFORM.                    " get_default_layout
