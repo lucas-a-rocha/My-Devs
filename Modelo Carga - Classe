@@ -1,0 +1,348 @@
+CLASS zclfi_mig_fat_pag_aberto DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    TYPES:
+      BEGIN OF ty_layout_base,
+        bldat	 TYPE char10,   "bldat,
+        blart  TYPE blart,
+        bukrs  TYPE bukrs,
+        budat	 TYPE char10,   "budat,
+        waers  TYPE char5,    "WAERS,
+        lifnr  TYPE lifnr,
+        wrbtr	 TYPE char16,   "wrbtr,
+        bupla	 TYPE bupla,
+        zfbdt  TYPE char10,
+        sgtxt1 TYPE sgtxt,
+        sgtxt2 TYPE sgtxt,
+      END OF ty_layout_base .
+    TYPES:
+      tt_arquivo_base TYPE STANDARD TABLE OF ty_layout_base .
+
+    CONSTANTS cg_obj_ballog TYPE bal_s_log-object VALUE 'ZCARGAS' ##NO_TEXT.
+    CONSTANTS cg_subobj_ballog TYPE bal_s_log-subobject VALUE 'ZFI_003' ##NO_TEXT.
+    CONSTANTS cg_extnumber_ballog TYPE bal_s_log-extnumber VALUE 'Carga' ##NO_TEXT.
+    CONSTANTS cg_estrutura_ballog TYPE string VALUE 'ZSSD_003' ##NO_TEXT.
+
+    METHODS iniciar_migracao
+      IMPORTING
+        !iv_dir_ent_local TYPE rlgrap-filename OPTIONAL
+        !iv_dir_ent_serv  TYPE rlgrap-filename OPTIONAL
+        !iv_dir_sai_local TYPE rlgrap-filename OPTIONAL
+        !iv_dir_sai_serv  TYPE rlgrap-filename OPTIONAL
+      RETURNING
+        VALUE(ro_classe)  TYPE REF TO zclfi_mig_fat_pag_aberto
+      RAISING
+        cx_idm_error .
+    CLASS-METHODS visualizar_bal_log_ext
+      IMPORTING
+        !iv_dt_ini TYPE bal_s_log-aldate
+        !iv_dt_fim TYPE bal_s_log-aldate OPTIONAL
+        !iv_hr_ini TYPE bal_s_log-altime
+        !iv_hr_fim TYPE bal_s_log-altime OPTIONAL
+      RAISING
+        cx_idm_error .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+
+    DATA og_bal_log TYPE REF TO zcl_bal_log .
+    DATA vg_origem_arquivo TYPE char1 .
+    DATA vg_dir_entrada TYPE string .
+    DATA vg_dir_saida TYPE string .
+    DATA vg_dt_log TYPE bal_s_log-aldate .
+    DATA vg_hr_log TYPE bal_s_log-altime .
+    DATA tg_arquivo_base TYPE tt_arquivo_base .
+
+    METHODS montar_arquivo_base
+      IMPORTING
+        !it_arquivo TYPE zcl_utilities=>tt_arquivo .
+    METHODS realizar_migracao
+      RAISING
+        cx_idm_error .
+    METHODS carregar_dados_migracao
+      RAISING
+        cx_idm_error .
+    METHODS iniciar_bal_log
+      RAISING
+        cx_idm_error .
+ENDCLASS.
+
+
+
+CLASS ZCLFI_MIG_FAT_PAG_ABERTO IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLFI_MIG_FAT_PAG_ABERTO->CARREGAR_DADOS_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD carregar_dados_migracao.
+    DATA tl_arquivo TYPE zcl_utilities=>tt_arquivo.
+
+    CASE me->vg_origem_arquivo.
+      WHEN zcl_utilities=>c_origem_local.
+
+*       " Carrega os dados do arquivo na tabela interna.
+        zcl_utilities=>arquivo_pc_itab(
+          EXPORTING
+            iv_caminho   = me->vg_dir_entrada   " Local e nome do arquivo
+          IMPORTING
+            et_arquivo   = tl_arquivo
+        ).
+
+      WHEN zcl_utilities=>c_origem_servidor.
+
+*       " Carrega os dados do arquivo na tabela interna.
+        zcl_utilities=>arquivo_servidor_itab(
+          EXPORTING
+            iv_caminho   = me->vg_dir_entrada   " Local e nome do arquivo
+          IMPORTING
+            et_arquivo   = tl_arquivo
+        ).
+
+    ENDCASE.
+
+    IF tl_arquivo[] IS INITIAL.
+      DATA wl_msg TYPE bapiret2.
+      wl_msg-id = zcl_utilities=>c_classe_mensagem.
+      wl_msg-number = 009.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = wl_msg.
+    ENDIF.
+
+    me->montar_arquivo_base( it_arquivo = tl_arquivo ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLFI_MIG_FAT_PAG_ABERTO->INICIAR_BAL_LOG
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD iniciar_bal_log.
+    DATA:
+      wl_log_struc       TYPE bal_s_log.
+
+    me->vg_dt_log = sy-datum.
+    me->vg_hr_log = sy-uzeit.
+
+    wl_log_struc-extnumber  = me->cg_extnumber_ballog.
+    wl_log_struc-object     = me->cg_obj_ballog .
+    wl_log_struc-subobject  = me->cg_subobj_ballog.
+    wl_log_struc-aldate     = me->vg_dt_log.
+    wl_log_struc-altime     = me->vg_hr_log.
+    wl_log_struc-aluser     = sy-uname.
+    wl_log_struc-altcode    = sy-tcode.
+    wl_log_struc-alprog     = sy-cprog.
+
+    TRY .
+        me->og_bal_log = NEW zcl_bal_log(
+            log_struc       = wl_log_struc
+            adicional_struc = me->cg_estrutura_ballog
+        ).
+      CATCH cx_oo_message.
+
+        DATA wl_msg TYPE bapiret2.
+        wl_msg-id = zcl_utilities=>c_classe_mensagem.
+        wl_msg-number = 003.
+        wl_msg-message_v1 = me->cg_obj_ballog.
+        wl_msg-message_v2 = me->cg_subobj_ballog.
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = wl_msg.
+
+    ENDTRY.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCLFI_MIG_FAT_PAG_ABERTO->INICIAR_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DIR_ENT_LOCAL               TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_ENT_SERV                TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_SAI_LOCAL               TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_SAI_SERV                TYPE        RLGRAP-FILENAME(optional)
+* | [<-()] RO_CLASSE                      TYPE REF TO ZCLFI_MIG_FAT_PAG_ABERTO
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD iniciar_migracao.
+********************************************************************************************************
+*** Sempre em que houver algum tipo de erro durante a execução, o RAISE EXCEPTION será acionado.
+********************************************************************************************************
+
+    me->iniciar_bal_log( ).
+
+*   " Verifica a origem do arquivo, de acordo com os dados inseridos na entrada do programa.
+    IF iv_dir_ent_local IS NOT INITIAL.
+      me->vg_dir_entrada  = iv_dir_ent_local.
+      me->vg_dir_saida    = iv_dir_sai_local.
+      me->vg_origem_arquivo = zcl_utilities=>c_origem_local.
+
+    ELSE.
+      me->vg_dir_entrada  = iv_dir_ent_serv.
+      me->vg_dir_saida    = iv_dir_sai_serv.
+      me->vg_origem_arquivo = zcl_utilities=>c_origem_servidor.
+
+    ENDIF.
+
+    TRY .
+        me->carregar_dados_migracao( ).
+        me->realizar_migracao( ).
+
+*       " Carga realizada com sucesso
+        me->og_bal_log->add_msg( msgid = zcl_utilities=>c_classe_mensagem msgno = 008 msg_type = 'S' ).
+
+      CATCH cx_idm_error INTO DATA(ol_error).
+
+        me->og_bal_log->add_msg(
+          EXPORTING
+            msg_type         = ol_error->message-type
+            msgno            = ol_error->message-number
+            msgid            = ol_error->message-id
+            attr1            = ol_error->message-message_v1
+            attr2            = ol_error->message-message_v2
+            attr3            = ol_error->message-message_v3
+            attr4            = ol_error->message-message_v4
+        ).
+
+*       " Conclui a execução do LOG mesmo com erro.
+        me->og_bal_log->salvar( ).
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = ol_error->message.
+    ENDTRY.
+
+*   " Conclui a execução do LOG.
+    me->og_bal_log->salvar( ).
+    ro_classe = me.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLFI_MIG_FAT_PAG_ABERTO->MONTAR_ARQUIVO_BASE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD montar_arquivo_base.
+
+    DATA wl_arquivo_base LIKE LINE OF me->tg_arquivo_base.
+    LOOP AT it_arquivo INTO DATA(wl_arquivo).
+      SPLIT wl_arquivo AT ';' INTO wl_arquivo_base-bldat
+                                   wl_arquivo_base-blart
+                                   wl_arquivo_base-bukrs
+                                   wl_arquivo_base-budat
+                                   wl_arquivo_base-waers
+                                   wl_arquivo_base-lifnr
+                                   wl_arquivo_base-wrbtr
+                                   wl_arquivo_base-bupla
+                                   wl_arquivo_base-zfbdt
+                                   wl_arquivo_base-sgtxt1
+                                   wl_arquivo_base-sgtxt2.
+
+      APPEND wl_arquivo_base TO me->tg_arquivo_base.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLFI_MIG_FAT_PAG_ABERTO->REALIZAR_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD realizar_migracao.
+*   " Execução da Carga iniciada
+    me->og_bal_log->add_msg( msgid = zcl_utilities=>c_classe_mensagem msgno = 010 msg_type = 'S' ).
+
+    LOOP AT me->tg_arquivo_base ASSIGNING FIELD-SYMBOL(<fs_arquivo_base>).
+
+    ENDLOOP.
+
+*   " Caso o ocorra algum erro durante a migração.
+    IF me->og_bal_log->get_qtd_msg( ) GT 1.
+      DATA wl_msg TYPE bapiret2.
+      wl_msg-id = zcl_utilities=>c_classe_mensagem.
+      wl_msg-number = 011. " Execução realizada com erros
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = wl_msg.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCLFI_MIG_FAT_PAG_ABERTO=>VISUALIZAR_BAL_LOG_EXT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DT_INI                      TYPE        BAL_S_LOG-ALDATE
+* | [--->] IV_DT_FIM                      TYPE        BAL_S_LOG-ALDATE(optional)
+* | [--->] IV_HR_INI                      TYPE        BAL_S_LOG-ALTIME
+* | [--->] IV_HR_FIM                      TYPE        BAL_S_LOG-ALTIME(optional)
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD visualizar_bal_log_ext.
+
+    DATA:
+      vl_dt_ini TYPE sy-datum,
+      vl_dt_fim TYPE sy-datum,
+      vl_hh_ini TYPE sy-uzeit,
+      vl_hh_fim TYPE sy-uzeit.
+
+    IF iv_dt_ini IS NOT INITIAL.
+      vl_dt_ini = iv_dt_ini.
+    ELSE.
+      vl_dt_ini = sy-datum.
+    ENDIF.
+
+    IF iv_dt_fim IS NOT INITIAL.
+      vl_dt_fim = iv_dt_fim.
+    ELSE.
+      vl_dt_fim = sy-datum.
+    ENDIF.
+
+    IF iv_hr_ini IS NOT INITIAL.
+      vl_hh_ini = iv_hr_ini.
+    ELSE.
+      vl_hh_ini = '000000'.
+    ENDIF.
+
+    IF iv_hr_fim IS NOT INITIAL.
+      vl_hh_fim = iv_hr_fim.
+    ELSE.
+      vl_hh_fim = '235959'.
+    ENDIF.
+
+    TRY .
+
+        DATA(ol_bal_log) = NEW zcl_bal_log( adicional_struc = cg_estrutura_ballog ).
+        ol_bal_log->criterio_pesquisa( i_object          = cg_obj_ballog
+                                       i_subobject       = cg_subobj_ballog
+                                       i_extnumber       = cg_extnumber_ballog
+                                       i_aldate_from     = vl_dt_ini
+                                       i_aldate_to       = vl_dt_fim
+                                       i_altime_from     = vl_hh_ini
+                                       i_altime_to       = vl_hh_fim ).
+
+
+        ol_bal_log->display_log( 'Log de execução da Carga' ).
+
+      CATCH cx_oo_message.
+        DATA wl_msg TYPE bapiret2.
+        wl_msg-type = 'E'.
+        wl_msg-id = zcl_utilities=>c_classe_mensagem.
+        wl_msg-number = 012.
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = wl_msg.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
