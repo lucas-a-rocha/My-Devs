@@ -1,0 +1,84 @@
+  METHOD inserted_rows.
+    FIELD-SYMBOLS <ft_data> TYPE me->tt_lista_imob. "zctaa_ctrl_transf_bens.
+    ASSIGN cr_data_changed->mp_mod_rows->* TO <ft_data>.
+
+    READ TABLE me->rg_werks_o INTO DATA(wl_werks) INDEX 1.
+
+    LOOP AT cr_data_changed->mt_inserted_rows ASSIGNING FIELD-SYMBOL(<inserted_rows>).
+      READ TABLE <ft_data> ASSIGNING FIELD-SYMBOL(<fs_inserted>) INDEX sy-tabix. "INDEX <inserted_rows>-row_id.
+      IF <fs_inserted> IS ASSIGNED.
+        <fs_inserted>-bukrs = me->vg_bukrs.
+        <fs_inserted>-werks = wl_werks-low.
+        <fs_inserted>-txt_itm = icon_create_text.
+      ENDIF.
+      UNASSIGN <fs_inserted>.
+    ENDLOOP.
+  ENDMETHOD.
+**************************************************************************************************************
+      METHOD modified_rows.
+    FIELD-SYMBOLS:
+      <campo>   TYPE any.
+
+**********************************************************************
+*   " Ajusta os campos na tabela global do relatório.
+**********************************************************************
+    LOOP AT cr_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<good_cells>).
+      READ TABLE me->tg_lista_imob ASSIGNING FIELD-SYMBOL(<fs_modified>) INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        ASSIGN COMPONENT <good_cells>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+        IF <campo> IS ASSIGNED.
+          <campo> = <good_cells>-value.
+        ENDIF.
+      ENDIF.
+
+      UNASSIGN: <fs_modified>, <campo>.
+    ENDLOOP.
+
+**********************************************************************
+*   " Ajusta as colunas que não são editáveis
+**********************************************************************
+    LOOP AT cr_data_changed->mt_good_cells ASSIGNING <good_cells>.
+      IF NOT ( <good_cells>-fieldname EQ 'ANLN1' OR <good_cells>-fieldname EQ 'ANLN2' )
+         OR <good_cells>-value IS INITIAL.
+        CONTINUE.
+      ENDIF.
+
+      READ TABLE me->tg_lista_imob ASSIGNING <fs_modified> INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        TRY .
+            me->montar_imobilizado_transf(
+              EXPORTING
+                iv_anln1      = <fs_modified>-anln1
+                iv_anln2      = <fs_modified>-anln2
+              IMPORTING
+                es_lista_imob = <fs_modified> ).
+
+            LOOP AT cr_data_changed->mt_fieldcatalog ASSIGNING FIELD-SYMBOL(<fieldcat>).
+*             " Modifica apenas os campos que não foram modificados automaticamente. Normalmente serão os campos não editáveis
+              READ TABLE cr_data_changed->mt_good_cells WITH KEY row_id = <good_cells>-row_id fieldname = <fieldcat>-fieldname TRANSPORTING NO FIELDS.
+              IF sy-subrc NE 0.
+                ASSIGN COMPONENT <fieldcat>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+                IF <campo> IS ASSIGNED.
+                  cr_data_changed->modify_cell(
+                    EXPORTING i_row_id    = <good_cells>-row_id
+                              i_fieldname = <fieldcat>-fieldname
+                              i_value     = <campo> ).
+                ENDIF.
+                UNASSIGN <campo>.
+
+              ENDIF.
+            ENDLOOP.
+
+          CATCH cx_idm_error INTO DATA(ol_sel_error).
+            MESSAGE ID ol_sel_error->message-id TYPE 'S'
+              NUMBER ol_sel_error->message-number
+                WITH ol_sel_error->message-message_v1 ol_sel_error->message-message_v2 ol_sel_error->message-message_v3 ol_sel_error->message-message_v4
+                  DISPLAY LIKE ol_sel_error->message-type.
+        ENDTRY.
+
+      ENDIF.
+      UNASSIGN <fs_modified>.
+    ENDLOOP.
+  ENDMETHOD.
+ 
+**************************************************************************************************************
