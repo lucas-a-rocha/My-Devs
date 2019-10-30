@@ -22,12 +22,12 @@ SELECTION-SCREEN END OF LINE.
 
 SELECTION-SCREEN BEGIN OF LINE.
 SELECTION-SCREEN COMMENT 1(30) ts_tipo FOR FIELD s_tipo.
-SELECT-OPTIONS: s_tipo FOR e070-trfunction.
+SELECT-OPTIONS: s_tipo FOR e070-trfunction DEFAULT 'K'.
 SELECTION-SCREEN END OF LINE.
 
 SELECTION-SCREEN BEGIN OF LINE.
 SELECTION-SCREEN COMMENT 1(30) ts_sts FOR FIELD s_sts.
-SELECT-OPTIONS: s_sts FOR e070-trstatus.
+SELECT-OPTIONS: s_sts FOR e070-trstatus DEFAULT 'R'.
 SELECTION-SCREEN END OF LINE.
 
 SELECTION-SCREEN BEGIN OF LINE.
@@ -145,6 +145,9 @@ CLASS lcl_requests DEFINITION.
 
     METHODS: display_alv.
 
+    METHODS: on_link_click
+                FOR EVENT link_click OF cl_salv_events_table
+      IMPORTING row column.
 ENDCLASS.
 
 START-OF-SELECTION.
@@ -210,23 +213,30 @@ CLASS lcl_requests IMPLEMENTATION.
     me->gt_requests_iniciais[] = me->gt_requests_lidas[].
 
     me->gr_obj_type = VALUE #( sign = 'I' option = 'EQ'
-    ( low = 'MSAG' )
-    ( low = 'DOMA' )
-    ( low = 'DTEL' )
-    ( low = 'FUGR' )
-    ( low = 'PROG' )
-    ( low = 'SHLP' )
-    ( low = 'TABL' )
-    ( low = 'TRAN' )
-    ( low = 'CLAS' )
-    ( low = 'METH' )
-    ( low = 'INTF' )
-    ( low = 'CPRO' )
-    ( low = 'CLSD' )
-    ( low = 'CPRI' )
-    ( low = 'CPUB' )
-    ( low = 'CUAD' )
-    ( low = 'SPRX' ) ).
+      ( low = 'CLAS' )
+      ( low = 'CLSD' )
+      ( low = 'CPRI' )
+      ( low = 'CPRO' )
+      ( low = 'CPUB' )
+      ( low = 'CUAD' )
+      ( low = 'DOMA' )
+      ( low = 'DOMD' )
+      ( low = 'DTED' )
+      ( low = 'DTEL' )
+      ( low = 'DYNP' )
+      ( low = 'ENHO' )
+      ( low = 'FUGR' )
+      ( low = 'INTF' )
+      ( low = 'METH' )
+      ( low = 'MSAG' )
+      ( low = 'PROG' )
+      ( low = 'REPS' )
+      ( low = 'SHLP' )
+      ( low = 'SPRX' )
+      ( low = 'TABD' )
+      ( low = 'TABL' )
+      ( low = 'TRAN' )
+    ).
 
   ENDMETHOD.
 
@@ -333,7 +343,15 @@ CLASS lcl_requests IMPLEMENTATION.
       DATA(ol_columns) = ol_salv_table->get_columns( ).
       ol_columns->set_optimize( abap_true ).
 
+      TRY.
+          DATA(ol_column) = CAST cl_salv_column_table( ol_columns->get_column( 'TRKORR' ) ).
+          ol_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
       DATA(ol_events) = ol_salv_table->get_event( ).
+
+      SET HANDLER me->on_link_click FOR ol_events.
 
 *     " Ajusta o LAYOUT de acordo com o selecionado.
       DATA wl_key TYPE salv_s_layout_key.
@@ -347,4 +365,49 @@ CLASS lcl_requests IMPLEMENTATION.
       ol_salv_table->display( ).
     ENDIF.
   ENDMETHOD.
+
+  METHOD on_link_click.
+    DATA:
+      sl_opt    TYPE ctu_params,
+      tl_bdc    TYPE bdcdata_tab,
+      tl_bdcmsg TYPE STANDARD TABLE OF bdcmsgcoll.
+
+    READ TABLE me->gt_request ASSIGNING FIELD-SYMBOL(<fs_request>) INDEX row.
+    IF <fs_request> IS NOT ASSIGNED.
+      RETURN.
+    ENDIF.
+
+    tl_bdc = VALUE #(
+      ( program  = 'RDDM0001' dynpro   = '0100' dynbegin = 'X' )
+      ( fnam = 'BDC_OKCODE'             fval = '=SNGL' )
+      ( fnam = 'BDC_SUBSCR'             fval = 'RDDM0001                                0220COMMONSUBSCREEN' )
+      ( fnam = 'BDC_CURSOR'             fval = 'TRDYSE01CM-USERNAME' )
+      ( fnam = 'TRDYSE01CM-REQ_CUST'    fval = 'X' )
+      ( fnam = 'TRDYSE01CM-REQ_WB'      fval = 'X' )
+      ( fnam = 'TRDYSE01CM-REQ_COP'     fval = 'X' )
+      ( fnam = 'TRDYSE01CM-REQ_MOVE'    fval = 'X' )
+      ( fnam = 'TRDYSE01CM-SEL_CHAN'    fval = 'X' )
+      ( fnam = 'BDC_SUBSCR'             fval = 'RDDM0003                                0005TABSTRIP_CONTAINER' )
+      ( fnam = 'BDC_SUBSCR'             fval = 'RDDM0003                                0010RIGHTHALF' )
+
+      ( program  = 'SAPLSTRH' dynpro   = '1200' dynbegin = 'X' )
+      ( fnam = 'BDC_CURSOR'             fval = 'GV_1200_TRKORR' )
+      ( fnam = 'BDC_OKCODE'             fval = '=TAKE' )
+      ( fnam = 'GV_1200_TRKORR'         fval = <fs_request>-trkorr ) ).
+
+    sl_opt-dismode  = 'E'. " Define o tipo de exibição de telas.
+    " A - Exibir todas as telas
+    " E - Exibir erros
+    " N - Processar em background
+    " P - Em background e depurável
+
+    sl_opt-updmode  = 'S'. " Define o modo de sincronização.
+    sl_opt-defsize  = 'X'. " Define o tamanho da tela standard.
+
+    CALL TRANSACTION 'SE10' WITHOUT AUTHORITY-CHECK
+    USING tl_bdc
+    OPTIONS FROM sl_opt
+    MESSAGES INTO tl_bdcmsg.
+
+  ENDMETHOD.                    "on_single_click
 ENDCLASS.
