@@ -83,12 +83,13 @@ INITIALIZATION.
 CLASS lcl_requests DEFINITION.
   PUBLIC SECTION.
     TYPES: BEGIN OF ty_request,
-             trkorr     TYPE e070-trkorr,
-             trfunction TYPE e070-trfunction,
-             as4text    TYPE e07t-as4text,
-             as4date    TYPE e070-as4date,
-             as4time    TYPE e070-as4time,
-             as4user    TYPE e070-as4user,
+             trkorr      TYPE e070-trkorr,
+             trfunction  TYPE e070-trfunction,
+             as4text     TYPE e07t-as4text,
+             as4date     TYPE e070-as4date,
+             as4time     TYPE e070-as4time,
+             as4user     TYPE e070-as4user,
+             released_to TYPE char100,
            END OF ty_request,
 
            BEGIN OF ty_requests_lidas,
@@ -324,6 +325,32 @@ CLASS lcl_requests IMPLEMENTATION.
 *      AND e07t~as4text    IN @me->gr_as4text
 *    ORDER BY as4date DESCENDING, as4time DESCENDING
     INTO TABLE @me->gt_request.
+
+
+*   " Encontra os ambientes de destino.
+    DATA ls_cofile TYPE ctslg_cofile.
+    LOOP AT me->gt_request ASSIGNING FIELD-SYMBOL(<fs_requests>).
+      CLEAR ls_cofile.
+      CALL FUNCTION 'TR_READ_GLOBAL_INFO_OF_REQUEST'
+        EXPORTING
+          iv_trkorr = <fs_requests>-trkorr
+        IMPORTING
+          es_cofile = ls_cofile.
+
+      SORT ls_cofile-systems BY systemid.
+      LOOP AT ls_cofile-systems ASSIGNING FIELD-SYMBOL(<fs_systems>).
+        IF lines( <fs_systems>-steps ) GT 1.
+          IF <fs_requests>-released_to IS INITIAL.
+            <fs_requests>-released_to = |{ <fs_systems>-systemid }|.
+
+          ELSE.
+            <fs_requests>-released_to = |{ <fs_requests>-released_to } - { <fs_systems>-systemid }|.
+
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+
+    ENDLOOP.
 
     SORT me->gt_request BY as4date ASCENDING as4time ASCENDING .
   ENDMETHOD.
