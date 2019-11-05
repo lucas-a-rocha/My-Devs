@@ -121,7 +121,10 @@ CLASS lcl_requests DEFINITION.
       gt_requests_iniciais TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
       gt_requests_lidas    TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
       gt_objetos_lidos     TYPE SORTED TABLE OF e071v-obj_name WITH UNIQUE KEY table_line,
+      gt_tarsystem         TYPE STANDARD TABLE OF tstrfcofil-tarsystem,
       gr_obj_type          TYPE RANGE OF e071-object,
+      gos_request_dyn      TYPE REF TO cl_abap_structdescr,
+      got_request_dyn      TYPE REF TO cl_abap_tabledescr,
       vg_busca_complexa    TYPE abap_bool.
 
     DATA:
@@ -149,6 +152,13 @@ CLASS lcl_requests DEFINITION.
     METHODS: on_link_click
                 FOR EVENT link_click OF cl_salv_events_table
       IMPORTING row column.
+
+    METHODS: criar_tabela_dinamica.
+*      EXPORTING !eo_table TYPE REF TO data.
+
+    METHODS: preencher_tabela_dinamica
+      EXPORTING eo_ref_table TYPE REF TO data.
+*      CHANGING !co_table TYPE REF TO data.
 ENDCLASS.
 
 START-OF-SELECTION.
@@ -348,6 +358,11 @@ CLASS lcl_requests IMPLEMENTATION.
 
           ENDIF.
         ENDIF.
+
+        READ TABLE gt_tarsystem WITH KEY table_line = <fs_systems>-systemid TRANSPORTING NO FIELDS.
+        IF sy-subrc NE 0.
+          APPEND <fs_systems>-systemid TO gt_tarsystem.
+        ENDIF.
       ENDLOOP.
 
     ENDLOOP.
@@ -356,11 +371,20 @@ CLASS lcl_requests IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD: display_alv.
+    DATA ol_ref_table TYPE REF TO data.
+
+*   " Monta tabela Dinâmica com os Servidores de destino.
+    me->criar_tabela_dinamica( ).
+    me->preencher_tabela_dinamica( IMPORTING eo_ref_table = ol_ref_table ).
+
+    FIELD-SYMBOLS <t_table> TYPE STANDARD TABLE.
+    ASSIGN ol_ref_table->* TO <t_table>.   "Dynamic table
+
     cl_salv_table=>factory(
       IMPORTING
         r_salv_table = DATA(ol_salv_table)
       CHANGING
-        t_table      = me->gt_request ).
+        t_table      = <t_table> ). "me->gt_request ).
 
     IF ol_salv_table IS BOUND.
 *     " Insere todos as funcionalidades existentes no ALV OO.
@@ -373,6 +397,13 @@ CLASS lcl_requests IMPLEMENTATION.
       TRY.
           DATA(ol_column) = CAST cl_salv_column_table( ol_columns->get_column( 'TRKORR' ) ).
           ol_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+*         " Insere os nomes das colunas de servidores.
+          LOOP AT me->gt_tarsystem ASSIGNING FIELD-SYMBOL(<fs_tarsystem>).
+            ol_column = CAST cl_salv_column_table( ol_columns->get_column( CONV char30( <fs_tarsystem> ) ) ) .
+            ol_column->set_long_text( value = CONV scrtext_l( <fs_tarsystem> ) ).
+            ol_column->set_alignment( value = if_salv_c_alignment=>centered ).
+          ENDLOOP.
         CATCH cx_salv_not_found.
       ENDTRY.
 
@@ -431,10 +462,64 @@ CLASS lcl_requests IMPLEMENTATION.
     sl_opt-updmode  = 'S'. " Define o modo de sincronização.
     sl_opt-defsize  = 'X'. " Define o tamanho da tela standard.
 
-    CALL TRANSACTION 'SE10' WITHOUT AUTHORITY-CHECK
+    CALL TRANSACTION 'SE09' WITHOUT AUTHORITY-CHECK
     USING tl_bdc
     OPTIONS FROM sl_opt
     MESSAGES INTO tl_bdcmsg.
 
   ENDMETHOD.                    "on_single_click
+
+  METHOD criar_tabela_dinamica.
+
+    DATA(ol_ref_str) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_data( me->gt_request[ 1 ] ) ).
+    DATA(lt_components) = ol_ref_str->get_components( ).
+
+    DATA lw_component  LIKE LINE OF lt_components.
+
+    LOOP AT gt_tarsystem ASSIGNING FIELD-SYMBOL(<fs_tarsystem>).
+      lw_component-name = <fs_tarsystem>.
+      lw_component-type ?= cl_abap_datadescr=>describe_by_name( 'CHAR1' ).
+*      comp_wa-suffix = <fs_tarsystem>.
+
+      APPEND lw_component TO lt_components.
+    ENDLOOP.
+
+    DELETE lt_components WHERE name = 'RELEASED_TO'.
+
+    gos_request_dyn = cl_abap_structdescr=>create( lt_components ).
+    got_request_dyn  = cl_abap_tabledescr=>create( p_line_type = gos_request_dyn ).
+  ENDMETHOD.
+
+  METHOD preencher_tabela_dinamica.
+    FIELD-SYMBOLS: <t_table> TYPE STANDARD TABLE,
+                   <s_table> TYPE any.
+
+    CREATE DATA eo_ref_table TYPE HANDLE got_request_dyn.
+    ASSIGN eo_ref_table->* TO <t_table>.   "Dynamic table
+
+    DATA: ol_ref_structure TYPE REF TO data.
+    CREATE DATA ol_ref_structure TYPE HANDLE gos_request_dyn.
+    ASSIGN ol_ref_structure->* TO <s_table>. "Dyanmic Structure
+
+    FIELD-SYMBOLS:
+      <fs_value> TYPE any.
+
+*   " Realiza a busca pelo campo, de acordo com o nome da coluna, e caso exista no servidor, preenche com X.
+    LOOP AT me->gt_request ASSIGNING FIELD-SYMBOL(<fs_requests>).
+
+      <s_table> = CORRESPONDING #( <fs_requests> ).
+
+      LOOP AT me->gt_tarsystem ASSIGNING FIELD-SYMBOL(<fs_tarsystem>).
+        IF <fs_requests>-released_to CS <fs_tarsystem>.
+          ASSIGN COMPONENT <fs_tarsystem> OF STRUCTURE <s_table> TO <fs_value>.
+          IF <fs_value> IS ASSIGNED .
+            <fs_value> = abap_true.
+          ENDIF.
+          UNASSIGN <fs_value>.
+        ENDIF.
+      ENDLOOP.
+
+      APPEND <s_table> TO <t_table>.
+    ENDLOOP.
+  ENDMETHOD.
 ENDCLASS.
