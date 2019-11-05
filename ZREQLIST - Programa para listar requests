@@ -121,10 +121,10 @@ CLASS lcl_requests DEFINITION.
       gt_requests_iniciais TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
       gt_requests_lidas    TYPE SORTED TABLE OF ty_requests_lidas WITH UNIQUE KEY trkorr,
       gt_objetos_lidos     TYPE SORTED TABLE OF e071v-obj_name WITH UNIQUE KEY table_line,
-      gt_tarsystem         TYPE STANDARD TABLE OF tstrfcofil-tarsystem,
+      gt_tarsystem         TYPE SORTED TABLE OF tstrfcofil-tarsystem WITH UNIQUE KEY table_line,
       gr_obj_type          TYPE RANGE OF e071-object,
-      gos_request_dyn      TYPE REF TO cl_abap_structdescr,
       got_request_dyn      TYPE REF TO cl_abap_tabledescr,
+      go_ref_table         TYPE REF TO data,
       vg_busca_complexa    TYPE abap_bool.
 
     DATA:
@@ -154,11 +154,9 @@ CLASS lcl_requests DEFINITION.
       IMPORTING row column.
 
     METHODS: criar_tabela_dinamica.
-*      EXPORTING !eo_table TYPE REF TO data.
 
-    METHODS: preencher_tabela_dinamica
-      EXPORTING eo_ref_table TYPE REF TO data.
-*      CHANGING !co_table TYPE REF TO data.
+    METHODS: preencher_tabela_dinamica .
+
 ENDCLASS.
 
 START-OF-SELECTION.
@@ -198,6 +196,10 @@ CLASS lcl_requests IMPLEMENTATION.
     ENDIF.
 
     me->selecionar_dados( ).
+
+    me->criar_tabela_dinamica( ).
+
+    me->preencher_tabela_dinamica( ).
 
     me->display_alv( ).
   ENDMETHOD.
@@ -329,13 +331,9 @@ CLASS lcl_requests IMPLEMENTATION.
                        AND e07t~langu  EQ @sy-langu
       FOR ALL ENTRIES IN @me->gt_requests_lidas
     WHERE e070~trkorr     EQ @me->gt_requests_lidas-trkorr
-*      AND e070~trfunction IN @me->gr_trfunction
-*      AND e070~trstatus   IN @me->gr_trstatus
-*      AND e070~as4user    IN @me->gr_as4user
-*      AND e07t~as4text    IN @me->gr_as4text
-*    ORDER BY as4date DESCENDING, as4time DESCENDING
     INTO TABLE @me->gt_request.
 
+    SORT me->gt_request BY as4date ASCENDING as4time ASCENDING .
 
 *   " Encontra os ambientes de destino.
     DATA ls_cofile TYPE ctslg_cofile.
@@ -359,26 +357,18 @@ CLASS lcl_requests IMPLEMENTATION.
           ENDIF.
         ENDIF.
 
-        READ TABLE gt_tarsystem WITH KEY table_line = <fs_systems>-systemid TRANSPORTING NO FIELDS.
+        READ TABLE me->gt_tarsystem WITH KEY table_line = <fs_systems>-systemid TRANSPORTING NO FIELDS.
         IF sy-subrc NE 0.
-          APPEND <fs_systems>-systemid TO gt_tarsystem.
+          INSERT <fs_systems>-systemid INTO TABLE me->gt_tarsystem .
         ENDIF.
       ENDLOOP.
 
     ENDLOOP.
-
-    SORT me->gt_request BY as4date ASCENDING as4time ASCENDING .
   ENDMETHOD.
 
   METHOD: display_alv.
-    DATA ol_ref_table TYPE REF TO data.
-
-*   " Monta tabela Dinâmica com os Servidores de destino.
-    me->criar_tabela_dinamica( ).
-    me->preencher_tabela_dinamica( IMPORTING eo_ref_table = ol_ref_table ).
-
     FIELD-SYMBOLS <t_table> TYPE STANDARD TABLE.
-    ASSIGN ol_ref_table->* TO <t_table>.   "Dynamic table
+    ASSIGN me->go_ref_table->* TO <t_table>.   "Dynamic table
 
     cl_salv_table=>factory(
       IMPORTING
@@ -476,30 +466,29 @@ CLASS lcl_requests IMPLEMENTATION.
 
     DATA lw_component  LIKE LINE OF lt_components.
 
-    LOOP AT gt_tarsystem ASSIGNING FIELD-SYMBOL(<fs_tarsystem>).
+    LOOP AT me->gt_tarsystem ASSIGNING FIELD-SYMBOL(<fs_tarsystem>).
       lw_component-name = <fs_tarsystem>.
-      lw_component-type ?= cl_abap_datadescr=>describe_by_name( 'CHAR1' ).
-*      comp_wa-suffix = <fs_tarsystem>.
+      lw_component-type ?= cl_abap_datadescr=>describe_by_name( 'ABAP_BOOL' ).
 
       APPEND lw_component TO lt_components.
     ENDLOOP.
 
     DELETE lt_components WHERE name = 'RELEASED_TO'.
 
-    gos_request_dyn = cl_abap_structdescr=>create( lt_components ).
-    got_request_dyn  = cl_abap_tabledescr=>create( p_line_type = gos_request_dyn ).
+*   " Cria a definição da tabela.
+    me->got_request_dyn = cl_abap_tabledescr=>create( p_line_type = cl_abap_structdescr=>create( lt_components ) ).
+    CREATE DATA me->go_ref_table TYPE HANDLE me->got_request_dyn.
   ENDMETHOD.
 
   METHOD preencher_tabela_dinamica.
-    FIELD-SYMBOLS: <t_table> TYPE STANDARD TABLE,
-                   <s_table> TYPE any.
+    FIELD-SYMBOLS <t_table> TYPE STANDARD TABLE.
+    ASSIGN me->go_ref_table->* TO <t_table>.   "Dynamic table
 
-    CREATE DATA eo_ref_table TYPE HANDLE got_request_dyn.
-    ASSIGN eo_ref_table->* TO <t_table>.   "Dynamic table
-
-    DATA: ol_ref_structure TYPE REF TO data.
-    CREATE DATA ol_ref_structure TYPE HANDLE gos_request_dyn.
-    ASSIGN ol_ref_structure->* TO <s_table>. "Dyanmic Structure
+*   " Monta a estrutura da linha da tabela dinâmica.
+    DATA(lo_structure) = me->got_request_dyn->get_table_line_type( ).
+    DATA ol_ref_structure TYPE REF TO data.
+    CREATE DATA ol_ref_structure TYPE HANDLE lo_structure.
+    ASSIGN ol_ref_structure->* TO FIELD-SYMBOL(<s_table>). "Dyanmic Structure
 
     FIELD-SYMBOLS:
       <fs_value> TYPE any.
