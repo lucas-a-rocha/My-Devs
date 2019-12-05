@@ -1,0 +1,43 @@
+DATA:
+  tl_options  TYPE STANDARD TABLE OF rfc_db_opt,
+  tl_fields   TYPE STANDARD TABLE OF rfc_db_fld,
+  tl_data     TYPE STANDARD TABLE OF tab512,
+  tl_ztfi_025 TYPE STANDARD TABLE OF ztfi_025.
+
+CALL FUNCTION 'RFC_READ_TABLE'
+  DESTINATION 'ERDCLNT110'
+  EXPORTING
+    query_table          = 'ZTFI_025'
+  TABLES
+    options              = tl_options
+    fields               = tl_fields
+    data                 = tl_data
+  EXCEPTIONS
+    table_not_available  = 1
+    table_without_data   = 2
+    option_not_valid     = 3
+    field_not_valid      = 4
+    not_authorized       = 5
+    data_buffer_exceeded = 6
+    OTHERS               = 7.
+IF sy-subrc <> 0.
+* Implement suitable error handling here
+ELSE.
+  DATA wl_ztfi_025 LIKE LINE OF tl_ztfi_025.
+  FIELD-SYMBOLS <fs_campo> TYPE any.
+  LOOP AT tl_data ASSIGNING FIELD-SYMBOL(<fs_data>).
+    LOOP AT tl_fields ASSIGNING FIELD-SYMBOL(<fs_fields>).
+      ASSIGN COMPONENT <fs_fields>-fieldname OF STRUCTURE wl_ztfi_025 TO <fs_campo>.
+      IF <fs_campo> IS ASSIGNED.
+        IF <fs_fields>-fieldname NE 'MANDT'.
+          <fs_campo> = <fs_data>+<fs_fields>-offset(<fs_fields>-length).
+        ELSE.
+          <fs_campo> = sy-mandt.
+        ENDIF.
+
+      ENDIF.
+    ENDLOOP.
+
+    APPEND wl_ztfi_025 TO tl_ztfi_025.
+  ENDLOOP.
+ENDIF.
