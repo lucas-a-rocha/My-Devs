@@ -1,0 +1,159 @@
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_UTILITIES=>TRANSPORT_TABLE_DATA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_TABLENAME                   TYPE        DD02L-TABNAME
+* | [--->] IT_KEYS                        TYPE        CTS_STRINGS
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD transport_table_data.
+*	" Busca as informações gerais da tabela informada.
+    SELECT SINGLE *
+      FROM dd02l
+      WHERE tabname EQ @iv_tablename
+        AND as4local EQ 'A' " Versão ativa.
+        AND contflag NE @space " Não é estrutura.
+    INTO @DATA(sl_table).
+
+    IF sl_table IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            type = 'E'
+            id = 'TK'
+            number = '020'
+            message_v1 = iv_tablename
+          ).
+    ENDIF.
+
+    DATA:
+      vl_order_type TYPE trfunction,
+      vl_task_type  TYPE trfunction,
+      vl_category   TYPE e070-korrdev,
+      vl_order      TYPE trkorr,
+      vl_task       TYPE trkorr,
+      tl_e071       TYPE STANDARD TABLE OF e071,
+      tl_e071k      TYPE STANDARD TABLE OF e071k.
+
+    CASE sl_table-contflag.
+      WHEN 'A'. " Tabela de aplicação (dados mestre e de movimento)
+        vl_order_type = 'K'. "Ordem de workbench
+        vl_task_type  = 'S'. " Desenvolvimento/correção
+        vl_category   = 'SYST'.
+
+      WHEN 'C'. " Tab.customizing, atualização só por cliente, s/import.SAP
+        vl_order_type = 'W'.  "Ordem customizing
+        vl_task_type  = 'Q'. " Tarefa customizing
+        vl_category   = 'CUST'.
+
+      WHEN OTHERS.
+        vl_order_type = 'K'. "Ordem de workbench
+        vl_task_type  = 'S'. " Desenvolvimento/correção
+        vl_category   = 'SYST'.
+    ENDCASE.
+
+*   " Realiza a seleção da request de acordo com o tipo da tabela informada.
+    CALL FUNCTION 'TRINT_ORDER_CHOICE'
+      EXPORTING
+        wi_order_type          = vl_order_type
+        wi_task_type           = vl_task_type
+        wi_category            = vl_category
+      IMPORTING
+        we_order               = vl_order
+        we_task                = vl_task
+      TABLES
+        wt_e071                = tl_e071
+        wt_e071k               = tl_e071k
+      EXCEPTIONS
+        no_correction_selected = 1
+        display_mode           = 2
+        object_append_error    = 3
+        recursive_call         = 4
+        wrong_order_type       = 5
+        OTHERS                 = 6.
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            type        = sy-msgty
+            id          = sy-msgid
+            number      = sy-msgno
+            message_v1  = sy-msgv1
+            message_v2  = sy-msgv2
+            message_v3  = sy-msgv3
+            message_v4  = sy-msgv4
+          ).
+    ENDIF.
+
+*************************************************************************************
+*	  " Monta os dados da tabela que serão inseridos na request.
+*************************************************************************************
+
+    DATA:
+      tl_ko200 TYPE STANDARD TABLE OF ko200.
+
+    tl_ko200 = VALUE #( (
+      pgmid     = 'R3TR'
+      object    = 'TABU'
+      obj_name  = iv_tablename
+      objfunc   = 'K'
+     ) ).
+
+    tl_e071k = VALUE #( FOR wl_keys IN it_keys (
+      pgmid       = 'R3TR'
+      object      = 'TABU'
+      objname     = iv_tablename
+      mastertype  = 'TABU'
+      mastername  = iv_tablename
+      tabkey      = wl_keys
+    ) ).
+
+*   " Verifica e armazena os dados na request selecionada.
+    CALL FUNCTION 'TR_OBJECTS_CHECK'
+      TABLES
+        wt_ko200                = tl_ko200
+        wt_e071k                = tl_e071k
+      EXCEPTIONS
+        cancel_edit_other_error = 1
+        show_only_other_error   = 2
+        OTHERS                  = 3.
+    IF sy-subrc NE 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            type        = sy-msgty
+            id          = sy-msgid
+            number      = sy-msgno
+            message_v1  = sy-msgv1
+            message_v2  = sy-msgv2
+            message_v3  = sy-msgv3
+            message_v4  = sy-msgv4
+          ).
+    ELSE.
+      CALL FUNCTION 'TR_OBJECTS_INSERT'
+        EXPORTING
+          wi_order                = vl_task
+        TABLES
+          wt_ko200                = tl_ko200
+          wt_e071k                = tl_e071k
+        EXCEPTIONS
+          cancel_edit_other_error = 1
+          show_only_other_error   = 2
+          OTHERS                  = 3.
+      IF sy-subrc <> 0.
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #(
+              type        = sy-msgty
+              id          = sy-msgid
+              number      = sy-msgno
+              message_v1  = sy-msgv1
+              message_v2  = sy-msgv2
+              message_v3  = sy-msgv3
+              message_v4  = sy-msgv4
+            ).
+      ENDIF.
+
+    ENDIF.
+
+  ENDMETHOD.
