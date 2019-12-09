@@ -1,0 +1,1735 @@
+CLASS zclaa_mig_ativos_imob DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    TYPES:
+      BEGIN OF ty_layout,
+        assetclass         TYPE string, "  Classe de imobilizado
+        companycode        TYPE string, "  Empresa
+        descript           TYPE string, "  Denominação do imobilizado
+        descript2          TYPE string, "  Denominação do imobilizado (continuação)
+        txtimob            TYPE string, "  Texto do nº principal do imobilizado
+        serial_no          TYPE string, "  Nº de série
+        invent_no          TYPE string, "  Nº inventário
+        quantity           TYPE string, "  Quantidade
+        base_uom           TYPE string, "  Unidade de medida básica
+        history            TYPE string, "  Imobilizado administrado historicamente
+        date_inv           TYPE string, "  Data do último inventário
+        note_inv           TYPE string, "  Dado adicional do inventário
+        include_in_list    TYPE string, "  Código do inventário
+        aktiv              TYPE string, "  Data de incorporação do imobilizado
+        costcenter         TYPE string, "  Centro de custo
+        resp_cctr          TYPE string, "  Centro de Custo Responsável
+        intern_ord         TYPE string, "  Ordem Interna
+        plant              TYPE string, "  Centro
+        location           TYPE string, "  Localização do imobilizado
+        room               TYPE string, "  Sala
+        plate_no           TYPE string, "  Placa do Veiculo
+        person_no          TYPE string, "  Nº pessoal
+        wbs_element_cost   TYPE string, "  Elemento PEP - Custos
+        rl_est_key         TYPE string, "  Chave Bens Imóveis
+        shutdown           TYPE string, "  Imobilizado paralisado
+        evalgroup1         TYPE string, "  Situação Física
+        evalgroup2         TYPE string, "  Grupo de Imobilizado
+        evalgroup3         TYPE string, "  Sub. Grupo
+        evalgroup4         TYPE string, "  Criterio Classif. 4
+        evalgroup5         TYPE string, "  Criterio Classif. 5
+        agrup_imob         TYPE string, "  N. Agrup. Imobilizados
+        num_equip          TYPE string, "  Nº equipamento
+        categoria          TYPE string, "  Categoria de equipamento
+        tipo_obj           TYPE string, "  Tipo do objeto técnico
+        denom_obj          TYPE string, "  Denominação do objeto técnico
+        vendor_no          TYPE string, "  Nº conta do fornecedor
+        manufacturer       TYPE string, "  Fabricante do imobilizado
+        trade_id           TYPE string, "  Soc.Parc.Negócios
+        cod_imob_novo      TYPE string, "  Código: imobilizado comprado novo
+        purch_new          TYPE string, "  Código: imobilizado foi adquirido usado
+        country            TYPE string, "  País de origem do imobilizado
+        type_name          TYPE string, "  Denominação de categoria do bem econômico
+        exercicio          TYPE string, "  Exercício da aquisição original
+        vlr_aquisicao      TYPE string, "  Valor original de aquisição
+        ord_invest         TYPE string, "  Ordem de investimento
+        elem_pep_proj_inv  TYPE string, "  Elemento PEP - projeto de investimento
+        ulife_yrs_01       TYPE string, "  Vida Util em anos: 01 – FISCAL – BRL
+        ulife_yrs_30       TYPE string, "  Vida Util em anos: 30 - MOEDA DO GRUPO
+        ulife_prds_01      TYPE string, "  Vida Util em Meses: 01 – FISCAL – BRL
+        ulife_prds_30      TYPE string, "  Vida Util em Meses: 30 - MOEDA DO GRUPO
+        odep_start_date_01 TYPE string, "  Data Inicio Deprec. Normal: 01 – FISCAL – BRL
+        odep_start_date_30 TYPE string, "  Data Inicio Deprec. Normal: 30 - MOEDA DO GRUPO
+        exp_ulife_yrs_01   TYPE string, "  Vida Util (Expirada) em anos no início do exercício: 01 – FISCAL – BRL
+        exp_ulife_yrs_30   TYPE string, "  Vida Util (Expirada) em anos no início do exercício: 30 - MOEDA DO GRUPO
+        exp_ulife_prds_01  TYPE string, "  Vida Util  (Expirada) em períodos no início do exercício: 01 – FISCAL – BRL
+        exp_ulife_prds_30  TYPE string, "  Vida Util  (Expirada) em períodos no início do exercício: 30 - MOEDA DO GRUPO
+        acq_value_01       TYPE string, "  Montante de Aquisição: 01 – FISCAL – BRL
+        acq_value_30       TYPE string, "  Montante de Aquisição: 30 - MOEDA DO GRUPO
+        ord_dep_acum_01    TYPE string, "  Depreciação Acum. Anos Anteriores: 01 – FISCAL – BRL
+        ord_dep_acum_30    TYPE string, "  Depreciação Acum. Anos Anteriores: 30 - MOEDA DO GRUPO
+        ord_dep_lanc_01    TYPE string, "  Depreciação Lançada Ano Corrente: 01 – FISCAL – BRL
+        ord_dep_lanc_30    TYPE string, "  Depreciação Lançada Ano Corrente: 30 - MOEDA DO GRUPO
+        texto              TYPE string, "  TEXTO SO10
+      END OF ty_layout .
+    TYPES:
+      tt_arquivo TYPE STANDARD TABLE OF ty_layout .
+
+    CONSTANTS cg_obj_ballog TYPE bal_s_log-object VALUE 'ZCARGAS' ##NO_TEXT.
+    CONSTANTS cg_subobj_ballog TYPE bal_s_log-subobject VALUE 'ZAA_013' ##NO_TEXT.
+    CONSTANTS cg_extnumber_ballog TYPE bal_s_log-extnumber VALUE 'Carga' ##NO_TEXT.
+    CONSTANTS cg_estrutura_ballog TYPE string VALUE 'ZSAA_008' ##NO_TEXT.
+    CONSTANTS cg_fid TYPE thead-tdid VALUE 'XLTX' ##NO_TEXT.
+    CONSTANTS cg_fobject TYPE thead-tdobject VALUE 'ANLA' ##NO_TEXT.
+    CONSTANTS cg_nores_livres TYPE i VALUE 5 ##NO_TEXT.
+
+*    CONSTANTS cg_estrutura_ballog TYPE string VALUE 'ZSSD_003' ##NO_TEXT.
+    METHODS iniciar_migracao
+      IMPORTING
+        !iv_dir_ent_local TYPE rlgrap-filename OPTIONAL
+        !iv_dir_ent_serv  TYPE rlgrap-filename OPTIONAL
+        !iv_dir_sai_local TYPE rlgrap-filename OPTIONAL
+        !iv_dir_sai_serv  TYPE rlgrap-filename OPTIONAL
+        !iv_teste         TYPE abap_bool OPTIONAL
+        !iv_cabecalho     TYPE abap_bool OPTIONAL
+        !iv_anoatual      TYPE abap_bool OPTIONAL
+        !iv_anosant       TYPE abap_bool OPTIONAL
+        !iv_dtref         TYPE pbr_anovg
+        !iv_ignorar       TYPE abap_bool
+      RETURNING
+        VALUE(ro_classe)  TYPE REF TO zclaa_mig_ativos_imob
+      RAISING
+        cx_idm_error .
+    CLASS-METHODS visualizar_bal_log_ext
+      IMPORTING
+        !iv_dt_ini TYPE bal_s_log-aldate
+        !iv_dt_fim TYPE bal_s_log-aldate OPTIONAL
+        !iv_hr_ini TYPE bal_s_log-altime
+        !iv_hr_fim TYPE bal_s_log-altime OPTIONAL
+      RAISING
+        cx_idm_error .
+    METHODS realizar_migracao
+      IMPORTING
+        !it_arquivo      TYPE zcl_utilities=>tt_arquivo
+        !iv_anoatual     TYPE abap_bool OPTIONAL
+        !iv_anosant      TYPE abap_bool OPTIONAL
+        !iv_dtref        TYPE pbr_anovg OPTIONAL
+        !iv_teste        TYPE abap_bool OPTIONAL
+        !iv_ignorar      TYPE abap_bool OPTIONAL
+      EXPORTING
+        !et_return       TYPE bapiret2_t
+        !et_arquivo_erro TYPE srt_strings
+      RAISING
+        cx_idm_error .
+    METHODS retorno_task_funcao
+      IMPORTING
+        !p_task TYPE clike .
+    CLASS-METHODS marcar_campos_x
+      IMPORTING
+        !is_entrada TYPE any OPTIONAL
+        !it_entrada TYPE ANY TABLE OPTIONAL
+      EXPORTING
+        !es_saida   TYPE any
+        !et_saida   TYPE ANY TABLE .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+
+    DATA og_log TYPE REF TO zcl_bal_log .
+    DATA vg_origem_arquivo TYPE char1 .
+    DATA vg_dir_entrada TYPE string .
+    DATA vg_dir_saida TYPE string .
+    DATA vg_dt_log TYPE bal_s_log-aldate .
+    DATA vg_hr_log TYPE bal_s_log-altime .
+    DATA vg_teste TYPE abap_bool .
+    DATA vg_cabecalho TYPE abap_bool .
+    DATA vg_exec_erro TYPE abap_bool .
+    DATA vg_anoatual TYPE abap_bool .
+    DATA vg_anosant TYPE abap_bool .
+    DATA vg_dtref TYPE pbr_anovg .
+    DATA vg_ignorar TYPE abap_bool .
+    DATA vg_tasks_ativas TYPE i .
+    DATA vg_tasks_concluidas TYPE i .
+    DATA vg_percentual TYPE i .
+    DATA tg_arquivo_base TYPE tt_arquivo .
+    DATA tg_arquivo_export TYPE tt_arquivo .
+    DATA tg_arquivo_export_func TYPE srt_strings .
+    DATA sg_header TYPE string .
+
+    METHODS montar_arquivo_anterior
+      IMPORTING
+        !it_arquivo TYPE zcl_utilities=>tt_arquivo
+      EXPORTING
+        !et_return  TYPE bapiret2_t .
+    METHODS montar_arquivo_atual
+      IMPORTING
+        !it_arquivo TYPE zcl_utilities=>tt_arquivo
+      EXPORTING
+        !et_return  TYPE bapiret2_t .
+    METHODS realizar_migracao_tasks
+      IMPORTING
+        !it_arquivo TYPE zcl_utilities=>tt_arquivo
+      RAISING
+        cx_idm_error .
+    METHODS carregar_dados_migracao
+      EXPORTING
+        !et_arquivo TYPE zcl_utilities=>tt_arquivo
+      RAISING
+        cx_idm_error .
+    METHODS iniciar_bal_log
+      RAISING
+        cx_idm_error .
+    METHODS log_add_msg
+      IMPORTING
+        !is_bapiret  TYPE bapiret2 OPTIONAL
+        !it_bapiret  TYPE bapiret2_t OPTIONAL
+        !is_zsaa_008 TYPE zsaa_008 OPTIONAL .
+    METHODS finalizar_execucao
+      RAISING
+        cx_idm_error .
+    METHODS criar_arquivo_export
+      RAISING
+        cx_idm_error .
+    METHODS criar_texto_so10
+      IMPORTING
+        !iv_bukrs  TYPE anla-bukrs
+        !iv_anln1  TYPE anla-anln1
+        !iv_anln2  TYPE anla-anln2
+        !iv_texto  TYPE string
+      EXPORTING
+        !et_return TYPE bapiret2_t
+      RAISING
+        cx_idm_error .
+    METHODS progress_bar
+      IMPORTING
+        !iv_value  TYPE any
+        !iv_tabix  TYPE i
+        !iv_nlines TYPE i .
+ENDCLASS.
+
+
+
+CLASS zclaa_mig_ativos_imob IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->CARREGAR_DADOS_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [<---] ET_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD carregar_dados_migracao.
+    CASE me->vg_origem_arquivo.
+      WHEN zcl_utilities=>c_origem_local.
+
+*       " Carrega os dados do arquivo na tabela interna.
+        zcl_utilities=>arquivo_pc_itab(
+          EXPORTING
+            iv_caminho   = me->vg_dir_entrada   " Local e nome do arquivo
+          IMPORTING
+            et_arquivo   = et_arquivo
+        ).
+
+      WHEN zcl_utilities=>c_origem_servidor.
+
+*       " Carrega os dados do arquivo na tabela interna.
+        zcl_utilities=>arquivo_servidor_itab(
+          EXPORTING
+            iv_caminho   = me->vg_dir_entrada   " Local e nome do arquivo
+          IMPORTING
+            et_arquivo   = et_arquivo
+        ).
+
+    ENDCASE.
+
+    IF et_arquivo[] IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            id = zcl_utilities=>c_classe_mensagem
+            number = 009 ).
+    ENDIF.
+
+    IF me->vg_cabecalho EQ abap_true.
+      me->sg_header = et_arquivo[ 1 ].
+      DELETE et_arquivo INDEX 1.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->CRIAR_ARQUIVO_EXPORT
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD criar_arquivo_export.
+    DATA:
+      vl_nome_arq      TYPE string,
+      tl_arquivo_saida TYPE zcl_utilities=>tt_arquivo,
+      tl_arquivo_temp  TYPE truxs_t_text_data.
+
+    CALL FUNCTION 'SAP_CONVERT_TO_CSV_FORMAT'
+      EXPORTING
+        i_field_seperator    = ';'
+        i_line_header        = me->vg_cabecalho
+*       I_FILENAME           =
+*       I_APPL_KEEP          = ' '
+      TABLES
+        i_tab_sap_data       = me->tg_arquivo_export
+      CHANGING
+        i_tab_converted_data = tl_arquivo_temp
+      EXCEPTIONS
+        conversion_failed    = 1
+        OTHERS               = 2.
+
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    APPEND me->sg_header TO tl_arquivo_saida.
+    APPEND LINES OF tl_arquivo_temp[] TO tl_arquivo_saida[].
+    APPEND LINES OF me->tg_arquivo_export_func[] TO tl_arquivo_saida[].
+
+    CONCATENATE 'Erros MIG Valores AA'(001) sy-datum '_' sy-uzeit '.csv' INTO vl_nome_arq.
+
+    IF me->vg_dir_saida IS NOT INITIAL AND me->vg_origem_arquivo EQ zcl_utilities=>c_origem_local.
+      zcl_utilities=>arquivo_itab_pc(
+        EXPORTING
+          iv_caminho = me->vg_dir_saida
+          iv_nome    = vl_nome_arq
+          it_arquivo = tl_arquivo_saida
+      ).
+
+    ELSEIF me->vg_dir_saida IS NOT INITIAL AND me->vg_origem_arquivo EQ zcl_utilities=>c_origem_servidor.
+      zcl_utilities=>arquivo_itab_servidor(
+        EXPORTING
+          iv_caminho = me->vg_dir_saida
+          iv_nome    = vl_nome_arq
+          it_arquivo = tl_arquivo_saida
+      ).
+
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->CRIAR_TEXTO_SO10
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BUKRS                       TYPE        ANLA-BUKRS
+* | [--->] IV_ANLN1                       TYPE        ANLA-ANLN1
+* | [--->] IV_ANLN2                       TYPE        ANLA-ANLN2
+* | [--->] IV_TEXTO                       TYPE        STRING
+* | [<---] ET_RETURN                      TYPE        BAPIRET2_T
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD criar_texto_so10.
+    DATA:
+      vl_pos   TYPE i,
+      vl_fname TYPE thead-tdname,
+      tl_lines TYPE STANDARD TABLE OF tline,
+      wl_line  LIKE LINE OF tl_lines.
+
+****************************************************************************************
+*	  " Quebra o texto em 132 posições,  de acordo com as definições de linhas da função.
+****************************************************************************************
+    DATA(vl_tam) = strlen( iv_texto ).
+    DO.
+      IF vl_tam > 132.
+        wl_line-tdline = iv_texto+vl_pos(132).
+        ADD 132 TO vl_pos.
+        SUBTRACT 132 FROM vl_tam.
+      ELSE.
+        wl_line-tdline = iv_texto+vl_pos(vl_tam).
+        CLEAR: vl_tam.
+      ENDIF.
+      APPEND wl_line TO tl_lines.
+      IF vl_tam IS INITIAL.
+        EXIT.
+      ENDIF.
+    ENDDO.
+
+*************************************************************************************
+*	  " Função para criação de textos na SO10
+*************************************************************************************
+    vl_fname = |{ iv_bukrs }{ iv_anln1 }{ iv_anln2 }|.
+    CALL FUNCTION 'CREATE_TEXT'
+      EXPORTING
+        fid       = me->cg_fid
+        flanguage = sy-langu
+        fname     = vl_fname
+        fobject   = me->cg_fobject
+      TABLES
+        flines    = tl_lines
+      EXCEPTIONS
+        no_init   = 1
+        no_save   = 2
+        OTHERS    = 3.
+    IF sy-subrc NE 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          messages = VALUE #(
+  ( id = 'ZMIG' type = 'E' number = 047 message_v1 = iv_anln1 message_v2 = iv_anln2 ) " Ocorreu um erro ao gerar o texto para &1/&2
+  ( id = sy-msgid type = sy-msgty number = sy-msgno message_v1 = sy-msgv1 message_v2 = sy-msgv2
+                                                    message_v3 = sy-msgv3 message_v4 = sy-msgv4 ) ).
+    ELSE.
+*     " Texto criado com sucesso para &1/&2
+*      me->log_add_msg( is_bapiret = VALUE #( id = 'ZMIG' type = 'S' number = 048 message_v1 = iv_anln1 message_v2 = iv_anln2 )  ).
+      APPEND VALUE #( id = 'ZMIG' type = 'S' number = 048 message_v1 = iv_anln1 message_v2 = iv_anln2 ) TO et_return.
+*************************************************************************************
+*     " Atualiza o campo "XLTXID" na ANLA, informando que o registro contém TEXTO.
+*************************************************************************************
+      IF me->vg_teste NE abap_true.
+        UPDATE anla
+           SET xltxid = abap_true
+         WHERE bukrs = iv_bukrs
+           AND anln1 = iv_anln1
+           AND anln2 = iv_anln2.
+
+        COMMIT WORK.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->FINALIZAR_EXECUCAO
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD finalizar_execucao.
+    me->og_log->salvar( ).
+
+    IF me->tg_arquivo_export[] IS NOT INITIAL OR me->tg_arquivo_export_func[] IS NOT INITIAL.
+      me->criar_arquivo_export( ).
+    ENDIF.
+
+    IF sy-batch EQ abap_false.
+      TRY .
+          me->og_log->display_log( ).
+        CATCH cx_oo_message INTO DATA(ol_msg).
+      ENDTRY.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->INICIAR_BAL_LOG
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD iniciar_bal_log.
+    DATA:
+      wl_log_struc       TYPE bal_s_log.
+
+    TRY .
+        me->og_log = NEW zcl_bal_log(
+          log_struc       = VALUE #(
+          extnumber       = me->cg_extnumber_ballog
+          object          = me->cg_obj_ballog
+          subobject       = me->cg_subobj_ballog
+          aldate          = me->vg_dt_log
+          altime          = me->vg_hr_log
+          aluser          = sy-uname
+          altcode         = sy-tcode
+          alprog          = sy-cprog
+          )
+          adicional_struc = me->cg_estrutura_ballog
+        ).
+
+      CATCH cx_oo_message.
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #( type = 'E' id = zcl_utilities=>c_classe_mensagem number = 003 message_v1 = me->cg_obj_ballog message_v2 = me->cg_subobj_ballog ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCLAA_MIG_ATIVOS_IMOB->INICIAR_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DIR_ENT_LOCAL               TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_ENT_SERV                TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_SAI_LOCAL               TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_DIR_SAI_SERV                TYPE        RLGRAP-FILENAME(optional)
+* | [--->] IV_TESTE                       TYPE        ABAP_BOOL(optional)
+* | [--->] IV_CABECALHO                   TYPE        ABAP_BOOL(optional)
+* | [--->] IV_ANOATUAL                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_ANOSANT                     TYPE        ABAP_BOOL(optional)
+* | [--->] IV_DTREF                       TYPE        PBR_ANOVG
+* | [--->] IV_IGNORAR                     TYPE        ABAP_BOOL
+* | [<-()] RO_CLASSE                      TYPE REF TO ZCLAA_MIG_ATIVOS_IMOB
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD iniciar_migracao.
+********************************************************************************************************
+*** Sempre em que houver algum tipo de erro durante a execução, o RAISE EXCEPTION será acionado.
+********************************************************************************************************
+
+    me->iniciar_bal_log( ).
+
+    me->vg_teste = iv_teste.
+    me->vg_cabecalho = iv_cabecalho.
+    me->vg_anoatual = iv_anoatual.
+    me->vg_anosant  = iv_anosant.
+
+*   " Verifica a origem do arquivo, de acordo com os dados inseridos na entrada do programa.
+    IF iv_dir_ent_local IS NOT INITIAL.
+      me->vg_dir_entrada  = iv_dir_ent_local.
+      me->vg_dir_saida    = iv_dir_sai_local.
+      me->vg_origem_arquivo = zcl_utilities=>c_origem_local.
+
+    ELSE.
+      me->vg_dir_entrada  = iv_dir_ent_serv.
+      me->vg_dir_saida    = iv_dir_sai_serv.
+      me->vg_origem_arquivo = zcl_utilities=>c_origem_servidor.
+
+    ENDIF.
+
+    me->vg_dtref = iv_dtref.
+    me->vg_ignorar = iv_ignorar.
+
+    TRY .
+        me->carregar_dados_migracao( IMPORTING et_arquivo = DATA(tl_arquivo) ).
+        me->realizar_migracao_tasks( it_arquivo = tl_arquivo ).
+
+        me->log_add_msg( is_bapiret = VALUE #( id = zcl_utilities=>c_classe_mensagem  type = 'S' number = 008 ) ). " Carga realizada com sucesso
+
+      CATCH cx_idm_error INTO DATA(ol_error).
+
+        me->log_add_msg(
+          is_bapiret       = ol_error->message
+          it_bapiret       = ol_error->messages
+        ).
+
+        me->finalizar_execucao( ).
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = ol_error->message.
+    ENDTRY.
+
+    me->finalizar_execucao( ).
+
+    ro_classe = me.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->LOG_ADD_MSG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_BAPIRET                     TYPE        BAPIRET2(optional)
+* | [--->] IT_BAPIRET                     TYPE        BAPIRET2_T(optional)
+* | [--->] IS_ZSAA_008                    TYPE        ZSAA_008(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD log_add_msg.
+    IF is_bapiret IS NOT INITIAL.
+      me->og_log->add_msg_bapiret( is_bapiret = is_bapiret dados_adicionais = is_zsaa_008 ). "dados_adicionais = sl_log_adicional ).
+    ENDIF.
+
+    IF it_bapiret[] IS NOT INITIAL.
+      me->og_log->add_msg_table( bapiret = it_bapiret dados_adicionais = is_zsaa_008 ). "dados_adicionais = sl_log_adicional ).
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCLAA_MIG_ATIVOS_IMOB=>MARCAR_CAMPOS_X
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_ENTRADA                     TYPE        ANY(optional)
+* | [--->] IT_ENTRADA                     TYPE        ANY TABLE(optional)
+* | [<---] ES_SAIDA                       TYPE        ANY
+* | [<---] ET_SAIDA                       TYPE        ANY TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD marcar_campos_x.
+    FIELD-SYMBOLS: <campo_entrada> TYPE any,
+                   <campo_saida>   TYPE any.
+
+    IF is_entrada IS NOT INITIAL.
+      DATA(ol_typedescr) = cl_abap_structdescr=>describe_by_data( is_entrada ).
+
+      IF ol_typedescr->kind EQ cl_abap_typedescr=>kind_struct.
+        DATA(ol_structdescr) = CAST cl_abap_structdescr( ol_typedescr ).
+        DATA(tl_comp) = ol_structdescr->get_components( ).
+
+        LOOP AT tl_comp ASSIGNING FIELD-SYMBOL(<fs_comp>).
+          UNASSIGN <campo_entrada>.
+
+          ASSIGN COMPONENT <fs_comp>-name OF STRUCTURE is_entrada TO <campo_entrada>.
+          IF <campo_entrada> IS ASSIGNED AND <campo_entrada> IS NOT INITIAL .
+            UNASSIGN <campo_saida>.
+
+            ASSIGN COMPONENT <fs_comp>-name OF STRUCTURE es_saida TO <campo_saida>.
+            IF <campo_saida> IS ASSIGNED.
+              <campo_saida> = abap_true.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+
+    IF it_entrada[] IS NOT INITIAL.
+      DATA ol_workarea TYPE REF TO data.
+      FIELD-SYMBOLS <fs_saida> TYPE any.
+
+      CREATE DATA ol_workarea LIKE LINE OF et_saida.
+      ASSIGN ol_workarea->* TO <fs_saida>.
+
+      ol_typedescr = cl_abap_tabledescr=>describe_by_data( it_entrada ).
+      DATA(ol_typedescr_saida) = cl_abap_tabledescr=>describe_by_data( et_saida ).
+
+      IF ol_typedescr->kind EQ cl_abap_typedescr=>kind_table.
+        DATA(ol_tabledescr) = CAST cl_abap_tabledescr( ol_typedescr ).
+        ol_structdescr ?= ol_tabledescr->get_table_line_type( ).
+        tl_comp = ol_structdescr->get_components( ).
+
+        DATA(ol_tabledescr_saida) = CAST cl_abap_tabledescr( ol_typedescr_saida ).
+        ol_structdescr ?= ol_tabledescr_saida->get_table_line_type( ).
+        DATA(tl_ddic_saida) = ol_structdescr->get_ddic_field_list( ).
+
+        LOOP AT it_entrada ASSIGNING FIELD-SYMBOL(<fs_entrada>).
+          LOOP AT tl_comp ASSIGNING <fs_comp>.
+            UNASSIGN <campo_entrada>.
+
+            ASSIGN COMPONENT <fs_comp>-name OF STRUCTURE <fs_entrada> TO <campo_entrada>.
+            IF <campo_entrada> IS ASSIGNED AND <campo_entrada> IS NOT INITIAL .
+              UNASSIGN <campo_saida>.
+
+              ASSIGN COMPONENT <fs_comp>-name OF STRUCTURE <fs_saida> TO <campo_saida>.
+              IF <campo_saida> IS ASSIGNED.
+                READ TABLE tl_ddic_saida INTO DATA(wl_ddic_saida) WITH KEY fieldname = <fs_comp>-name.
+                CASE wl_ddic_saida-inttype.
+                  WHEN 'N'.
+                    <campo_saida> = <campo_entrada>.
+                  WHEN OTHERS.
+                    <campo_saida> = abap_true.
+                ENDCASE.
+              ENDIF.
+            ENDIF.
+          ENDLOOP.
+
+          IF <fs_saida> IS NOT INITIAL.
+            INSERT <fs_saida> INTO TABLE et_saida.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->MONTAR_ARQUIVO_ANTERIOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* | [<---] ET_RETURN                      TYPE        BAPIRET2_T
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD montar_arquivo_anterior.
+    DATA:
+      vl_cpf   TYPE lfa1-stcd2,
+      vl_cnpj  TYPE char14, "lfa1-stcd1.
+      vl_lifnr TYPE lfa1-lifnr,
+      vl_erro  TYPE abap_bool.
+
+    DATA wl_arquivo_base LIKE LINE OF me->tg_arquivo_base.
+    LOOP AT it_arquivo INTO DATA(wl_arquivo).
+      CLEAR: vl_lifnr, wl_arquivo_base, vl_cpf, vl_cnpj, vl_erro.
+
+      SPLIT wl_arquivo AT ';' INTO wl_arquivo_base-assetclass
+                                   wl_arquivo_base-companycode
+                                   wl_arquivo_base-descript
+                                   wl_arquivo_base-descript2
+                                   wl_arquivo_base-txtimob
+                                   wl_arquivo_base-serial_no
+                                   wl_arquivo_base-invent_no
+                                   wl_arquivo_base-quantity
+                                   wl_arquivo_base-base_uom
+                                   wl_arquivo_base-history
+                                   wl_arquivo_base-date_inv
+                                   wl_arquivo_base-note_inv
+                                   wl_arquivo_base-include_in_list
+                                   wl_arquivo_base-aktiv
+                                   wl_arquivo_base-costcenter
+                                   wl_arquivo_base-resp_cctr
+                                   wl_arquivo_base-intern_ord
+                                   wl_arquivo_base-plant
+                                   wl_arquivo_base-location
+                                   wl_arquivo_base-room
+                                   wl_arquivo_base-plate_no
+                                   wl_arquivo_base-person_no
+                                   wl_arquivo_base-wbs_element_cost
+                                   wl_arquivo_base-rl_est_key
+                                   wl_arquivo_base-shutdown
+                                   wl_arquivo_base-evalgroup1
+                                   wl_arquivo_base-evalgroup2
+                                   wl_arquivo_base-evalgroup3
+                                   wl_arquivo_base-evalgroup4
+                                   wl_arquivo_base-evalgroup5
+                                   wl_arquivo_base-agrup_imob
+                                   wl_arquivo_base-num_equip
+                                   wl_arquivo_base-categoria
+                                   wl_arquivo_base-tipo_obj
+                                   wl_arquivo_base-denom_obj
+                                   wl_arquivo_base-vendor_no
+                                   wl_arquivo_base-manufacturer
+                                   wl_arquivo_base-trade_id
+                                   wl_arquivo_base-cod_imob_novo
+                                   wl_arquivo_base-purch_new
+                                   wl_arquivo_base-country
+                                   wl_arquivo_base-type_name
+                                   wl_arquivo_base-exercicio
+                                   wl_arquivo_base-vlr_aquisicao
+                                   wl_arquivo_base-ord_invest
+                                   wl_arquivo_base-elem_pep_proj_inv
+                                   wl_arquivo_base-ulife_yrs_01
+                                   wl_arquivo_base-ulife_yrs_30
+                                   wl_arquivo_base-ulife_prds_01
+                                   wl_arquivo_base-ulife_prds_30
+                                   wl_arquivo_base-odep_start_date_01
+                                   wl_arquivo_base-odep_start_date_30
+                                   wl_arquivo_base-exp_ulife_yrs_01
+                                   wl_arquivo_base-exp_ulife_yrs_30
+                                   wl_arquivo_base-exp_ulife_prds_01
+                                   wl_arquivo_base-exp_ulife_prds_30
+                                   wl_arquivo_base-acq_value_01
+                                   wl_arquivo_base-acq_value_30
+                                   wl_arquivo_base-ord_dep_acum_01
+                                   wl_arquivo_base-ord_dep_acum_30
+                                   wl_arquivo_base-ord_dep_lanc_01
+                                   wl_arquivo_base-ord_dep_lanc_30
+                                   wl_arquivo_base-texto.
+
+      REPLACE ALL OCCURRENCES OF '.' IN:  wl_arquivo_base-acq_value_01       WITH space,
+                                          wl_arquivo_base-acq_value_30       WITH space,
+                                          wl_arquivo_base-ord_dep_acum_01    WITH space,
+                                          wl_arquivo_base-ord_dep_acum_30    WITH space,
+                                          wl_arquivo_base-ord_dep_lanc_01    WITH space,
+                                          wl_arquivo_base-ord_dep_lanc_30    WITH space.
+
+      REPLACE ALL OCCURRENCES OF ',' IN:  wl_arquivo_base-acq_value_01       WITH '.' ,
+                                          wl_arquivo_base-acq_value_30       WITH '.' ,
+                                          wl_arquivo_base-ord_dep_acum_01    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_acum_30    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_lanc_01    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_lanc_30    WITH '.'.
+
+      CONDENSE: wl_arquivo_base-acq_value_01          NO-GAPS,
+                wl_arquivo_base-acq_value_30          NO-GAPS,
+                wl_arquivo_base-ord_dep_acum_01       NO-GAPS,
+                wl_arquivo_base-ord_dep_acum_30       NO-GAPS,
+                wl_arquivo_base-ord_dep_lanc_01       NO-GAPS,
+                wl_arquivo_base-ord_dep_lanc_30       NO-GAPS.
+
+
+*************************************************************************************
+*	    " Ajuste dos campos de DATA
+*************************************************************************************
+      IF wl_arquivo_base-date_inv IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-date_inv ) LT 8.
+          wl_arquivo_base-date_inv = |{ wl_arquivo_base-date_inv+3 }{ wl_arquivo_base-date_inv+1(2) }0{ wl_arquivo_base-date_inv(1) }|.
+        ELSE.
+          wl_arquivo_base-date_inv = |{ wl_arquivo_base-date_inv+4 }{ wl_arquivo_base-date_inv+2(2) }{ wl_arquivo_base-date_inv(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-aktiv IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-aktiv ) LT 8.
+          wl_arquivo_base-aktiv = |{ wl_arquivo_base-aktiv+3 }{ wl_arquivo_base-aktiv+1(2) }0{ wl_arquivo_base-aktiv(1) }|.
+        ELSE.
+          wl_arquivo_base-aktiv = |{ wl_arquivo_base-aktiv+4 }{ wl_arquivo_base-aktiv+2(2) }{ wl_arquivo_base-aktiv(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-odep_start_date_01 IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-odep_start_date_01 ) LT 8.
+          wl_arquivo_base-odep_start_date_01 = |{ wl_arquivo_base-odep_start_date_01+3 }{ wl_arquivo_base-odep_start_date_01+1(2) }0{ wl_arquivo_base-odep_start_date_01(1) }|.
+        ELSE.
+          wl_arquivo_base-odep_start_date_01 = |{ wl_arquivo_base-odep_start_date_01+4 }{ wl_arquivo_base-odep_start_date_01+2(2) }{ wl_arquivo_base-odep_start_date_01(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-odep_start_date_30 IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-odep_start_date_30 ) LT 8.
+          wl_arquivo_base-odep_start_date_30 = |{ wl_arquivo_base-odep_start_date_30+3 }{ wl_arquivo_base-odep_start_date_30+1(2) }0{ wl_arquivo_base-odep_start_date_30(1) }|.
+        ELSE.
+          wl_arquivo_base-odep_start_date_30 = |{ wl_arquivo_base-odep_start_date_30+4 }{ wl_arquivo_base-odep_start_date_30+2(2) }{ wl_arquivo_base-odep_start_date_30(2) }|.
+        ENDIF.
+      ENDIF.
+
+*************************************************************************************
+*	    " Tratamento de CPF/CNPJ
+*************************************************************************************
+      REPLACE ALL OCCURRENCES OF REGEX '([^\d])' IN wl_arquivo_base-vendor_no WITH ''. " Remove pontos.
+
+      CLEAR: vl_cpf , vl_cnpj.
+      IF strlen( wl_arquivo_base-vendor_no ) LE 11.
+        vl_cpf = wl_arquivo_base-vendor_no.
+        vl_cpf = |{ vl_cpf ALPHA = IN }|.
+
+        CLEAR wl_arquivo_base-vendor_no.
+
+        IF vl_cpf IS NOT INITIAL.
+          SELECT SINGLE lifnr
+            INTO vl_lifnr
+            FROM lfa1
+            WHERE stcd2 EQ vl_cpf.
+
+          IF vl_lifnr IS NOT INITIAL.
+            wl_arquivo_base-vendor_no = vl_lifnr.
+          ELSEIF me->vg_ignorar EQ abap_false.
+            vl_erro = abap_true.
+            APPEND VALUE #( id = 'ZAA' number = 028 type = 'E' message_v1 = 'CPF' message_v2 = vl_cpf ) TO et_return.
+          ENDIF.
+        ENDIF.
+
+      ELSE. "wl_arquivo_base-vendor_no LE 14.
+        vl_cnpj = wl_arquivo_base-vendor_no.
+        vl_cnpj = |{ vl_cnpj ALPHA = IN }|.
+
+        CLEAR wl_arquivo_base-vendor_no.
+
+        IF vl_cnpj IS NOT INITIAL.
+          SELECT SINGLE lifnr
+            INTO vl_lifnr
+            FROM lfa1
+            WHERE stcd1 EQ vl_cnpj.
+
+          IF vl_lifnr IS NOT INITIAL.
+            wl_arquivo_base-vendor_no = vl_lifnr.
+          ELSEIF me->vg_ignorar EQ abap_false.
+            vl_erro = abap_true.
+            APPEND VALUE #( id = 'ZAA' number = 028 type = 'E' message_v1 = 'CNPJ' message_v2 = vl_cnpj ) TO et_return.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+*      wl_arquivo_base-subnumber = |{ wl_arquivo_base-subnumber ALPHA = IN }|.
+      IF vl_erro EQ abap_true.
+        APPEND wl_arquivo_base TO me->tg_arquivo_export.
+      ELSE.
+        APPEND wl_arquivo_base TO me->tg_arquivo_base.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->MONTAR_ARQUIVO_ATUAL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* | [<---] ET_RETURN                      TYPE        BAPIRET2_T
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD montar_arquivo_atual.
+    DATA:
+      vl_cpf   TYPE lfa1-stcd2,
+      vl_cnpj  TYPE char14, "lfa1-stcd1.
+      vl_lifnr TYPE lfa1-lifnr,
+      vl_erro  TYPE abap_bool.
+
+    DATA wl_arquivo_base LIKE LINE OF me->tg_arquivo_base.
+    LOOP AT it_arquivo INTO DATA(wl_arquivo).
+      CLEAR: vl_lifnr, wl_arquivo_base, vl_cpf, vl_cnpj, vl_erro.
+
+      SPLIT wl_arquivo AT ';' INTO wl_arquivo_base-assetclass
+                                   wl_arquivo_base-companycode
+                                   wl_arquivo_base-descript
+                                   wl_arquivo_base-descript2
+                                   wl_arquivo_base-txtimob
+                                   wl_arquivo_base-serial_no
+                                   wl_arquivo_base-invent_no
+                                   wl_arquivo_base-quantity
+                                   wl_arquivo_base-base_uom
+                                   wl_arquivo_base-history
+                                   wl_arquivo_base-date_inv
+                                   wl_arquivo_base-note_inv
+                                   wl_arquivo_base-include_in_list
+                                   wl_arquivo_base-aktiv
+                                   wl_arquivo_base-costcenter
+                                   wl_arquivo_base-resp_cctr
+                                   wl_arquivo_base-intern_ord
+                                   wl_arquivo_base-plant
+                                   wl_arquivo_base-location
+                                   wl_arquivo_base-room
+                                   wl_arquivo_base-plate_no
+                                   wl_arquivo_base-person_no
+                                   wl_arquivo_base-wbs_element_cost
+                                   wl_arquivo_base-rl_est_key
+                                   wl_arquivo_base-shutdown
+                                   wl_arquivo_base-evalgroup1
+                                   wl_arquivo_base-evalgroup2
+                                   wl_arquivo_base-evalgroup3
+                                   wl_arquivo_base-evalgroup4
+                                   wl_arquivo_base-evalgroup5
+                                   wl_arquivo_base-agrup_imob
+                                   wl_arquivo_base-num_equip
+                                   wl_arquivo_base-categoria
+                                   wl_arquivo_base-tipo_obj
+                                   wl_arquivo_base-denom_obj
+                                   wl_arquivo_base-vendor_no
+                                   wl_arquivo_base-manufacturer
+                                   wl_arquivo_base-trade_id
+                                   wl_arquivo_base-cod_imob_novo
+                                   wl_arquivo_base-purch_new
+                                   wl_arquivo_base-country
+                                   wl_arquivo_base-type_name
+                                   wl_arquivo_base-exercicio
+                                   wl_arquivo_base-vlr_aquisicao
+                                   wl_arquivo_base-ord_invest
+                                   wl_arquivo_base-elem_pep_proj_inv
+                                   wl_arquivo_base-ulife_yrs_01
+                                   wl_arquivo_base-ulife_yrs_30
+                                   wl_arquivo_base-ulife_prds_01
+                                   wl_arquivo_base-ulife_prds_30
+                                   wl_arquivo_base-odep_start_date_01
+                                   wl_arquivo_base-odep_start_date_30
+*                                  wl_arquivo_base-exp_ulife_yrs_01
+*                                  wl_arquivo_base-exp_ulife_yrs_30
+*                                  wl_arquivo_base-exp_ulife_prds_01
+*                                  wl_arquivo_base-exp_ulife_prds_30
+                                   wl_arquivo_base-acq_value_01
+                                   wl_arquivo_base-acq_value_30
+*                                  wl_arquivo_base-ord_dep_acum_01
+*                                  wl_arquivo_base-ord_dep_acum_30
+                                   wl_arquivo_base-ord_dep_lanc_01
+                                   wl_arquivo_base-ord_dep_lanc_30
+                                   wl_arquivo_base-texto.
+
+      REPLACE ALL OCCURRENCES OF '.' IN:  wl_arquivo_base-acq_value_01       WITH space,
+                                          wl_arquivo_base-acq_value_30       WITH space,
+                                          wl_arquivo_base-ord_dep_acum_01    WITH space,
+                                          wl_arquivo_base-ord_dep_acum_30    WITH space,
+                                          wl_arquivo_base-ord_dep_lanc_01    WITH space,
+                                          wl_arquivo_base-ord_dep_lanc_30    WITH space.
+
+      REPLACE ALL OCCURRENCES OF ',' IN:  wl_arquivo_base-acq_value_01       WITH '.' ,
+                                          wl_arquivo_base-acq_value_30       WITH '.' ,
+                                          wl_arquivo_base-ord_dep_acum_01    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_acum_30    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_lanc_01    WITH '.' ,
+                                          wl_arquivo_base-ord_dep_lanc_30    WITH '.'.
+
+      CONDENSE: wl_arquivo_base-acq_value_01          NO-GAPS,
+                wl_arquivo_base-acq_value_30          NO-GAPS,
+                wl_arquivo_base-ord_dep_acum_01       NO-GAPS,
+                wl_arquivo_base-ord_dep_acum_30       NO-GAPS,
+                wl_arquivo_base-ord_dep_lanc_01       NO-GAPS,
+                wl_arquivo_base-ord_dep_lanc_30       NO-GAPS.
+
+*************************************************************************************
+*	    " Ajuste dos campos de DATA
+*************************************************************************************
+      IF wl_arquivo_base-date_inv IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-date_inv ) LT 8.
+          wl_arquivo_base-date_inv = |{ wl_arquivo_base-date_inv+3 }{ wl_arquivo_base-date_inv+1(2) }0{ wl_arquivo_base-date_inv(1) }|.
+        ELSE.
+          wl_arquivo_base-date_inv = |{ wl_arquivo_base-date_inv+4 }{ wl_arquivo_base-date_inv+2(2) }{ wl_arquivo_base-date_inv(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-aktiv IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-aktiv ) LT 8.
+          wl_arquivo_base-aktiv = |{ wl_arquivo_base-aktiv+3 }{ wl_arquivo_base-aktiv+1(2) }0{ wl_arquivo_base-aktiv(1) }|.
+        ELSE.
+          wl_arquivo_base-aktiv = |{ wl_arquivo_base-aktiv+4 }{ wl_arquivo_base-aktiv+2(2) }{ wl_arquivo_base-aktiv(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-odep_start_date_01 IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-odep_start_date_01 ) LT 8.
+          wl_arquivo_base-odep_start_date_01 = |{ wl_arquivo_base-odep_start_date_01+3 }{ wl_arquivo_base-odep_start_date_01+1(2) }0{ wl_arquivo_base-odep_start_date_01(1) }|.
+        ELSE.
+          wl_arquivo_base-odep_start_date_01 = |{ wl_arquivo_base-odep_start_date_01+4 }{ wl_arquivo_base-odep_start_date_01+2(2) }{ wl_arquivo_base-odep_start_date_01(2) }|.
+        ENDIF.
+      ENDIF.
+
+      IF wl_arquivo_base-odep_start_date_30 IS NOT INITIAL.
+        IF strlen( wl_arquivo_base-odep_start_date_30 ) LT 8.
+          wl_arquivo_base-odep_start_date_30 = |{ wl_arquivo_base-odep_start_date_30+3 }{ wl_arquivo_base-odep_start_date_30+1(2) }0{ wl_arquivo_base-odep_start_date_30(1) }|.
+        ELSE.
+          wl_arquivo_base-odep_start_date_30 = |{ wl_arquivo_base-odep_start_date_30+4 }{ wl_arquivo_base-odep_start_date_30+2(2) }{ wl_arquivo_base-odep_start_date_30(2) }|.
+        ENDIF.
+      ENDIF.
+
+*************************************************************************************
+*	    " Tratamento de CPF/CNPJ
+*************************************************************************************
+      REPLACE ALL OCCURRENCES OF REGEX '([^\d])' IN wl_arquivo_base-vendor_no WITH ''. " Remove pontos.
+
+      CLEAR: vl_cpf , vl_cnpj.
+      IF strlen( wl_arquivo_base-vendor_no ) LE 11.
+        vl_cpf = wl_arquivo_base-vendor_no.
+        vl_cpf = |{ vl_cpf ALPHA = IN }|.
+
+        CLEAR wl_arquivo_base-vendor_no.
+
+        IF vl_cpf IS NOT INITIAL.
+          SELECT SINGLE lifnr
+            INTO vl_lifnr
+            FROM lfa1
+            WHERE stcd2 EQ vl_cpf.
+
+          IF vl_lifnr IS NOT INITIAL.
+            wl_arquivo_base-vendor_no = vl_lifnr.
+          ELSEIF me->vg_ignorar EQ abap_false.
+            vl_erro = abap_true.
+            APPEND VALUE #( id = 'ZAA' number = 028 type = 'E' message_v1 = 'CPF' message_v2 = vl_cpf ) TO et_return.
+          ENDIF.
+        ENDIF.
+
+      ELSE. "wl_arquivo_base-vendor_no LE 14.
+        vl_cnpj = wl_arquivo_base-vendor_no.
+        vl_cnpj = |{ vl_cnpj ALPHA = IN }|.
+
+        CLEAR wl_arquivo_base-vendor_no.
+
+        IF vl_cnpj IS NOT INITIAL.
+          SELECT SINGLE lifnr
+            INTO vl_lifnr
+            FROM lfa1
+            WHERE stcd1 EQ vl_cnpj.
+
+          IF vl_lifnr IS NOT INITIAL.
+            wl_arquivo_base-vendor_no = vl_lifnr.
+          ELSEIF me->vg_ignorar EQ abap_false.
+            vl_erro = abap_true.
+            APPEND VALUE #( id = 'ZAA' number = 028 type = 'E' message_v1 = 'CNPJ' message_v2 = vl_cnpj ) TO et_return.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+*      wl_arquivo_base-subnumber = |{ wl_arquivo_base-subnumber ALPHA = IN }|.
+      IF vl_erro EQ abap_true.
+        APPEND wl_arquivo_base TO me->tg_arquivo_export.
+      ELSE.
+        APPEND wl_arquivo_base TO me->tg_arquivo_base.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->PROGRESS_BAR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_VALUE                       TYPE        ANY
+* | [--->] IV_TABIX                       TYPE        I
+* | [--->] IV_NLINES                      TYPE        I
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD progress_bar.
+    DATA: vl_text         TYPE c LENGTH 40,
+          vl_percentage   TYPE p,
+          vl_percent_char TYPE c LENGTH 3.
+
+    vl_percentage = ( iv_tabix / iv_nlines ) * 100.
+    vl_percent_char = vl_percentage.
+
+    SHIFT vl_percent_char LEFT DELETING LEADING ' '.
+    CONCATENATE iv_value vl_percent_char '% Carregados'(003) INTO vl_text.
+
+* This check needs to be in otherwise when looping around big tables
+* SAP will re-display indicator too many times causing report to run
+* very slow. (No need to re-display same percentage anyway)
+
+    IF vl_percentage GT me->vg_percentual OR iv_tabix EQ 1.
+      CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+        EXPORTING
+          percentage = vl_percentage
+          text       = vl_text.
+
+      me->vg_percentual = vl_percentage.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCLAA_MIG_ATIVOS_IMOB->REALIZAR_MIGRACAO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* | [--->] IV_ANOATUAL                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_ANOSANT                     TYPE        ABAP_BOOL(optional)
+* | [--->] IV_DTREF                       TYPE        PBR_ANOVG(optional)
+* | [--->] IV_TESTE                       TYPE        ABAP_BOOL(optional)
+* | [--->] IV_IGNORAR                     TYPE        ABAP_BOOL(optional)
+* | [<---] ET_RETURN                      TYPE        BAPIRET2_T
+* | [<---] ET_ARQUIVO_ERRO                TYPE        SRT_STRINGS
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD realizar_migracao.
+
+    DATA:
+      vl_companycode TYPE bapi1022_1-comp_code,
+      vl_asset       TYPE bapi1022_1-assetmaino,
+      vl_subnumber   TYPE bapi1022_1-assetsubno.
+
+    DATA:
+      sl_key                 TYPE bapi1022_key,
+      sl_generaldata         TYPE bapi1022_feglg001,
+      sl_generaldatax        TYPE bapi1022_feglg001x,
+      sl_inventory           TYPE bapi1022_feglg011,
+      sl_inventoryx          TYPE bapi1022_feglg011x,
+      sl_postinginformation  TYPE bapi1022_feglg002,
+      sl_postinginformationx TYPE bapi1022_feglg002x,
+      sl_timedependentdata   TYPE bapi1022_feglg003,
+      sl_timedependentdatax  TYPE bapi1022_feglg003x,
+      sl_allocations         TYPE bapi1022_feglg004,
+      sl_allocationsx        TYPE bapi1022_feglg004x,
+      sl_origin              TYPE bapi1022_feglg009,
+      sl_originx             TYPE bapi1022_feglg009x.
+
+    DATA:
+      tl_depreciationareas  TYPE STANDARD TABLE OF bapi1022_dep_areas,
+      tl_depreciationareasx TYPE STANDARD TABLE OF bapi1022_dep_areasx,
+      tl_cumulatedvalues    TYPE STANDARD TABLE OF bapi1022_cumval,
+      tl_postedvalues       TYPE STANDARD TABLE OF bapi1022_postval,
+      tl_transactions       TYPE STANDARD TABLE OF bapi1022_trtype,
+      tl_return             TYPE STANDARD TABLE OF bapiret2.
+
+    me->vg_ignorar = iv_ignorar.
+
+*************************************************************************************
+*	  " Monta o arquivo de acordo com a lista inserida.
+*************************************************************************************
+    IF iv_anosant EQ abap_true.
+      me->montar_arquivo_anterior(
+        EXPORTING
+          it_arquivo = it_arquivo
+        IMPORTING
+          et_return  = tl_return ).
+    ELSE.
+      me->montar_arquivo_atual(
+        EXPORTING
+          it_arquivo = it_arquivo
+        IMPORTING
+          et_return  = tl_return ).
+    ENDIF.
+
+    APPEND LINES OF tl_return TO et_return.
+
+    LOOP AT me->tg_arquivo_base ASSIGNING FIELD-SYMBOL(<fs_arquivo_base>).
+      CLEAR:
+        vl_companycode, vl_asset, vl_subnumber,
+        sl_key, sl_generaldata, sl_generaldatax, sl_inventory, sl_inventoryx,
+        sl_postinginformation, sl_postinginformationx, sl_timedependentdata,
+        sl_timedependentdatax, sl_allocations, sl_allocationsx, sl_origin, sl_originx.
+
+      FREE: tl_depreciationareas, tl_depreciationareasx, tl_cumulatedvalues, tl_postedvalues, tl_transactions.
+
+*************************************************************************************
+*	    " Inicio da montagem das estruturas.
+*************************************************************************************
+      sl_key-companycode = <fs_arquivo_base>-companycode.
+
+*************************************************************************************
+*	    " GENERALDATA
+*************************************************************************************
+      sl_generaldata = VALUE #(
+        assetclass    = <fs_arquivo_base>-assetclass
+        descript      = <fs_arquivo_base>-descript
+        descript2     = <fs_arquivo_base>-descript2
+        serial_no     = <fs_arquivo_base>-serial_no
+        invent_no     = <fs_arquivo_base>-invent_no
+        quantity      = <fs_arquivo_base>-quantity
+        base_uom      = <fs_arquivo_base>-base_uom
+        base_uom_iso  = <fs_arquivo_base>-base_uom
+        history       = <fs_arquivo_base>-history
+        main_descript = <fs_arquivo_base>-txtimob
+      ).
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_generaldata
+        IMPORTING
+          es_saida   = sl_generaldatax
+       ).
+
+*************************************************************************************
+*	    " INVENTORY
+*************************************************************************************
+      sl_inventory = VALUE #(
+        date              = <fs_arquivo_base>-date_inv
+        note              = <fs_arquivo_base>-note_inv
+        include_in_list   = <fs_arquivo_base>-include_in_list
+      ).
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_inventory
+        IMPORTING
+          es_saida   = sl_inventoryx
+       ).
+
+*************************************************************************************
+*	    " POSTINGINFORMATION
+*************************************************************************************
+      sl_postinginformation = VALUE #( cap_date = <fs_arquivo_base>-aktiv ).
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_postinginformation
+        IMPORTING
+          es_saida   = sl_postinginformationx
+       ).
+
+*************************************************************************************
+*	    "  TIMEDEPENDENTDATA
+*************************************************************************************
+      sl_timedependentdata = VALUE #(
+        costcenter         = <fs_arquivo_base>-costcenter
+        resp_cctr          = <fs_arquivo_base>-resp_cctr
+        intern_ord         = <fs_arquivo_base>-intern_ord
+        plant              = <fs_arquivo_base>-plant
+        location           = <fs_arquivo_base>-location
+        room               = <fs_arquivo_base>-room
+        plate_no           = <fs_arquivo_base>-plate_no
+        person_no          = <fs_arquivo_base>-person_no
+        shutdown           = <fs_arquivo_base>-shutdown
+        wbs_element_cost   = <fs_arquivo_base>-wbs_element_cost
+        rl_est_key         = <fs_arquivo_base>-rl_est_key
+      ).
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_timedependentdata
+        IMPORTING
+          es_saida   = sl_timedependentdatax
+       ).
+
+      CLEAR sl_timedependentdatax-resp_cctr.
+
+*************************************************************************************
+*	    " ALLOCATIONS
+*************************************************************************************
+      sl_allocations = VALUE #(
+        evalgroup1 = <fs_arquivo_base>-evalgroup1
+        evalgroup2 = <fs_arquivo_base>-evalgroup2
+        evalgroup3 = <fs_arquivo_base>-evalgroup3
+        evalgroup4 = <fs_arquivo_base>-evalgroup4
+        evalgroup5 = <fs_arquivo_base>-evalgroup5
+      ).
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_allocations
+        IMPORTING
+          es_saida   = sl_allocationsx
+       ).
+
+*************************************************************************************
+*	    " ORIGIN
+*************************************************************************************
+      sl_origin = VALUE #(
+        vendor_no     = <fs_arquivo_base>-vendor_no
+        manufacturer  = <fs_arquivo_base>-manufacturer
+        purch_new     = <fs_arquivo_base>-purch_new
+        trade_id      = <fs_arquivo_base>-trade_id
+        country       = <fs_arquivo_base>-country
+        type_name     = <fs_arquivo_base>-type_name
+      ).
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          is_entrada = sl_origin
+        IMPORTING
+          es_saida   = sl_originx
+       ).
+
+*************************************************************************************
+*	    " DEPRECIATIONAREAS	- AREA01
+*************************************************************************************
+      APPEND VALUE #(
+        area            = '01'
+        ulife_yrs       = <fs_arquivo_base>-ulife_yrs_01
+        ulife_prds      = <fs_arquivo_base>-ulife_prds_01
+        exp_ulife_yrs   = <fs_arquivo_base>-exp_ulife_yrs_01
+        exp_ulife_prds  = <fs_arquivo_base>-exp_ulife_prds_01
+      ) TO tl_depreciationareas.
+
+      APPEND VALUE #(
+        area          = '01'
+        fisc_year     = iv_dtref "sy-datum(4)
+        ord_dep       = CONV bf_nafag( <fs_arquivo_base>-ord_dep_lanc_01 ) * -1
+        currency_iso  = 'BRL'
+      ) TO tl_postedvalues.
+
+      APPEND VALUE #(
+        area          = '30'
+        fisc_year     = iv_dtref "sy-datum(4)
+        ord_dep       = CONV bf_nafag( <fs_arquivo_base>-ord_dep_lanc_30 ) * -1
+        currency_iso  = 'BRL'
+      ) TO tl_postedvalues.
+
+      IF iv_anoatual EQ abap_true.
+        APPEND VALUE #(
+          area         = '01'
+          fisc_year    = iv_dtref "sy-datum(4)
+          current_no   = 01
+          valuedate    = <fs_arquivo_base>-aktiv
+          assettrtyp   = 'Z99'
+          amount       = <fs_arquivo_base>-acq_value_01
+          currency_iso = 'BRL'
+        ) TO tl_transactions.
+      ELSE.
+*       AREA 01
+        APPEND VALUE #(
+          area         = '01'
+          fisc_year    = iv_dtref "sy-datum(4)
+          acq_value    = <fs_arquivo_base>-acq_value_01
+          ord_dep      = CONV bf_knafa( <fs_arquivo_base>-ord_dep_acum_01 ) * -1
+          currency_iso = 'BRL'
+        ) TO tl_cumulatedvalues.
+
+*       AREA 30
+        APPEND VALUE #(
+          area         = '30'
+          fisc_year    = iv_dtref "sy-datum(4)
+          acq_value    = <fs_arquivo_base>-acq_value_30
+          ord_dep      = CONV bf_knafa( <fs_arquivo_base>-ord_dep_acum_30 ) * -1
+          currency_iso = 'BRL'
+        ) TO tl_cumulatedvalues.
+      ENDIF.
+
+*************************************************************************************
+*	    " DEPRECIATIONAREAS	- AREA30
+*************************************************************************************
+      APPEND VALUE #(
+        area            = '30'
+        ulife_yrs       = <fs_arquivo_base>-ulife_yrs_30
+        ulife_prds      = <fs_arquivo_base>-ulife_prds_30
+        exp_ulife_yrs   = <fs_arquivo_base>-exp_ulife_yrs_30
+        exp_ulife_prds  = <fs_arquivo_base>-exp_ulife_prds_30
+      ) TO tl_depreciationareas.
+
+      zclaa_mig_ativos_imob=>marcar_campos_x(
+        EXPORTING
+          it_entrada = tl_depreciationareas
+        IMPORTING
+          et_saida   = tl_depreciationareasx
+       ).
+
+      FREE tl_return.
+      CALL FUNCTION 'BAPI_FIXEDASSET_OVRTAKE_CREATE'
+        EXPORTING
+          key                 = sl_key
+          testrun             = iv_teste
+          generaldata         = sl_generaldata
+          generaldatax        = sl_generaldatax
+          inventory           = sl_inventory
+          inventoryx          = sl_inventoryx
+          postinginformation  = sl_postinginformation
+          postinginformationx = sl_postinginformationx
+          timedependentdata   = sl_timedependentdata
+          timedependentdatax  = sl_timedependentdatax
+          allocations         = sl_allocations
+          allocationsx        = sl_allocationsx
+          origin              = sl_origin
+          originx             = sl_originx
+        IMPORTING
+          companycode         = vl_companycode
+          asset               = vl_asset
+          subnumber           = vl_subnumber
+        TABLES
+          depreciationareas   = tl_depreciationareas
+          depreciationareasx  = tl_depreciationareasx
+          cumulatedvalues     = tl_cumulatedvalues
+          postedvalues        = tl_postedvalues
+          transactions        = tl_transactions
+          return              = tl_return.
+
+*     " Em caso de erro na execução da função, ROLLBACK.
+      READ TABLE tl_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+      IF sy-subrc EQ 0.
+
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+        APPEND <fs_arquivo_base> TO me->tg_arquivo_export.
+        APPEND LINES OF tl_return TO et_return.
+      ELSE.
+
+*       " Em caso de execução em teste, ROLLBACK.
+        IF iv_teste EQ abap_true.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          APPEND LINES OF tl_return TO et_return.
+**         " Transferência de valores do &1/&2 realziada com sucesso.
+*          APPEND VALUE #(
+*            type = 'S' id = zcl_utilities=>c_classe_mensagem number = 046
+*            message_v1 = vl_asset message_v2 = vl_subnumber
+*          ) TO et_return.
+        ELSE.
+
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = abap_true.
+
+*         " Transferência de valores do &1/&2 realziada com sucesso.
+          APPEND VALUE #(
+            type = 'S' id = zcl_utilities=>c_classe_mensagem number = 046
+            message_v1 = vl_asset message_v2 = vl_subnumber
+          ) TO et_return.
+          APPEND LINES OF tl_return TO et_return.
+        ENDIF.
+      ENDIF.
+
+*************************************************************************************
+*	      " Realiza a criação do texto do imobilizado.
+*************************************************************************************
+      IF vl_asset IS NOT INITIAL AND vl_subnumber IS NOT INITIAL.
+        TRY .
+            DATA tl_return_so10 TYPE bapiret2_t.
+            FREE tl_return_so10.
+            me->criar_texto_so10(
+              EXPORTING
+                iv_bukrs = vl_companycode
+                iv_anln1 = vl_asset
+                iv_anln2 = vl_subnumber
+                iv_texto = <fs_arquivo_base>-texto
+              IMPORTING
+                et_return = tl_return_so10
+            ).
+
+            APPEND LINES OF tl_return_so10 TO et_return.
+          CATCH cx_idm_error INTO DATA(ol_exc).
+
+            APPEND <fs_arquivo_base> TO me->tg_arquivo_export.
+            APPEND LINES OF tl_return TO et_return.
+
+            CONTINUE.
+        ENDTRY.
+      ENDIF.
+
+    ENDLOOP.
+
+    IF me->tg_arquivo_export IS NOT INITIAL.
+      DATA tl_arquivo_novo TYPE truxs_t_text_data.
+      CALL FUNCTION 'SAP_CONVERT_TO_CSV_FORMAT'
+        EXPORTING
+          i_field_seperator    = ';'
+*         i_line_header        = me->vg_cabecalho
+*         I_FILENAME           =
+*         I_APPL_KEEP          = ' '
+        TABLES
+          i_tab_sap_data       = me->tg_arquivo_export
+        CHANGING
+          i_tab_converted_data = tl_arquivo_novo
+        EXCEPTIONS
+          conversion_failed    = 1
+          OTHERS               = 2.
+      IF sy-subrc EQ 0.
+        APPEND LINES OF tl_arquivo_novo TO et_arquivo_erro.
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCLAA_MIG_ATIVOS_IMOB->REALIZAR_MIGRACAO_TASKS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ARQUIVO                     TYPE        ZCL_UTILITIES=>TT_ARQUIVO
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD realizar_migracao_tasks.
+    DATA:
+      tl_arquivo_temp TYPE zcl_utilities=>tt_arquivo.
+***      tl_wplist       TYPE STANDARD TABLE OF wpinfos.
+
+    CLEAR me->vg_exec_erro.
+
+    IF me->vg_teste EQ abap_true.
+      me->log_add_msg( is_bapiret = VALUE #( id = zcl_utilities=>c_classe_mensagem  type = 'S' number = 018 ) ). " Inicio da simulação da execução da carga.
+    ELSE.
+      me->log_add_msg( is_bapiret = VALUE #( id = zcl_utilities=>c_classe_mensagem  type = 'S' number = 010 ) ). " Execução da Carga iniciada
+    ENDIF.
+
+***    CALL FUNCTION 'RZL_SYSTEMWIDE_WPINFO'
+***      TABLES
+***        wplist         = tl_wplist
+***      EXCEPTIONS
+***        argument_error = 1
+***        send_error     = 2
+***        OTHERS         = 3.
+***    IF sy-subrc <> 0.
+***      me->log_add_msg( is_bapiret = VALUE #(  id = sy-msgid number = sy-msgno type = sy-msgty
+***                              message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4 ) ).
+***
+***      RAISE EXCEPTION TYPE cx_idm_error
+***        EXPORTING
+***          message = VALUE #(  id = sy-msgid number = sy-msgno type = sy-msgty
+***                              message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4 ).
+***    ENDIF.
+
+*************************************************************************************
+*	  " Variáveis de controle.
+*************************************************************************************
+    DATA:
+      vl_task            TYPE c LENGTH 15,   " Nome da task
+      vl_tasks_n         TYPE n LENGTH 15,
+      vl_num_linha       TYPE numc10,        " Numero da linha executada.
+      vl_nores           TYPE i,
+      vl_qtd_processos   TYPE i,             " Quantidade de processos em aberto.
+      vl_qtd_loop        TYPE i,             " Quantidade de loops necessários.
+      vl_qtd_max_linhas  TYPE i,             " Quantidade de linhas por loop.
+      vl_qtd_linhas_exec TYPE i,             " Quantidade de linhas executadas.
+      vl_primeira_linha  TYPE sy-tabix.      " Primeira linha do proximo loop do arquivo.
+
+    DESCRIBE TABLE it_arquivo LINES vl_qtd_max_linhas.
+    CLEAR me->vg_percentual.
+
+    LOOP AT it_arquivo ASSIGNING FIELD-SYMBOL(<fs_arquivo>). " FROM vl_primeira_linha.
+      vl_num_linha = sy-tabix.
+      me->progress_bar(
+          iv_value  = CONV string( 'Realizando carga...'(004) )
+          iv_tabix  = sy-tabix
+          iv_nlines = vl_qtd_max_linhas
+      ).
+
+      FREE tl_arquivo_temp.
+      APPEND <fs_arquivo> TO tl_arquivo_temp.
+
+      ADD 1 TO vl_tasks_n.
+      vl_task = vl_tasks_n.
+
+      DO .
+*************************************************************************************
+*	      " Verifica se existem processos em aberto para ele.
+*************************************************************************************
+        CALL FUNCTION 'TH_ARFC_LOCAL_RESOURCES'
+          IMPORTING
+            nores = vl_nores.
+
+*************************************************************************************
+*	      " Caso não possua, fica em LOOP até que um novo processo seja liberado.
+*************************************************************************************
+        IF vl_nores LE me->cg_nores_livres.
+          WAIT UP TO 3 SECONDS.
+          CONTINUE.
+        ENDIF.
+
+*        BREAK 000824351.
+        CALL FUNCTION 'ZMFAA_MIG_ATIVOS_IMOB'
+          STARTING NEW TASK vl_task
+          DESTINATION 'NONE' "IN GROUP 'DEFAULT'
+          CALLING me->retorno_task_funcao ON END OF TASK
+          EXPORTING
+            iv_teste      = me->vg_teste
+            iv_num_linha  = vl_num_linha
+            iv_anoatual   = me->vg_anoatual
+            iv_anosant    = me->vg_anosant
+            iv_dtref      = me->vg_dtref
+            iv_ignorar    = me->vg_ignorar
+            it_arquivo    = tl_arquivo_temp
+          EXCEPTIONS
+            system_failure        = 1
+            communication_failure = 2
+            resource_failure      = 3.
+
+*       " Retorno da função.
+        IF sy-subrc NE 0.
+          WAIT UP TO 2 SECONDS.
+        ELSE.  " Se foi executada com sucesso, vai para o reg seguinte
+          EXIT.
+        ENDIF.
+
+      ENDDO.
+
+*************************************************************************************
+*	    " Registra a quantidade de JOBs executados.
+*************************************************************************************
+      ADD 1 TO me->vg_tasks_ativas.
+
+    ENDLOOP.
+
+****************************************************************************************
+****    " Calcula a quantidade de tasks que poderão ser utilizadas no processo.
+****************************************************************************************
+***    DELETE tl_wplist WHERE: wp_typ NE 'BTC',
+***                            wp_istatus NE 2. " Retorna apenas os em BACKGROUND e em espera.
+***
+***    DESCRIBE TABLE tl_wplist LINES vl_qtd_processos.
+***    vl_qtd_processos = vl_qtd_processos / 2.
+***    vl_qtd_loop = vl_qtd_processos + 1.
+***
+****************************************************************************************
+****    " Calcula a quantidade de linhas que cada arquivo irá possuir.
+****************************************************************************************
+***    DESCRIBE TABLE it_arquivo LINES vl_qtd_max_linhas.
+***    vl_qtd_max_linhas = vl_qtd_max_linhas / vl_qtd_processos.
+***
+***    DO vl_qtd_loop TIMES.
+***      vl_task = sy-index.
+***      CONDENSE vl_task NO-GAPS.
+***
+***      LOOP AT it_arquivo ASSIGNING FIELD-SYMBOL(<fs_arquivo>) FROM vl_primeira_linha.
+***        vl_primeira_linha = sy-tabix. " Controlador da próxima execução
+***
+***        APPEND <fs_arquivo> TO tl_arquivo_temp.
+***
+***        ADD 1 TO vl_qtd_linhas_exec.
+***
+****       " Atingiu a quantidade máxima de linhas permitidas em uma execução.
+***        IF vl_qtd_linhas_exec EQ vl_qtd_max_linhas.
+***          EXIT.
+***        ENDIF.
+***      ENDLOOP.
+***
+***      ADD 1 TO vl_primeira_linha. " A proxima linha sempre será a linha seguinte ao ultimo TABIX.
+***
+****************************************************************************************
+****      " Quando não houver registro para executar.
+****************************************************************************************
+***      IF tl_arquivo_temp[] IS INITIAL.
+***        EXIT.
+***      ENDIF.
+***
+***      ADD 1 TO me->vg_tasks_ativas.
+***
+***      CALL FUNCTION 'ZMFAA_MIG_ATIVOS_IMOB'
+***        STARTING NEW TASK vl_task
+***        DESTINATION 'NONE' "IN GROUP 'DEFAULT'
+***        CALLING me->retorno_task_funcao ON END OF TASK
+***        EXPORTING
+***          iv_teste    = me->vg_teste
+***          iv_anoatual = me->vg_anoatual
+***          iv_anosant  = me->vg_anosant
+***          it_arquivo = tl_arquivo_temp.
+***
+***      CLEAR vl_qtd_linhas_exec.
+***      FREE tl_arquivo_temp.
+***    ENDDO.
+
+*************************************************************************************
+*	  " Aguardar todos os processos terminarem...
+*************************************************************************************
+    WAIT UNTIL me->vg_tasks_concluidas >= me->vg_tasks_ativas.
+    WAIT UP TO 3 SECONDS.
+
+    IF me->vg_exec_erro EQ abap_true.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( id = zcl_utilities=>c_classe_mensagem number = 011 type = 'W' ). " Execução realizada com erros
+
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCLAA_MIG_ATIVOS_IMOB->RETORNO_TASK_FUNCAO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] P_TASK                         TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD retorno_task_funcao.
+    DATA:
+      tl_bapiret      TYPE bapiret2_t,
+      tl_arquivo_erro TYPE srt_strings,
+      sl_zsaa_008     TYPE zsaa_008,
+      vl_num_linha    TYPE numc10.
+
+    TRY .
+
+        DO 100 TIMES.
+          RECEIVE RESULTS FROM FUNCTION 'ZMFAA_MIG_ATIVOS_IMOB'
+            IMPORTING
+              et_bapiret      = tl_bapiret
+              et_arquivo_erro = tl_arquivo_erro
+              ev_num_linha    = vl_num_linha
+            EXCEPTIONS
+              system_failure        = 1
+              communication_failure = 2
+              error_message         = 3
+              system_msg            = 4.
+
+          IF sy-subrc EQ 0.
+            EXIT.
+          ELSE.
+*            WAIT UP TO 2 SECONDS. " Não pode ser executado aqui dentro.
+          ENDIF.
+
+        ENDDO.
+
+      CATCH cx_root INTO DATA(ol_exc).
+    ENDTRY.
+
+*     " Em caso de erro na execução da função, ROLLBACK.
+    READ TABLE tl_bapiret WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc EQ 0.
+      me->vg_exec_erro = abap_true.
+    ENDIF.
+
+    IF vl_num_linha IS NOT INITIAL.
+*      me->log_add_msg( is_bapiret = VALUE #( id = 'ZMIG' number = 051 type = 'S' message_v1 = vl_num_linha ) ).
+      sl_zsaa_008-linha = vl_num_linha.
+    ENDIF.
+
+    IF tl_bapiret[] IS NOT INITIAL.
+      me->log_add_msg( it_bapiret = tl_bapiret is_zsaa_008 = sl_zsaa_008  ).
+    ENDIF.
+
+    IF tl_arquivo_erro[] IS NOT INITIAL.
+      APPEND LINES OF tl_arquivo_erro TO me->tg_arquivo_export_func.
+    ENDIF.
+
+    ADD 1 TO me->vg_tasks_concluidas.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCLAA_MIG_ATIVOS_IMOB=>VISUALIZAR_BAL_LOG_EXT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DT_INI                      TYPE        BAL_S_LOG-ALDATE
+* | [--->] IV_DT_FIM                      TYPE        BAL_S_LOG-ALDATE(optional)
+* | [--->] IV_HR_INI                      TYPE        BAL_S_LOG-ALTIME
+* | [--->] IV_HR_FIM                      TYPE        BAL_S_LOG-ALTIME(optional)
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD visualizar_bal_log_ext.
+
+    DATA:
+      vl_dt_ini TYPE sy-datum,
+      vl_dt_fim TYPE sy-datum,
+      vl_hh_ini TYPE sy-uzeit,
+      vl_hh_fim TYPE sy-uzeit.
+
+    IF iv_dt_ini IS NOT INITIAL.
+      vl_dt_ini = iv_dt_ini.
+    ELSE.
+      vl_dt_ini = sy-datum.
+    ENDIF.
+
+    IF iv_dt_fim IS NOT INITIAL.
+      vl_dt_fim = iv_dt_fim.
+    ELSE.
+      vl_dt_fim = sy-datum.
+    ENDIF.
+
+    IF iv_hr_ini IS NOT INITIAL.
+      vl_hh_ini = iv_hr_ini.
+    ELSE.
+      vl_hh_ini = '000000'.
+    ENDIF.
+
+    IF iv_hr_fim IS NOT INITIAL.
+      vl_hh_fim = iv_hr_fim.
+    ELSE.
+      vl_hh_fim = '235959'.
+    ENDIF.
+
+    TRY .
+
+        DATA(ol_bal_log) = NEW zcl_bal_log( adicional_struc = cg_estrutura_ballog ).
+        ol_bal_log->criterio_pesquisa( i_object          = cg_obj_ballog
+                                       i_subobject       = cg_subobj_ballog
+                                       i_extnumber       = cg_extnumber_ballog
+                                       i_aldate_from     = vl_dt_ini
+                                       i_aldate_to       = vl_dt_fim
+                                       i_altime_from     = vl_hh_ini
+                                       i_altime_to       = vl_hh_fim ).
+
+        ol_bal_log->display_log( CONV string( 'Log de execução da Carga'(002) ) ).
+
+      CATCH cx_oo_message.
+        DATA wl_msg TYPE bapiret2.
+        wl_msg-type = 'E'.
+        wl_msg-id = zcl_utilities=>c_classe_mensagem.
+        wl_msg-number = 012.
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = wl_msg.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
