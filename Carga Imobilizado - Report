@@ -1,0 +1,327 @@
+****************************************************************************************
+*                      Embrapa/Cast                                                    *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 20.12.2018 10:17:11                                                       *
+****************************************************************************************
+* Descrição: Carga de ativos imobilizados
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZAA_013
+*&---------------------------------------------------------------------*
+REPORT zaa_013.
+TABLES: sscrfields.
+
+DATA:
+  vg_aldate_dummy TYPE bal_s_log-aldate,
+  vg_altime_dummy TYPE bal_s_log-altime.
+
+**********************************************************************
+* TELA DE SELEÇÃO
+**********************************************************************
+**********************************************************************
+* DADOS DE ENTRADA DOS ARQUIVOS
+**********************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK entra WITH FRAME TITLE TEXT-t01. " Parâmetros do Arquivo de Entrada
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS: p_atual RADIOBUTTON GROUP bt02 DEFAULT 'X' USER-COMMAND tip.
+SELECTION-SCREEN COMMENT 3(20) TEXT-c11 FOR FIELD p_atual. " Ano Atual
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS: p_ant RADIOBUTTON GROUP bt02.
+SELECTION-SCREEN COMMENT 3(20) TEXT-c12 FOR FIELD p_ant. " Anos Anteriores
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN SKIP 1.
+
+PARAMETERS: p_dtref TYPE pbr_anovg MATCHCODE OBJECT rscalyear DEFAULT sy-datum(4) OBLIGATORY.
+
+SELECTION-SCREEN SKIP 1.
+
+*   " Arquivo Local
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS: p_loce RADIOBUTTON GROUP bt01 DEFAULT 'X' USER-COMMAND mov.
+SELECTION-SCREEN COMMENT 3(05) TEXT-c01 FOR FIELD p_loce. " Local
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 03(29) TEXT-c02 FOR FIELD p_dirlo. " Diretório e Arquivo de dados
+PARAMETERS: p_dirlo LIKE rlgrap-filename.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN SKIP 1.
+
+*   " Arquivo Servidor de aplicação
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS: p_serve RADIOBUTTON GROUP bt01.
+SELECTION-SCREEN COMMENT 3(08) TEXT-c03 FOR FIELD p_serve. " Servidor
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 03(29) TEXT-c04 FOR FIELD p_dirse. " Diretório Servidor:
+PARAMETERS: p_dirse LIKE rlgrap-filename.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN SKIP 2.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_ign AS CHECKBOX.
+SELECTION-SCREEN COMMENT (40) TEXT-c13 FOR FIELD p_ign. " Ignorar fornecedores não localizados
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_test AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT (40) TEXT-c10 FOR FIELD p_test. " Execução em Teste
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_rcabec AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT (40) TEXT-c09 FOR FIELD p_rcabec. " Remover cabeçalho
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK entra.
+
+**********************************************************************
+* DADOS DE SAÍDA DOS ARQUIVOS
+**********************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK saida WITH FRAME TITLE TEXT-t02.
+
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_marq AS CHECKBOX USER-COMMAND fun.
+SELECTION-SCREEN COMMENT (40) TEXT-c08 FOR FIELD p_marq.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 03(29) TEXT-c02 FOR FIELD p_dirls.
+PARAMETERS: p_dirls LIKE rlgrap-filename MODIF ID alt.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 03(29) TEXT-c04 FOR FIELD p_dirss.
+PARAMETERS: p_dirss LIKE rlgrap-filename MODIF ID alt.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK saida.
+
+**********************************************************************
+* DADOS DE LOG
+**********************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK log WITH FRAME TITLE TEXT-t03.
+
+SELECT-OPTIONS: s_dtlog FOR vg_aldate_dummy NO-EXTENSION DEFAULT sy-datum TO sy-datum,
+                s_hrlog FOR vg_altime_dummy NO-EXTENSION DEFAULT sy-uzeit TO '235959'.
+
+SELECTION-SCREEN END OF BLOCK log.
+
+SELECTION-SCREEN: FUNCTION KEY 1.
+
+**********************************************************************
+* INICIALIZAÇÃO
+**********************************************************************
+INITIALIZATION.
+  MOVE TEXT-b01 TO sscrfields-functxt_01.
+
+  p_dirls = zcl_utilities=>gerar_diretorio_temp( ).
+
+**********************************************************************
+* SELECTION-SCREEN
+**********************************************************************
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dirlo.
+*   Seleção do Diretório/Arquivo de entrada - Local
+  PERFORM f_selecionar_arquivo USING 'E' 'L' CHANGING p_dirlo.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dirse.
+*   Seleção do Diretório/Arquivo de entrada - Servidor
+  PERFORM f_selecionar_arquivo USING 'E' 'S' CHANGING p_dirse.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dirls.
+*   Seleção do Diretório/Arquivo de Saída - Local
+  PERFORM f_selecionar_arquivo USING 'S' 'L' CHANGING p_dirls.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dirss.
+*   Seleção do Diretório/Arquivo de Saída - Local
+  PERFORM f_selecionar_arquivo USING 'S' 'S' CHANGING p_dirss.
+
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM f_ajustar_tela.
+
+AT SELECTION-SCREEN.
+  IF sy-ucomm = 'FC01'.
+    PERFORM f_visualizar_log.
+  ENDIF.
+
+**********************************************************************
+* START-OF-SELECTION.
+**********************************************************************
+START-OF-SELECTION.
+  DATA vl_continuar TYPE bool.
+  PERFORM f_validacoes_tela CHANGING vl_continuar.
+
+  IF vl_continuar EQ abap_true.
+    TRY .
+        DATA(ol_migracao) = NEW zclaa_mig_ativos_imob( )->iniciar_migracao(
+          EXPORTING
+            iv_dir_ent_local = p_dirlo
+            iv_dir_ent_serv  = p_dirse
+            iv_dir_sai_local = p_dirls
+            iv_dir_sai_serv  = p_dirss
+            iv_teste         = p_test
+            iv_cabecalho     = p_rcabec
+            iv_anoatual      = p_atual
+            iv_anosant       = p_ant
+            iv_dtref         = p_dtref
+            iv_ignorar       = p_ign
+        ).
+
+        MESSAGE s008(zmig).
+
+      CATCH cx_idm_error INTO DATA(ol_erro).
+        MESSAGE ID ol_erro->message-id TYPE 'S'
+          NUMBER ol_erro->message-number
+            WITH ol_erro->message-message_v1 ol_erro->message-message_v2 ol_erro->message-message_v3 ol_erro->message-message_v4 DISPLAY LIKE ol_erro->message-type.
+    ENDTRY.
+
+  ENDIF.
+
+END-OF-SELECTION.
+
+**********************************************************************
+* INICIO DOS FORMS
+**********************************************************************
+*&---------------------------------------------------------------------*
+*& Form F_SELECIONAR_ARQUIVO
+*&---------------------------------------------------------------------*
+FORM f_selecionar_arquivo  USING iv_es    TYPE char1 " E = Entrada ou S = Saída
+                                iv_tipo  TYPE char1 " L = Local ou S = Servidor
+                          CHANGING cv_diretorio TYPE rlgrap-filename.
+  DATA vl_endereco TYPE string.
+  CLEAR vl_endereco.
+
+  IF iv_tipo EQ 'S'. " Servidor
+    IF iv_es EQ 'E'. " Entrada
+      vl_endereco = zcl_utilities=>selecionar_arquivo_servidor( ).
+    ELSE. " Saída
+      vl_endereco = zcl_utilities=>buscar_diretorio_servidor( ).
+    ENDIF.
+  ELSE. " Local
+    IF iv_es EQ 'E'. " Entrada
+      vl_endereco = zcl_utilities=>selecionar_arquivo_local( ).
+    ELSE. " Saída
+      vl_endereco = zcl_utilities=>buscar_diretorio_local( ).
+    ENDIF.
+  ENDIF.
+
+  IF vl_endereco IS NOT INITIAL.
+    cv_diretorio = vl_endereco.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form F_AJUSTAR_TELA
+*&---------------------------------------------------------------------*
+FORM f_ajustar_tela .
+  LOOP AT SCREEN.
+    CASE screen-name.
+      WHEN 'P_DIRLO'.
+        IF p_loce EQ abap_true .
+          screen-input      = 1.
+          screen-value_help = 1.
+          CLEAR p_dirse.
+        ELSE.
+          screen-input      = 0.
+          screen-value_help = 0.
+          CLEAR p_dirlo.
+        ENDIF.
+      WHEN 'P_DIRSE'.
+        IF p_loce EQ abap_true .
+          screen-input      = 0.
+          screen-value_help = 0.
+          CLEAR p_dirse.
+        ELSE.
+          screen-input      = 1.
+          screen-value_help = 1.
+          CLEAR p_dirlo.
+        ENDIF.
+      WHEN 'P_DIRLS'.
+        IF p_loce EQ abap_true  AND p_marq EQ abap_true .
+          screen-input      = 1.
+          screen-value_help = 1.
+          CLEAR p_dirss.
+        ELSE.
+          screen-input      = 0.
+          screen-value_help = 0.
+          CLEAR p_dirls.
+        ENDIF.
+      WHEN 'P_DIRSS'.
+        IF p_serve EQ abap_true AND p_marq EQ abap_true .
+          screen-input      = 1.
+          screen-value_help = 1.
+          CLEAR p_dirls.
+        ELSE.
+          screen-input      = 0.
+          screen-value_help = 0.
+          CLEAR p_dirss.
+        ENDIF.
+    ENDCASE.
+
+    MODIFY SCREEN.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form F_VALIDACOES_TELA
+*&---------------------------------------------------------------------*
+FORM f_validacoes_tela CHANGING cv_continuar TYPE bool.
+  cv_continuar = abap_false.
+
+  IF p_loce EQ abap_true AND p_dirlo EQ abap_false.
+*   " Informar Diretório Local do arquivo de entrada
+    MESSAGE s004(zmig) DISPLAY LIKE 'E' .
+    RETURN.
+  ENDIF.
+
+  IF p_serve EQ abap_true AND p_dirse EQ abap_false.
+*   " Informar Diretório Servidor do arquivo de entrada
+    MESSAGE s005(zmig) DISPLAY LIKE 'E' .
+    RETURN.
+  ENDIF.
+
+  IF p_loce EQ abap_true AND p_marq EQ abap_true AND p_dirls EQ abap_false.
+*   " Informar Diretório Local do arquivo de saída
+    MESSAGE s006(zmig) DISPLAY LIKE 'E' .
+    RETURN.
+  ENDIF.
+
+  IF p_serve EQ abap_true AND p_marq EQ abap_true AND p_dirss EQ abap_false.
+*   " Informar Diretório Servidor do arquivo de saída
+    MESSAGE s007(zmig) DISPLAY LIKE 'E' .
+    RETURN.
+  ENDIF.
+
+  cv_continuar = abap_true.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form F_VISUALIZAR_LOG
+*&---------------------------------------------------------------------*
+FORM f_visualizar_log .
+  TRY .
+      zclaa_mig_ativos_imob=>visualizar_bal_log_ext(
+        EXPORTING
+          iv_dt_ini = s_dtlog-low
+          iv_dt_fim = s_dtlog-high
+          iv_hr_ini = s_hrlog-low
+          iv_hr_fim = s_hrlog-high
+      ).
+    CATCH cx_idm_error INTO ol_erro.
+      MESSAGE ID ol_erro->message-id TYPE 'S'
+        NUMBER ol_erro->message-number
+          WITH ol_erro->message-message_v1 ol_erro->message-message_v2 ol_erro->message-message_v3 ol_erro->message-message_v4 DISPLAY LIKE ol_erro->message-type..
+
+  ENDTRY.
+ENDFORM.
