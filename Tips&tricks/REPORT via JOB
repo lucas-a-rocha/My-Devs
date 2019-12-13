@@ -1,0 +1,73 @@
+*&---------------------------------------------------------------------*
+*& Form ESCALONAR_JOB_BACKGROUND
+*&---------------------------------------------------------------------*
+FORM escalonar_job_background .
+  IF vg_user IS INITIAL OR vg_pass IS INITIAL.
+    CALL FUNCTION 'ZPOPUP_GET_PASSWORD'
+      IMPORTING
+        user           = vg_user
+        password       = vg_pass
+      EXCEPTIONS
+        cancel_pressed = 1
+        OTHERS         = 2.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+  ENDIF.
+
+  DATA(vl_jobname) = CONV btcjob( |ZFI001-Dpr-{ s_ano-low }{ s_mes-low }{ sy-uzeit }| ).
+
+* " Cria o JOB.
+  DATA vl_jobid TYPE btcjobcnt.
+  CALL FUNCTION 'JOB_OPEN'
+    EXPORTING
+      jobname          = vl_jobname
+    IMPORTING
+      jobcount         = vl_jobid
+    EXCEPTIONS
+      cant_create_job  = 1
+      invalid_job_data = 2
+      jobname_missing  = 3
+      OTHERS           = 4.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+* " Agenda o programa de processamento no job criado.
+  SUBMIT zfi_005 VIA JOB vl_jobname NUMBER vl_jobid
+    WITH s_mes    IN s_mes
+    WITH s_ano    IN s_ano
+    WITH p_deprec EQ p_deprec
+    WITH p_user   EQ vg_user
+    WITH p_senha  EQ vg_pass
+    AND RETURN.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+*  " Inicia o job
+  CALL FUNCTION 'JOB_CLOSE'
+    EXPORTING
+      jobcount             = vl_jobid
+      jobname              = vl_jobname
+      sdlstrtdt            = sy-datum
+      sdlstrttm            = sy-uzeit
+      strtimmed            = 'X'
+    EXCEPTIONS
+      cant_start_immediate = 1
+      invalid_startdate    = 2
+      jobname_missing      = 3
+      job_close_failed     = 4
+      job_nosteps          = 5
+      job_notex            = 6
+      lock_failed          = 7
+      invalid_target       = 8
+      OTHERS               = 9.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+  DATA(vl_msg) = CONV string( |Job escalonado com sucesso: { vl_jobname }| ).
+  MESSAGE vl_msg TYPE 'S'.
+
+ENDFORM.
