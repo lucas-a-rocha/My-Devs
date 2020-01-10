@@ -1,0 +1,365 @@
+*-----------------------------------------------------------------------
+* Report      : Z_NOTA_LR
+* Autor       : Lucas Rocha
+* Data        : 22/08/2015
+* Função      : Busca as notas que necessitam de ser aplicadas
+*-----------------------------------------------------------------------
+
+*P_ALV  ALV
+*P_DOWA	Download Parcial-somente novas
+*P_DOWT	Download Completo
+*P_NDOW	Não fazer download
+*P_TELA	Tela
+*P_VERS	Versão SAP_APPL
+*S_NOTE	Notas
+
+REPORT YNOTAS.
+
+*-----------------------------------------------------------------------
+* TABELAS
+*-----------------------------------------------------------------------
+TABLES: cwbnthead.
+
+*-----------------------------------------------------------------------
+* ESTRUTURAS
+*-----------------------------------------------------------------------
+DATA: BEGIN OF st_downloaded, "Notas que já fizeram download
+        numm TYPE cwbntcust-numm,
+      END OF st_downloaded.
+
+DATA: BEGIN OF st_saida, "Retorno da posição das notas
+        nivel    TYPE char2,
+        farol    TYPE char4,
+        numm     TYPE cwbntcust-numm,
+        prstatus TYPE text40,
+        qtd      TYPE i,
+      END OF st_saida.
+
+*-----------------------------------------------------------------------
+* TABELAS INTERNAS
+*-----------------------------------------------------------------------
+DATA: it_downloaded LIKE TABLE OF st_downloaded,
+      it_saida      LIKE TABLE OF st_saida.
+
+*-----------------------------------------------------------------------
+* SELEÇÃO
+*-----------------------------------------------------------------------
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) tnote.
+SELECT-OPTIONS s_note FOR cwbnthead-numm OBLIGATORY NO INTERVALS.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) tvers.
+PARAMETERS: p_vers TYPE cwbdetrack-alstxt OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN: END OF BLOCK b1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b2 WITH FRAME TITLE tblock2.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) tndow.
+PARAMETERS: p_ndow RADIOBUTTON GROUP r1. "Não Download
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) tdowt.
+PARAMETERS: p_dowt RADIOBUTTON GROUP r1. "Download tudo
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) tdowa.
+PARAMETERS: p_dowa RADIOBUTTON GROUP r1. "Download das diferenças
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN: END OF BLOCK b2.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b3 WITH FRAME TITLE tblock3.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) ttela.
+PARAMETERS: p_tela RADIOBUTTON GROUP r2. "Tela
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 5(23) talv.
+PARAMETERS: p_alv RADIOBUTTON GROUP r2. "ALV
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN: END OF BLOCK b3.
+
+*-----------------------------------------------------------------------
+* INITIALIZATION
+*-----------------------------------------------------------------------
+INITIALIZATION.
+  tblock1 = 'Dados da Nota'.
+  tblock2 = 'Ação da Nota'.
+  tblock3 = 'Apresentação do Resultado'.
+  tnote = 'Notas'.
+  tvers = 'Versão SAP_APPL'.
+  tdowa = 'Download Parcial-somente novas'.
+  tdowt = 'Download Completo'.
+  tndow = 'Não fazer download'.
+  ttela = 'Tela'.
+  talv  = 'ALV'.
+
+  "Buscar versão do componente SAP_APPL
+  SELECT SINGLE release
+    INTO p_vers
+    FROM cvers
+    WHERE component = 'SAP_APPL'.
+
+*-----------------------------------------------------------------------
+* START-OF-SELECTION
+*-----------------------------------------------------------------------
+START-OF-SELECTION.
+  CLEAR: it_saida[].
+
+  SORT s_note BY low.
+  LOOP AT s_note.
+    PERFORM seleciona_notas USING s_note-low p_vers 0.
+  ENDLOOP.
+
+  PERFORM imprime_notas.
+
+*&---------------------------------------------------------------------*
+*&      Form  SELECIONA_NOTAS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_P_NOTE  text
+*      -->P_P_VERS  text
+*----------------------------------------------------------------------*
+FORM seleciona_notas  USING p_p_note
+                            p_p_vers
+                            p_p_nivel.
+
+  DATA: BEGIN OF st_cwbntcust, "Status da nota / se ela existe
+          numm     TYPE cwbntcust-numm,
+          ntstatus TYPE cwbntcust-ntstatus,
+          prstatus TYPE cwbntcust-prstatus,
+          cwbuser  TYPE cwbntcust-cwbuser,
+        END OF st_cwbntcust.
+
+  DATA: BEGIN OF st_cwbntci_val_track, "Pega as versões possiveis
+          numm     TYPE cwbntci-numm,
+          versno   TYPE cwbntci-versno,
+          ciinsta  TYPE cwbntci-ciinsta,
+          cipakid  TYPE cwbntci-cipakid,
+          cialeid  TYPE cwbntci-cialeid,
+          civersno TYPE cwbntci-civersno,
+
+          trpakid  TYPE cwbcivalid-trpakid,
+          trtypeid TYPE cwbcivalid-trtypeid,
+          tralsid  TYPE cwbcivalid-tralsid,
+
+          alstxt   TYPE cwbdetrack-alstxt,
+        END OF st_cwbntci_val_track.
+
+  DATA: BEGIN OF st_cwbcidpndc, "Da versão, busca a subnotas
+          insta     TYPE cwbcidpndc-insta,
+          pakid     TYPE cwbcidpndc-pakid,
+          aleid     TYPE cwbcidpndc-aleid,
+          versno    TYPE cwbcidpndc-versno,
+          deptype   TYPE cwbcidpndc-deptype,
+          ciinsta_d TYPE cwbcidpndc-ciinsta_d,
+          cipakid_d TYPE cwbcidpndc-cipakid_d,
+          cialeid_d TYPE cwbcidpndc-cialeid_d,
+          ntnumm_d  TYPE cwbcidpndc-ntnumm_d,
+        END OF st_cwbcidpndc.
+
+  DATA: st_cwbnthead  LIKE cwbnthead.
+  DATA: it_cwbntcust         LIKE TABLE OF st_cwbntcust,
+        it_cwbcidpndc        LIKE TABLE OF st_cwbcidpndc,
+        it_cwbntci_val_track LIKE TABLE OF st_cwbntci_val_track.
+
+  DATA: l_nivel TYPE char2.
+  l_nivel = p_p_nivel + 1.
+
+  IF p_ndow IS INITIAL. "Não faz download
+    SELECT SINGLE *
+      INTO st_cwbnthead
+      FROM cwbnthead
+      WHERE numm = p_p_note.
+    IF p_dowt IS NOT INITIAL OR ( sy-subrc <> 0 AND p_dowa IS NOT INITIAL ). "Faz donwload completo ou faz download apenas da diferença
+      "Faz o download da nota
+      READ TABLE it_downloaded INTO st_downloaded WITH KEY numm = p_p_note.
+      IF sy-subrc <> 0.
+        SUBMIT scwn_note_download WITH p_notenr = p_p_note AND RETURN.
+        st_downloaded-numm = p_p_note.
+        APPEND st_downloaded TO it_downloaded.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  "Seleciona nota
+  SELECT SINGLE numm
+         ntstatus
+         prstatus
+         cwbuser
+    FROM cwbntcust
+    INTO st_cwbntcust
+    WHERE numm = p_p_note.
+  IF sy-subrc = 0.
+
+    st_saida-nivel    = l_nivel.
+    st_saida-numm     = p_p_note.
+
+    CALL FUNCTION 'CONVERSION_EXIT_PSTAT_OUTPUT'
+      EXPORTING
+        input  = st_cwbntcust-prstatus
+      IMPORTING
+        output = st_saida-prstatus.
+
+*      status de implementação indeterminado
+*    - não é possível implementar
+*    e completamente implementado
+*    n pode ser implementado
+*    o obsoleto
+*    u implementado de modo incompleto
+*    v versão obsoleta implementada
+    CASE st_cwbntcust-prstatus.
+      WHEN ' '. "status de implementação indeterminado
+        WRITE '@GS@' TO st_saida-farol.
+      WHEN '-'. "não é possível implementar
+        WRITE '@BZ@' TO st_saida-farol. "ICON_LED_INACTIVE
+      WHEN 'E'. "completamente implementado
+        WRITE '@0V@' TO st_saida-farol. "ICON_OKAY
+      WHEN 'N'. "pode ser implementado
+        WRITE '@5H@' TO st_saida-farol. "ICON_WORKFLOW_ACTIVITY
+      WHEN 'O'. "obsoleto
+        WRITE '@BZ@' TO st_saida-farol. "ICON_LED_INACTIVE
+      WHEN 'U'. "implementado de modo incompleto
+        WRITE '@03@' TO st_saida-farol. "ICON_FAILURE
+      WHEN 'V'. "versão obsoleta implementada
+        WRITE '@03@' TO st_saida-farol. "ICON_FAILURE
+      WHEN OTHERS.
+        st_saida-farol    = ''.
+    ENDCASE.
+    st_saida-qtd = 1.
+    APPEND st_saida TO it_saida.
+
+  ELSE.
+
+    st_saida-nivel    = l_nivel.
+    st_saida-numm     = p_p_note.
+    st_saida-prstatus = ''.
+    WRITE '@03@' TO st_saida-farol. "Icon Failure
+    st_saida-qtd = 1.
+    APPEND st_saida TO it_saida.
+
+    EXIT.
+
+  ENDIF.
+
+  "Seleciona qual versão da nota que precisa buscar relacionamento
+  SELECT cwbntci~numm
+         cwbntci~versno
+         cwbntci~ciinsta
+         cwbntci~cipakid
+         cwbntci~cialeid
+         cwbntci~civersno
+         cwbcivalid~trpakid
+         cwbcivalid~trtypeid
+         cwbcivalid~tralsid
+         cwbdetrack~alstxt
+    INTO TABLE it_cwbntci_val_track
+    FROM cwbntci
+    INNER JOIN cwbcivalid ON ( cwbcivalid~insta  = cwbntci~ciinsta
+                              AND cwbcivalid~pakid  = cwbntci~cipakid
+                              AND cwbcivalid~aleid  = cwbntci~cialeid
+                              AND cwbcivalid~versno = cwbntci~civersno )
+    INNER JOIN cwbdetrack ON ( cwbdetrack~pakid = cwbcivalid~trpakid
+                              AND cwbdetrack~typid = cwbcivalid~trtypeid
+                              AND cwbdetrack~alsid = cwbcivalid~tralsid
+                              AND cwbdetrack~alstxt = p_vers )
+    WHERE cwbntci~numm = p_p_note.
+  SORT it_cwbntci_val_track BY cialeid ASCENDING civersno DESCENDING.
+
+  LOOP AT it_cwbntci_val_track INTO st_cwbntci_val_track.
+    "Seleciona as notas dependentes
+    SELECT insta
+           pakid
+           aleid
+           versno
+           deptype
+           ciinsta_d
+           cipakid_d
+           cialeid_d
+           ntnumm_d
+      INTO TABLE it_cwbcidpndc
+      FROM cwbcidpndc
+      WHERE insta  = st_cwbntci_val_track-ciinsta
+        AND pakid  = st_cwbntci_val_track-cipakid
+        AND aleid  = st_cwbntci_val_track-cialeid
+        AND versno = st_cwbntci_val_track-civersno.
+    IF sy-subrc = 0.
+
+      LOOP AT it_cwbcidpndc INTO st_cwbcidpndc.
+        READ TABLE it_saida INTO st_saida WITH KEY numm = st_cwbcidpndc-ntnumm_d. "Só vai na nota se NAO tiver sido implementada
+        IF sy-subrc <> 0.
+          PERFORM seleciona_notas USING st_cwbcidpndc-ntnumm_d p_p_vers l_nivel.
+        ENDIF.
+      ENDLOOP.
+
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM.                    " SELECIONA_NOTAS
+
+*&---------------------------------------------------------------------*
+*&      Form  IMPRIME_NOTAS
+*&---------------------------------------------------------------------*
+FORM imprime_notas .
+  FIELD-SYMBOLS: <f>.
+  DATA: l_nivel TYPE i.
+
+  IF p_tela IS NOT INITIAL.
+
+    LOOP AT it_saida INTO st_saida.
+      ASSIGN st_saida-farol TO <f>.
+      l_nivel = st_saida-nivel * 4.
+      WRITE: AT l_nivel <f>, st_saida-nivel, '|' , st_saida-numm , '|' , st_saida-prstatus , /.
+    ENDLOOP.
+
+  ELSE.
+
+    DATA:gr_table     TYPE REF TO cl_salv_table,
+         gr_display   TYPE REF TO cl_salv_display_settings,
+         gr_functions TYPE REF TO cl_salv_functions_list,
+         gr_columns   TYPE REF TO cl_salv_columns_table,
+         gr_aggr      TYPE REF TO cl_salv_aggregations,
+         gr_column    TYPE REF TO cl_salv_column_table.
+
+    CALL METHOD cl_salv_table=>factory
+      IMPORTING
+        r_salv_table = gr_table
+      CHANGING
+        t_table      = it_saida.
+
+* Muda o nome da coluna no ALV.
+    gr_columns = gr_table->get_columns( ).
+    gr_column ?= gr_columns->get_column( 'PRSTATUS' ).
+    gr_column->set_long_text( 'Status' ).
+    gr_column ?= gr_columns->get_column( 'NIVEL' ).
+    gr_column->set_long_text( 'Nível' ).
+    gr_column ?= gr_columns->get_column( 'FAROL' ).
+    gr_column->set_long_text( 'Farol' ).
+
+* Pega funções
+    gr_functions = gr_table->get_functions( ).
+
+* Ativa todos os botões
+    gr_functions->set_all( if_salv_c_bool_sap=>true ).
+
+* Função de soma
+    gr_aggr = gr_table->get_aggregations( ).
+    gr_aggr->clear( ).
+
+    CLEAR : gr_display.
+    gr_display = gr_table->get_display_settings( ).               "Configurações de Display
+    gr_display->set_striped_pattern( if_salv_c_bool_sap=>true ).  "Padrão de Linhas
+    gr_display->set_list_header( 'Notas' ).                       "Cabeçalho
+
+
+    gr_table->display( ).
+  ENDIF.
+ENDFORM.                    " IMPRIME_NOTAS
