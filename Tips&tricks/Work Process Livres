@@ -1,0 +1,28 @@
+FUNCTION zfm_buscar_wp_livres.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_TIPO) TYPE  WPINFO-WP_TYP OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(EV_LIVRES) TYPE  I
+*"----------------------------------------------------------------------
+  DATA tl_wpinfo TYPE STANDARD TABLE OF wpinfo.
+  CALL FUNCTION 'TH_WPINFO'
+    TABLES
+      wplist     = tl_wpinfo
+    EXCEPTIONS
+      send_error = 1
+      OTHERS     = 2.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+  SORT tl_wpinfo BY wp_istatus wp_typ.
+  DELETE tl_wpinfo WHERE wp_istatus NE 2. " Livre.
+
+  IF iv_tipo IS NOT INITIAL.
+    DELETE tl_wpinfo WHERE wp_typ NE iv_tipo.
+  ENDIF.
+
+  ev_livres = lines( tl_wpinfo ).
+ENDFUNCTION.
