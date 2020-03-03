@@ -1,0 +1,56 @@
+METHOD chamar_shdb_me23n.
+    DATA:
+      tl_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      tl_bdcmsg  TYPE STANDARD TABLE OF bdcmsgcoll,
+      wl_option  TYPE ctu_params.
+
+*    tl_bdcdata = VALUE #( ( dynbegin = 'X'  program  = 'SAPLMEGUI'            dynpro  = '0014'          )
+*                          (                 fnam     = 'BDC_OKCODE'           fval    = '=MECHOB'  )
+*                          (                 fnam     = 'DYN_6000-LIST'        fval    = '   1'           )
+**                          (                 fnam     = 'BDC_CURSOR'           fval    = 'MEPO1319-MATKL'           )
+*                          ( dynbegin = 'X'  program  = 'SAPLMEGUI'            dynpro  = '0002'          )
+*                          (                 fnam     = 'BDC_OKCODE'           fval    = '=MEOK'     )
+*                          (                 fnam     = 'BDC_CURSOR'           fval    = 'MEPO_SELECT-EBELN'  )
+*                          (                 fnam     = 'MEPO_SELECT-EBELN'    fval    = iv_ebeln  )
+*                          (                 fnam     = 'MEPO_SELECT-BSTYP_F'  fval    = 'X'  ) ).
+
+    tl_bdcdata = VALUE #( ( dynbegin = 'X'  program  = 'SAPLMEGUI'                dynpro  = '0014'                      )
+                          (                 fnam     = 'BDC_OKCODE'               fval    = '=MECHOB'                            )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               0013SUB0'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               0030SUB0'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               2000SUB0'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = '/SAPPSPRO/SAPLMEGUI                     0002SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1100SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             4000SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1200SUB2'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               1102SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               1226TABSTRIPCONTROL2SUB'      )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1100SUB2'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             4001SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1200SUB2'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEGUI                               1211SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1100SUB3'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             4002SUB1'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             1200SUB2'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = 'SAPLMEVIEWS                             2000SUB1'                     )
+                          ( dynbegin = 'X'  program  = 'SAPLMEGUI'                dynpro  = '0002'                      )
+                          (                 fnam     = 'BDC_OKCODE'               fval    = '=MEOK'                     )
+                          (                 fnam     = 'BDC_SUBSCR'               fval    = '/SAPPSPRO/SAPLMEGUI                     0001SUB0'                     )
+                          (                 fnam     = 'BDC_CURSOR'               fval    = 'MEPO_SELECT-LONGNUM'       )
+                          (                 fnam     = 'MEPO_SELECT-LONGNUM'      fval    = iv_ebeln                    )
+                          (                 fnam     = 'MEPO_SELECT-BSTYP_F'      fval    = 'X'                         ) ).
+
+    wl_option-dismode  = 'E'. " Define o tipo de exibição de telas.
+    " A - Exibir todas as telas
+    " E - Exibir erros
+    " N - Processar em background
+    " P - Em background e depurável
+
+    wl_option-updmode  = 'S'. " Define o modo de sincronização.
+    wl_option-defsize  = 'X'. " Define o tamanho da tela standard.
+
+    CALL TRANSACTION 'ME23N'
+               USING tl_bdcdata
+        OPTIONS FROM wl_option
+       MESSAGES INTO tl_bdcmsg.
+  ENDMETHOD.
