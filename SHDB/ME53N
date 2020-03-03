@@ -1,0 +1,30 @@
+  METHOD chamar_shdb_me53n .
+    DATA:
+      tl_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      tl_bdcmsg  TYPE STANDARD TABLE OF bdcmsgcoll,
+      wl_option  TYPE ctu_params.
+
+    tl_bdcdata = VALUE #( ( dynbegin = 'X'  program  = 'SAPLMEGUI'            dynpro  = '0014'          )
+                          (                 fnam     = 'BDC_OKCODE'           fval    = '=MECHOB'  )
+*                          (                 fnam     = 'DYN_6000-LIST'        fval    = '   1'           )
+*                          (                 fnam     = 'BDC_CURSOR'           fval    = 'MEREQ3319-MATNR'      )
+                          ( dynbegin = 'X'  program  = 'SAPLMEGUI'            dynpro  = '0002'          )
+                          (                 fnam     = 'BDC_OKCODE'           fval    = '=MEOK'      )
+                          (                 fnam     = 'BDC_CURSOR'           fval    = 'MEPO_SELECT-BANFN'      )
+                          (                 fnam     = 'MEPO_SELECT-BANFN'    fval    = iv_banfn     )
+                          (                 fnam     = 'MEPO_SELECT-BSTYP_B'  fval    = 'X'     ) ).
+
+    wl_option-dismode  = 'E'. " Define o tipo de exibição de telas.
+    " A - Exibir todas as telas
+    " E - Exibir erros
+    " N - Processar em background
+    " P - Em background e depurável
+
+    wl_option-updmode  = 'S'. " Define o modo de sincronização.
+    wl_option-defsize  = 'X'. " Define o tamanho da tela standard.
+
+    CALL TRANSACTION 'ME53N'
+               USING tl_bdcdata
+        OPTIONS FROM wl_option
+       MESSAGES INTO tl_bdcmsg.
+  ENDMETHOD.
