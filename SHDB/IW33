@@ -1,0 +1,27 @@
+    METHOD chamar_shdb_iw33.
+    DATA:
+      tl_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      tl_bdcmsg  TYPE STANDARD TABLE OF bdcmsgcoll,
+      wl_option  TYPE ctu_params.
+
+    tl_bdcdata = VALUE #( ( dynbegin = 'X'  program  = 'SAPLCOIH'     dynpro  = '0101'          )
+                          (                 fnam     = 'BDC_CURSOR'   fval    = 'CAUFVD-AUFNR'  )
+                          (                 fnam     = 'BDC_OKCODE'   fval    = '/00'           )
+                          (                 fnam     = 'CAUFVD-AUFNR' fval    = iv_aufnr      )
+                          (                 fnam     = 'BDC_CURSOR'   fval    = 'CAUFVD-AUFNR'  )
+                          ( dynbegin = 'X'  program  = 'SAPLCOIH'     dynpro  = '3000'          ) ).
+
+    wl_option-dismode  = 'E'. " Define o tipo de exibição de telas.
+    " A - Exibir todas as telas
+    " E - Exibir erros
+    " N - Processar em background
+    " P - Em background e depurável
+
+    wl_option-updmode  = 'S'. " Define o modo de sincronização.
+    wl_option-defsize  = 'X'. " Define o tamanho da tela standard.
+
+    CALL TRANSACTION 'IW33'
+               USING tl_bdcdata
+        OPTIONS FROM wl_option
+       MESSAGES INTO tl_bdcmsg.
+  ENDMETHOD.
