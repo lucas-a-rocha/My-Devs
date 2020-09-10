@@ -1,0 +1,327 @@
+class ZCL_IM_AI_SDK_PRIOR_DETERM definition
+  public
+  final
+  create public .
+
+public section.
+
+  interfaces IF_EX_EXEC_METHODCALL_PPF .
+
+  class-data GV_PRIOR type CHAR1 .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_IM_AI_SDK_PRIOR_DETERM IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_IM_AI_SDK_PRIOR_DETERM->IF_EX_EXEC_METHODCALL_PPF~EXECUTE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FLT_VAL                        TYPE        PPFDFLTVAL
+* | [--->] IO_APPL_OBJECT                 TYPE REF TO OBJECT
+* | [--->] IO_PARTNER                     TYPE REF TO CL_PARTNER_PPF
+* | [--->] IP_APPLICATION_LOG             TYPE        BALLOGHNDL
+* | [--->] IP_PREVIEW                     TYPE        CHAR1
+* | [--->] II_CONTAINER                   TYPE REF TO IF_SWJ_PPF_CONTAINER
+* | [--->] IP_ACTION                      TYPE        PPFDTT(optional)
+* | [<-()] RP_STATUS                      TYPE        PPFDTSTAT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_ex_exec_methodcall_ppf~execute.
+    INCLUDE:
+      crm_mode_con,
+      com_partner_pft3,
+      crm_object_names_con.
+
+    DATA lv_partner_fct    TYPE crmt_partner_fct.
+    DATA lv_fdt_appl_id    TYPE fdt_uuid.
+    DATA lv_fdt_fct_id     TYPE fdt_uuid.
+
+    DATA:
+      proc_class TYPE seoclsname,
+      proc_meth  TYPE seocmpname.
+
+    DATA(lc_action_execute) = NEW cl_action_execute( ).
+    lc_action_execute->get_ref_object(
+      EXPORTING
+        io_appl_object = io_appl_object
+        ip_action      = ip_action
+        ip_preview     = ip_preview
+        ii_container   = ii_container
+      IMPORTING
+        ev_guid_ref    = DATA(lv_header_guid)
+    ).
+
+* get attributes from container
+    IF ii_container IS BOUND.
+      DATA(lt_container) = ii_container->get_values( with_initial_values = 'X' ).
+*   check whether process type should be used from data container
+      READ TABLE lt_container INTO DATA(ls_container)
+           WITH KEY element = 'PARTNER_FCT'.
+      IF sy-subrc IS INITIAL.
+        lv_partner_fct = ls_container-value.
+      ENDIF.
+      READ TABLE lt_container INTO ls_container
+           WITH KEY element = 'APPLICATION_ID'.
+      IF sy-subrc IS INITIAL.
+        lv_fdt_appl_id = ls_container-value..
+      ELSE.
+* Set default value
+        lv_fdt_appl_id = '0050568E6E9A02DE82A4EC0838CD95E5'.
+      ENDIF.
+      READ TABLE lt_container INTO ls_container
+           WITH KEY element = 'FUNCTION_ID'.
+      IF sy-subrc IS INITIAL.
+        lv_fdt_fct_id = ls_container-value.
+      ELSE.
+* Set default value
+        lv_fdt_fct_id = '0050568E6E9A02EE83DBBBE309521748'.
+      ENDIF.
+
+      READ TABLE lt_container INTO ls_container " Verarbeitungsklasse
+        WITH KEY element = 'CLASS'.
+      IF sy-subrc IS INITIAL.
+        proc_class = ls_container-value.
+      ENDIF.
+      READ TABLE lt_container INTO ls_container " Verarbeitungsmethode
+        WITH KEY element = 'METHOD'.
+      IF sy-subrc IS INITIAL.
+        proc_meth = ls_container-value.
+      ENDIF.
+
+      DATA lv_catalog_type TYPE c.
+      CLEAR lv_catalog_type.
+      READ TABLE lt_container INTO ls_container
+        WITH KEY element = 'CATALOG_TYPE'.
+      IF sy-subrc IS INITIAL.
+        lv_catalog_type = ls_container-value.
+      ENDIF.
+
+* Get PPF default values for provided filter
+      cl_ags_crm_1o_customizing_sd=>get_ppf_default_contain_values(
+         EXPORTING
+           iv_flt_val                   = flt_val
+         IMPORTING
+           et_container                 = DATA(lt_con_defaults)
+         EXCEPTIONS
+           no_default_values_for_filter = 1
+           OTHERS                       = 2 ).
+
+      IF sy-subrc EQ 0.
+        IF lv_partner_fct IS INITIAL.
+          READ TABLE lt_con_defaults INTO ls_container
+            WITH KEY element = 'PARTNER_FCT'.
+          IF sy-subrc IS INITIAL.
+            lv_partner_fct = ls_container-value.
+          ENDIF.
+        ENDIF.
+        IF proc_class IS INITIAL.
+          READ TABLE lt_con_defaults INTO ls_container
+            WITH KEY element = 'CLASS'.
+          IF sy-subrc IS INITIAL.
+            proc_class = ls_container-value.
+          ENDIF.
+        ENDIF.
+        IF proc_meth IS INITIAL.
+          READ TABLE lt_con_defaults INTO ls_container
+            WITH KEY element = 'METHOD'.
+          IF sy-subrc IS INITIAL.
+            proc_meth = ls_container-value.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    DATA lt_header_guid   TYPE crmt_object_guid_tab.
+    DATA lt_req_objects   TYPE crmt_object_name_tab.
+
+* Read data from incident
+    INSERT lv_header_guid INTO TABLE lt_header_guid.
+    INSERT gc_object_name-orderadm_h INTO TABLE lt_req_objects.
+    INSERT gc_object_name-activity_h INTO TABLE lt_req_objects.
+    INSERT gc_object_name-partner    INTO TABLE lt_req_objects.
+    INSERT gc_object_name-service_os INTO TABLE lt_req_objects.
+    INSERT gc_object_name-service_h  INTO TABLE lt_req_objects.
+
+    DATA lt_orderadm_h TYPE crmt_orderadm_h_wrkt.
+    DATA lt_activity_h TYPE crmt_activity_h_wrkt.
+    DATA lt_partner    TYPE crmt_partner_external_wrkt.
+    DATA lt_service_os TYPE crmt_srv_osset_wrkt.
+    DATA lt_service_h  TYPE crmt_service_h_wrkt.
+
+    CALL FUNCTION 'CRM_ORDER_READ'
+      EXPORTING
+        it_header_guid       = lt_header_guid
+        iv_mode              = gc_mode-display
+        it_requested_objects = lt_req_objects
+      IMPORTING
+        et_orderadm_h        = lt_orderadm_h
+        et_activity_h        = lt_activity_h
+        et_partner           = lt_partner
+        et_service_os        = lt_service_os
+        et_service_h         = lt_service_h
+      EXCEPTIONS
+        OTHERS               = 1.
+
+    IF sy-subrc <> 0.
+      MOVE '2' TO rp_status. "processed with error
+      EXIT.
+    ENDIF.
+
+*   " Encontra a categoria informada na tela.
+    READ TABLE lt_service_os INTO DATA(ls_service_os) WITH KEY ref_guid = lv_header_guid.
+    IF sy-subrc IS INITIAL.
+      READ TABLE ls_service_os-osset INTO DATA(ls_osset) WITH KEY profile_type = 'A'.
+      IF sy-subrc IS INITIAL.
+        IF lv_catalog_type IS NOT INITIAL.
+          READ TABLE ls_osset-subject INTO DATA(ls_subject) WITH KEY katalog_type = lv_catalog_type.
+        ELSE.
+          READ TABLE ls_osset-subject INTO ls_subject INDEX 1.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    DATA:
+      vl_service_item_guid TYPE  crmt_object_guid,
+      tl_orderadm_i_wrk    TYPE  crmt_orderadm_i_wrkt..
+
+    CALL FUNCTION 'CRM_ORDERADM_I_READ_OB'
+      EXPORTING
+        iv_header           = lv_header_guid
+      IMPORTING
+        et_orderadm_i_wrk   = tl_orderadm_i_wrk
+      EXCEPTIONS
+        item_does_not_exist = 1
+        error_occurred      = 2
+        OTHERS              = 3.
+
+    IF tl_orderadm_i_wrk[] IS NOT INITIAL.
+      vl_service_item_guid = tl_orderadm_i_wrk[ 1 ]-guid.
+    ENDIF.
+
+    DATA ls_service_i_wrk   TYPE crmt_service_i_wrk.
+    DATA vl_mode              TYPE  crmt_mode.
+    CALL FUNCTION 'CRM_SERVICE_I_READ_OW'
+      EXPORTING
+        iv_guid               = vl_service_item_guid
+      IMPORTING
+        es_service_i_wrk      = ls_service_i_wrk
+        ev_mode               = vl_mode
+      EXCEPTIONS
+        serviceitem_not_found = 1
+        OTHERS                = 2.
+
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+**********************************************************************
+*   " Inicio da consulta do BRF+
+**********************************************************************
+    CONSTANTS:lv_function_id TYPE if_fdt_types=>id VALUE '005056A29F9E1ED8AEE82BD935389EA1'.
+    DATA:lv_timestamp  TYPE timestamp,
+         lt_name_value TYPE abap_parmbind_tab,
+         ls_name_value TYPE abap_parmbind,
+         lr_data       TYPE REF TO data,
+         lx_fdt        TYPE REF TO cx_fdt,
+         la_category   TYPE if_fdt_types=>element_text.
+    FIELD-SYMBOLS <la_any> TYPE any.
+****************************************************************************************************
+* Todas as chamadas de método, que chamam a mesma função dentro de um ciclo de processamento, devem utilizar o mesmo registro da hora
+* Para chamadas subsequentes da mesma função é aconselhável executar todas as chamadas com o mesmo registro da hora
+* Isto provoca uma melhoria da performance do sistema
+****************************************************************************************************
+* Caso sejam utilizadas estruturas ou tabelas sem ligação DDIC, é necessário indicar os respectivos tipos
+* Inserir a categoria de dados adequada na linha correspondente do texto fonte.
+****************************************************************************************************
+    GET TIME STAMP FIELD lv_timestamp.
+****************************************************************************************************
+* Processar função sem registro dos dados de rastreamento, transferir objetos de dados de contexto por tabelas de nomes/valores
+****************************************************************************************************
+* Preparar processamento de função:
+****************************************************************************************************
+
+    IF ls_subject-cat_id IS NOT INITIAL.
+*      la_category = [INSERT context value here or delete the line].
+      la_category = ls_subject-cat_id.
+    ELSE.
+      RETURN.
+    ENDIF.
+
+    ls_name_value-name = 'CATEGORY'.
+    GET REFERENCE OF la_category INTO lr_data.
+    ls_name_value-value = lr_data.
+    INSERT ls_name_value INTO TABLE lt_name_value.
+****************************************************************************************************
+* Criar objeto de dados para gravar o valor do resultado após processamento da função
+* É possível ignorar a chamada seguinte, se já foi determinada
+* uma variável para o resultado. Substituir também o parâmetro
+* EA_RESULT no método de chamada CL_FDT_FUNCTION_PROCESS=>PROCESS
+* com a variável desejada.
+****************************************************************************************************
+    cl_fdt_function_process=>get_data_object_reference( EXPORTING iv_function_id      = lv_function_id
+                                                                  iv_data_object      = '_V_RESULT'
+                                                                  iv_timestamp        = lv_timestamp
+                                                                  iv_trace_generation = abap_false
+                                                        IMPORTING er_data             = lr_data ).
+    ASSIGN lr_data->* TO <la_any>.
+
+    TRY.
+        cl_fdt_function_process=>process( EXPORTING iv_function_id = lv_function_id
+                                                    iv_timestamp   = lv_timestamp
+                                          IMPORTING ea_result      = <la_any>
+                                          CHANGING  ct_name_value  = lt_name_value ).
+      CATCH cx_fdt INTO lx_fdt.
+****************************************************************************************************
+* É possível verificar CX_FDT->MT_MESSAGE para tratamento de erros.
+****************************************************************************************************
+    ENDTRY.
+
+**********************************************************************
+*   " Fim da consulta do BRF+
+**********************************************************************
+
+**********************************************************************
+*   " Realiza a atualização do valor do campo PRIORITY
+**********************************************************************
+    DATA: ls_activity_h_com   TYPE crmt_activity_h_com.
+    DATA:
+      lt_input_field_names TYPE crmt_input_field_names_tab,
+      ls_input_field_name  LIKE LINE OF lt_input_field_names.
+
+    IF <la_any> IS INITIAL.
+      EXIT.
+    ENDIF.
+*    CLEAR ls_activity_h_com.
+    ls_activity_h_com-ref_guid  = lv_header_guid.
+
+    IF <la_any> IS ASSIGNED.
+      ls_activity_h_com-priority = <la_any> .
+    ENDIF.
+
+    ls_activity_h_com-activity_h_dummy  = 'M'. "// Indicator for special handling of COMPLETION
+    REFRESH lt_input_field_names.
+    CLEAR ls_input_field_name.
+
+    ls_input_field_name-fieldname = 'PRIORITY'.
+    INSERT ls_input_field_name INTO TABLE lt_input_field_names.
+
+    ls_input_field_name-fieldname = 'ACTIVITY_H_DUMMY'.
+    INSERT ls_input_field_name INTO TABLE lt_input_field_names.
+
+    CALL FUNCTION 'CRM_ACTIVITY_H_MAINTAIN_OW'
+      EXPORTING
+        is_activity_h_com       = ls_activity_h_com
+      CHANGING
+        ct_input_field_names    = lt_input_field_names
+      EXCEPTIONS
+        header_create_error     = 1
+        header_change_error     = 2
+        parameter_error         = 3
+        admin_h_reference_error = 4
+        OTHERS                  = 5.
+
+  ENDMETHOD.
+ENDCLASS.
