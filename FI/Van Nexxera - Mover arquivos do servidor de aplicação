@@ -1,0 +1,520 @@
+****************************************************************************************
+*                      BBM/Cast                                                        *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 05.01.2021 12:17:38                                                       *
+****************************************************************************************
+* Descrição: EXN.017 - Interface Van Nexxera
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZFI001
+*&---------------------------------------------------------------------*
+REPORT zfi001.
+
+SELECTION-SCREEN BEGIN OF BLOCK filtro WITH FRAME TITLE TEXT-t01.
+
+  SELECTION-SCREEN BEGIN OF BLOCK bremes WITH FRAME TITLE TEXT-t02.
+    PARAMETERS: p_oremes TYPE ztca_param-low,
+                p_dremes TYPE ztca_param-low.
+  SELECTION-SCREEN END OF BLOCK bremes.
+
+  SELECTION-SCREEN BEGIN OF BLOCK bretor WITH FRAME TITLE TEXT-t03.
+    PARAMETERS: p_oretor TYPE ztca_param-low,
+                p_dretor TYPE ztca_param-low.
+  SELECTION-SCREEN END OF BLOCK bretor.
+
+  PARAMETERS p_delarq TYPE abap_bool NO-DISPLAY .
+SELECTION-SCREEN END OF BLOCK filtro.
+
+INITIALIZATION.
+  PERFORM buscar_parametros_tela.
+
+**********************************************************************
+* SELECTION-SCREEN
+**********************************************************************
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_oremes.
+  PERFORM f_selecionar_arquivo USING 'S' 'S' CHANGING p_oremes.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dremes.
+  PERFORM f_selecionar_arquivo USING 'S' 'S' CHANGING p_dremes.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_oretor.
+  PERFORM f_selecionar_arquivo USING 'S' 'S' CHANGING p_oretor.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dretor.
+  PERFORM f_selecionar_arquivo USING 'S' 'S' CHANGING p_dretor.
+
+**********************************************************************
+* Definições da classe
+**********************************************************************
+CLASS lcl_interface_nexxera DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      tt_arq_retorno TYPE STANDARD TABLE OF eps2fili.
+
+    METHODS:
+      constructor
+        IMPORTING
+          !iv_dir_origem_remessa TYPE ztca_param-low
+          !iv_dir_origem_retorno TYPE ztca_param-low
+          !iv_dir_destin_remessa TYPE ztca_param-low
+          !iv_dir_destin_retorno TYPE ztca_param-low
+          !iv_deletar_arquivos   TYPE abap_bool
+        RAISING
+          cx_idm_error,
+
+      processar_arquivos
+        RAISING
+          cx_idm_error.
+
+  PRIVATE SECTION.
+    DATA:
+      gv_dir_origem_remessa TYPE string, " S4
+      gv_dir_origem_retorno TYPE string, " BBM
+      gv_dir_destin_remessa TYPE string, " BBM
+      gv_dir_destin_retorno TYPE string, " S4
+      gv_deletar_arquivos   TYPE abap_bool.
+
+    DATA:
+      gt_arq_retorno TYPE tt_arq_retorno.
+
+    METHODS:
+      check_diretorios
+        RAISING
+          cx_idm_error,
+
+      check_diretorios_locais
+        IMPORTING
+          !iv_diretorio TYPE string
+        RAISING
+          cx_idm_error,
+
+      check_diretorios_servidor
+        IMPORTING
+          !iv_diretorio TYPE string
+        RAISING
+          cx_idm_error,
+
+      mover_arquivos_remessa,
+
+      mover_arquivos_retorno,
+
+      processar_arquivos_retorno.
+
+ENDCLASS.
+
+**********************************************************************
+* START-OF-SELECTION.
+**********************************************************************
+START-OF-SELECTION.
+
+  TRY .
+      DATA(lo_nexxera) = NEW lcl_interface_nexxera(
+        iv_dir_origem_remessa = p_oremes " S4
+        iv_dir_origem_retorno = p_oretor " BBM
+        iv_dir_destin_remessa = p_dremes " BBM
+        iv_dir_destin_retorno = p_dretor " S4
+        iv_deletar_arquivos   = p_delarq ).
+
+      lo_nexxera->processar_arquivos( ).
+
+      MESSAGE 'A execução do programa foi concluída' TYPE 'S'.
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+**********************************************************************
+* Implementação da classe
+**********************************************************************
+CLASS lcl_interface_nexxera IMPLEMENTATION.
+  METHOD constructor.
+*   " Tratamento para substituir "\" por "/" e remover o último caracter caso seja "/".
+    me->gv_dir_origem_remessa = replace( val = replace( val = iv_dir_origem_remessa regex = '\\' with = '/' occ = 0 ) regex = '\/$' with = '' occ = 1  ). " S4
+    me->gv_dir_origem_retorno = replace( val = replace( val = iv_dir_origem_retorno regex = '\\' with = '/' occ = 0 ) regex = '\/$' with = '' occ = 1  ). " S4/BBM
+    me->gv_dir_destin_remessa = replace( val = replace( val = iv_dir_destin_remessa regex = '\\' with = '/' occ = 0 ) regex = '\/$' with = '' occ = 1  ). " S4/BBM
+    me->gv_dir_destin_retorno = replace( val = replace( val = iv_dir_destin_retorno regex = '\\' with = '/' occ = 0 ) regex = '\/$' with = '' occ = 1  ). " S4
+    me->gv_deletar_arquivos   = iv_deletar_arquivos.
+
+    me->check_diretorios( ).
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD check_diretorios.
+    IF 1 = 2. MESSAGE i002(zfi). ENDIF. " O diretório & de & não foi informado.
+
+    IF me->gv_dir_origem_remessa IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 002 message_v1 = 'Origem' message_v2 = 'Remessa' ).
+    ELSE.
+      me->check_diretorios_servidor( iv_diretorio = me->gv_dir_origem_remessa ).
+    ENDIF.
+
+    IF me->gv_dir_destin_remessa IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 002 message_v1 = 'Destino' message_v2 = 'Remessa' ).
+    ELSE.
+      me->check_diretorios_servidor( iv_diretorio = me->gv_dir_destin_remessa ).
+*      me->check_diretorios_locais( iv_diretorio = me->gv_dir_destin_remessa ).
+    ENDIF.
+
+    IF me->gv_dir_origem_retorno IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 002 message_v1 = 'Origem' message_v2 = 'Retorno' ).
+    ELSE.
+      me->check_diretorios_servidor( iv_diretorio = me->gv_dir_origem_retorno ).
+*      me->check_diretorios_locais( iv_diretorio = me->gv_dir_origem_retorno ).
+    ENDIF.
+
+    IF me->gv_dir_destin_retorno IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 002 message_v1 = 'Destino' message_v2 = 'Retorno' ).
+    ELSE.
+      me->check_diretorios_servidor( iv_diretorio = me->gv_dir_destin_retorno ).
+    ENDIF.
+  ENDMETHOD. " CHECK_DIRETORIOS
+
+  METHOD check_diretorios_locais.
+    IF NOT cl_gui_frontend_services=>directory_exist( directory = iv_diretorio ).
+      IF 1 = 2. MESSAGE i003(zfi). ENDIF. " O diretório & não existe ou não está acessível.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+              id          = 'ZFI'
+              type        = 'E'
+              number      = 003
+              message_v1  = iv_diretorio
+          ).
+    ENDIF.
+  ENDMETHOD. " CHECK_DIRETORIOS_LOCAIS.
+
+  METHOD check_diretorios_servidor.
+    DATA:
+      lv_name  TYPE salfile-longname,
+      lt_dummy TYPE STANDARD TABLE OF salfldir.
+
+    lv_name = iv_diretorio.
+    CALL FUNCTION 'RZL_READ_DIR_LOCAL'
+      EXPORTING
+        name               = lv_name
+      TABLES
+        file_tbl           = lt_dummy
+      EXCEPTIONS
+        argument_error     = 1
+        not_found          = 2
+        no_admin_authority = 3
+        OTHERS             = 4.
+    CASE sy-subrc .
+      WHEN 2.
+        IF 1 = 2. MESSAGE i003(zfi). ENDIF. " O diretório & não existe ou não está acessível.
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #(
+                id          = 'ZFI'
+                type        = 'E'
+                number      = 003
+                message_v1  = iv_diretorio
+            ).
+      WHEN 3.
+        IF 1 = 2. MESSAGE i004(zfi). ENDIF. " Usuário sem autorização para acessar o diretório &.
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #(
+                id          = 'ZFI'
+                type        = 'E'
+                number      = 004
+                message_v1  = iv_diretorio
+            ).
+      WHEN OTHERS.
+    ENDCASE.
+  ENDMETHOD. " CHECK_DIRETORIOS_SERVIDOR
+
+  METHOD processar_arquivos.
+    BREAK c_lrocha.
+    me->mover_arquivos_remessa( ).
+
+    me->mover_arquivos_retorno( ).
+
+    me->processar_arquivos_retorno( ).
+  ENDMETHOD. " PROCESSAR_ARQUIVOS
+
+  METHOD mover_arquivos_remessa.
+    DATA:
+      lv_dir_name   TYPE eps2filnam,
+      lt_dir_files  TYPE STANDARD TABLE OF eps2fili,
+      lv_sourcepath TYPE sapb-sappfad,
+      lv_targetpath TYPE sapb-sappfad,
+      lv_length     TYPE sapb-length.
+
+    lv_dir_name = me->gv_dir_origem_remessa.
+    CALL FUNCTION 'EPS2_GET_DIRECTORY_LISTING'
+      EXPORTING
+        iv_dir_name            = lv_dir_name
+      TABLES
+        dir_list               = lt_dir_files
+      EXCEPTIONS
+        invalid_eps_subdir     = 1
+        sapgparam_failed       = 2
+        build_directory_failed = 3
+        no_authorization       = 4
+        read_directory_failed  = 5
+        too_many_read_errors   = 6
+        empty_directory_list   = 7
+        OTHERS                 = 8.
+
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF sy-uname EQ 'C_LROCHA'.
+      DELETE lt_dir_files WHERE name NE '341_01576-2_110920_00.ret'.
+    ENDIF.
+
+    LOOP AT lt_dir_files ASSIGNING FIELD-SYMBOL(<fs_file>).
+      CLEAR: lv_sourcepath, lv_targetpath, lv_length.
+
+      lv_sourcepath = |{ me->gv_dir_origem_remessa }/{ <fs_file>-name }|.
+      lv_targetpath = |{ me->gv_dir_destin_remessa }/{ <fs_file>-name }|.
+
+      CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
+        EXPORTING
+          sourcepath       = lv_sourcepath
+          targetpath       = lv_targetpath
+        IMPORTING
+          length           = lv_length
+        EXCEPTIONS
+          error_file       = 1
+          no_authorization = 2
+          OTHERS           = 3.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD. " MOVER_ARQUIVOS_REMESSA.
+
+  METHOD mover_arquivos_retorno.
+   DATA:
+      lv_dir_name   TYPE eps2filnam,
+      lt_dir_files  TYPE STANDARD TABLE OF eps2fili,
+      lv_sourcepath TYPE sapb-sappfad,
+      lv_targetpath TYPE sapb-sappfad,
+      lv_length     TYPE sapb-length.
+
+    lv_dir_name = me->gv_dir_origem_retorno.
+    CALL FUNCTION 'EPS2_GET_DIRECTORY_LISTING'
+      EXPORTING
+        iv_dir_name            = lv_dir_name
+      TABLES
+        dir_list               = lt_dir_files
+      EXCEPTIONS
+        invalid_eps_subdir     = 1
+        sapgparam_failed       = 2
+        build_directory_failed = 3
+        no_authorization       = 4
+        read_directory_failed  = 5
+        too_many_read_errors   = 6
+        empty_directory_list   = 7
+        OTHERS                 = 8.
+
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF sy-uname EQ 'C_LROCHA'.
+      DELETE lt_dir_files WHERE name NE '341_01576-2_110920_00.ret'.
+    ENDIF.
+
+    LOOP AT lt_dir_files ASSIGNING FIELD-SYMBOL(<fs_file>).
+      CLEAR: lv_sourcepath, lv_targetpath, lv_length.
+
+      lv_sourcepath = |{ me->gv_dir_origem_retorno }/{ <fs_file>-name }|.
+      lv_targetpath = |{ me->gv_dir_destin_retorno }/EXT_{ <fs_file>-name }|.
+
+      CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
+        EXPORTING
+          sourcepath       = lv_sourcepath
+          targetpath       = lv_targetpath
+        IMPORTING
+          length           = lv_length
+        EXCEPTIONS
+          error_file       = 1
+          no_authorization = 2
+          OTHERS           = 3.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+      <fs_file>-name = |EXT_{ <fs_file>-name }|.
+      APPEND <fs_file> TO me->gt_arq_retorno.
+
+    ENDLOOP.
+  ENDMETHOD. " MOVER_ARQUIVOS_RETORNO
+
+  METHOD processar_arquivos_retorno.
+    DATA:
+      lv_job_name TYPE tbtcjob-jobname,
+      lv_jobcount TYPE tbtcjob-jobcount,
+      lv_name     TYPE rfpdo1-febauszf.
+
+    LOOP AT me->gt_arq_retorno ASSIGNING FIELD-SYMBOL(<fs_file>).
+      CLEAR: lv_name, lv_job_name, lv_jobcount.
+
+      lv_job_name = |Retorno bancário-{ sy-datum }-{ sy-uzeit }|.
+
+      CALL FUNCTION 'JOB_OPEN'
+        EXPORTING
+          jobname          = lv_job_name
+        IMPORTING
+          jobcount         = lv_jobcount
+        EXCEPTIONS
+          cant_create_job  = 1
+          invalid_job_data = 2
+          jobname_missing  = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+      lv_name = |{ me->gv_dir_destin_retorno }/{ <fs_file>-name }|.
+
+*     " Submit ff_5
+      SUBMIT rfebka00 WITH einlesen = abap_true
+                      WITH format   = 'B'
+                      WITH auszfile = lv_name   " Caminho arquivo que foi salvo + Nome
+                      WITH pcupload = space
+                      WITH pa_xcall = abap_true " PA_XBDC for tests
+                      WITH p_bupro  = abap_true " log
+                      VIA JOB lv_job_name NUMBER lv_jobcount "TO SAP-SPOOL WITHOUT SPOOL DYNPRO
+                      AND RETURN.
+
+      CALL FUNCTION 'JOB_CLOSE'
+        EXPORTING
+          jobcount             = lv_jobcount
+          jobname              = lv_job_name
+          strtimmed            = abap_true
+        EXCEPTIONS
+          cant_start_immediate = 1
+          invalid_startdate    = 2
+          jobname_missing      = 3
+          job_close_failed     = 4
+          job_nosteps          = 5
+          job_notex            = 6
+          lock_failed          = 7
+          invalid_target       = 8
+          invalid_time_zone    = 9
+          OTHERS               = 10.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD. " PROCESSAR_ARQUIVOS_RETORNO
+ENDCLASS.
+
+**********************************************************************
+* Inicio dos Forms
+**********************************************************************
+*&---------------------------------------------------------------------*
+*& Form F_SELECIONAR_ARQUIVO
+*&---------------------------------------------------------------------*
+FORM f_selecionar_arquivo  USING iv_es    TYPE char1 " E = Entrada ou S = Saída
+                                 iv_tipo  TYPE char1 " L = Local ou S = Servidor
+                          CHANGING cv_diretorio TYPE ztca_param-low.
+  DATA lv_endereco TYPE string.
+  CLEAR lv_endereco.
+
+  IF iv_tipo EQ 'S'. " Servidor
+    IF iv_es EQ 'E'. " Entrada
+      lv_endereco = zcl_utilities=>selecionar_arquivo_servidor( ).
+    ELSE. " Saída
+      lv_endereco = zcl_utilities=>buscar_diretorio_servidor( ).
+    ENDIF.
+  ELSE. " Local
+    IF iv_es EQ 'E'. " Entrada
+      lv_endereco = zcl_utilities=>selecionar_arquivo_local( ).
+    ELSE. " Saída
+      lv_endereco = zcl_utilities=>buscar_diretorio_local( ).
+    ENDIF.
+  ENDIF.
+
+  IF lv_endereco IS NOT INITIAL.
+    cv_diretorio = lv_endereco.
+  ENDIF.
+
+ENDFORM. " F_SELECIONAR_ARQUIVO
+
+*&---------------------------------------------------------------------*
+*& Form BUSCAR_PARAMETROS_TELA
+*&---------------------------------------------------------------------*
+FORM buscar_parametros_tela.
+  CALL FUNCTION 'ZMF_BUSCAR_ZCAPRMN'
+    EXPORTING
+      iv_groupid          = 'FI'
+      iv_name             = 'C_DIR_S4_REMESSA'
+    IMPORTING
+      ev_valor            = p_oremes
+    EXCEPTIONS
+      nao_encontrado      = 1
+      range_nao_informado = 2
+      OTHERS              = 3.
+  IF sy-subrc <> 0.
+    MESSAGE s001(zfi) WITH 'FI' 'C_DIR_S4_REMESSA' DISPLAY LIKE 'E'.
+  ENDIF.
+
+  CALL FUNCTION 'ZMF_BUSCAR_ZCAPRMN'
+    EXPORTING
+      iv_groupid          = 'FI'
+      iv_name             = 'C_DIR_BBM_REMESSA'
+    IMPORTING
+      ev_valor            = p_dremes
+    EXCEPTIONS
+      nao_encontrado      = 1
+      range_nao_informado = 2
+      OTHERS              = 3.
+  IF sy-subrc <> 0.
+    MESSAGE s001(zfi) WITH 'FI' 'C_DIR_BBM_REMESSA' DISPLAY LIKE 'E'.
+  ENDIF.
+
+  CALL FUNCTION 'ZMF_BUSCAR_ZCAPRMN'
+    EXPORTING
+      iv_groupid          = 'FI'
+      iv_name             = 'C_DIR_BBM_RETORNO'
+    IMPORTING
+      ev_valor            = p_oretor
+    EXCEPTIONS
+      nao_encontrado      = 1
+      range_nao_informado = 2
+      OTHERS              = 3.
+  IF sy-subrc <> 0.
+    MESSAGE s001(zfi) WITH 'FI' 'C_DIR_BBM_RETORNO' DISPLAY LIKE 'E'.
+  ENDIF.
+
+  CALL FUNCTION 'ZMF_BUSCAR_ZCAPRMN'
+    EXPORTING
+      iv_groupid          = 'FI'
+      iv_name             = 'C_DIR_S4_RETORNO'
+    IMPORTING
+      ev_valor            = p_dretor
+    EXCEPTIONS
+      nao_encontrado      = 1
+      range_nao_informado = 2
+      OTHERS              = 3.
+  IF sy-subrc <> 0.
+    MESSAGE s001(zfi) WITH 'FI' 'C_DIR_S4_RETORNO' DISPLAY LIKE 'E'.
+  ENDIF.
+ENDFORM. " BUSCAR_PARAMETROS_TELA
