@@ -1,0 +1,79 @@
+METHOD executar_shdb_tk11.
+    DATA:
+      lt_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      lt_bdcmsg  TYPE STANDARD TABLE OF bdcmsgcoll,
+      lw_option  TYPE ctu_params,
+      lv_msg     TYPE c LENGTH 200.
+
+    lw_option-dismode  = 'N'. " Define o tipo de exibição de telas.
+    " A - Exibir todas as telas
+    " E - Exibir erros
+    " N - Processar em background
+    " P - Em background e depurável
+
+    lw_option-updmode  = 'S'. " Define o modo de sincronização.
+*    lw_option-defsize  = 'X'. " Define o tamanho da tela standard.
+
+    LOOP AT me->gt_tk11 ASSIGNING FIELD-SYMBOL(<fl_tk11>).
+      FREE: lt_bdcdata, lt_bdcmsg.
+
+      lt_bdcdata = VALUE #( ( dynbegin = 'X'  program  = 'SAPMV13A'       dynpro  = '0100'                )
+                            (                 fnam     = 'BDC_CURSOR'     fval    = 'RV13A-KSCHL'         )
+                            (                 fnam     = 'BDC_OKCODE'     fval    = '/00'                 )
+                            (                 fnam     = 'RV13A-KSCHL'    fval    = 'ZBFR'                )
+                            ( dynbegin = 'X'  program  = 'SAPMV13A'       dynpro  = '1529'                )
+                            (                 fnam     = 'BDC_CURSOR'     fval    = 'KONP-KBETR(01)'      )
+                            (                 fnam     = 'BDC_OKCODE'     fval    = '/00'                 )
+                            (                 fnam     = 'KOMG-BUKRS'     fval    = <fl_tk11>-bukrs       )
+                            (                 fnam     = 'KOMG-TPLST'     fval    = <fl_tk11>-tplst       )
+                            (                 fnam     = 'KOMG-TDLNR'     fval    = <fl_tk11>-tdlnr       )
+                            (                 fnam     = 'KOMG-MFRGR'     fval    = <fl_tk11>-mfrgr       )
+                            (                 fnam     = 'KOMG-ROUTE'     fval    = <fl_tk11>-route       )
+                            (                 fnam     = 'KOMG-EKORG'     fval    = <fl_tk11>-ekorg       )
+                            (                 fnam     = 'KOMG-KONNR'     fval    = <fl_tk11>-konnr       )
+                            (                 fnam     = 'KONP-KBETR'     fval    = <fl_tk11>-kbetr       )
+                            ( dynbegin = 'X'  program  = 'SAPMV13A'       dynpro  = '1529'                )
+                            (                 fnam     = 'BDC_CURSOR'     fval    = 'KOMG-KONNR(01)'      )
+                            (                 fnam     = 'BDC_OKCODE'     fval    = '=SICH'               ) ).
+
+      CALL TRANSACTION 'TK11'
+        USING lt_bdcdata
+        OPTIONS FROM lw_option
+      MESSAGES INTO lt_bdcmsg.
+
+      READ TABLE lt_bdcmsg WITH KEY msgtyp = 'E' INTO DATA(lw_bdcmsg).
+      IF sy-subrc = 0.
+
+        CLEAR lv_msg.
+        CALL FUNCTION 'FORMAT_MESSAGE'
+          EXPORTING
+            id        = lw_bdcmsg-msgid
+            no        = lw_bdcmsg-msgnr
+            v1        = lw_bdcmsg-msgv1
+            v2        = lw_bdcmsg-msgv2
+            v3        = lw_bdcmsg-msgv3
+            v4        = lw_bdcmsg-msgv4
+          IMPORTING
+            msg       = lv_msg
+          EXCEPTIONS
+            not_found = 1
+            OTHERS    = 2.
+
+        IF lv_msg IS NOT INITIAL.
+          <fl_tk11>-message = lv_msg.
+        ELSE.
+          <fl_tk11>-message = |Ocorreu um erro ao executar o SHDB|.
+        ENDIF.
+
+        <fl_tk11>-icon    = icon_red_light.
+
+      ELSE.
+
+        <fl_tk11>-icon    = icon_green_light.
+        <fl_tk11>-message = |Registro criado com sucesso|.
+
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD. " EXECUTAR_SHDB_TK11
