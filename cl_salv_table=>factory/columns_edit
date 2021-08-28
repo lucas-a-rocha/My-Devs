@@ -1,0 +1,28 @@
+  METHODS:
+    columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error.
+          
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->montar_fieldcat( it_table = it_table ).
+
+    DATA(tl_columns) = io_columns->get( ).
+    DATA ol_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT tl_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      ol_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        ol_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        ol_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        ol_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        ol_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
