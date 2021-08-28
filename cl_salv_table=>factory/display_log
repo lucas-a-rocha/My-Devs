@@ -1,0 +1,37 @@
+  METHODS: display_log_tk11.
+  
+  METHOD display_log.
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_tk11 ).
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = me->gt_tk11 io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_list_header( |Log de Execução| ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD. " DISPLAY_LOG_TK11
