@@ -1,0 +1,2703 @@
+****************************************************************************************
+*                      Inframérica/ITSS                                                *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 06.07.2021                                                                *
+****************************************************************************************
+* Descrição: Fator Q Anual Acumulado - Chamado 12179
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZPM_R029
+*&---------------------------------------------------------------------*
+REPORT zpm_r029.
+
+TABLES: t001w, zpm_t013, equi.
+
+DATA:
+  lv_dummy_meta   TYPE p LENGTH 5 DECIMALS 2,
+  gs_bt_impressao TYPE smp_dyntxt.
+
+SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE TEXT-t01.
+
+SELECT-OPTIONS:
+  s_werks   FOR t001w-werks     NO INTERVALS NO-EXTENSION OBLIGATORY,
+  s_codind  FOR zpm_t013-tidnr  NO INTERVALS NO-EXTENSION,
+  s_mes     FOR equi-baumm      NO-EXTENSION DEFAULT '01',
+  s_ano     FOR equi-baujj      NO INTERVALS NO-EXTENSION OBLIGATORY,
+  s_meta    FOR lv_dummy_meta   NO INTERVALS NO-EXTENSION OBLIGATORY.
+
+SELECTION-SCREEN END OF BLOCK b01.
+
+INITIALIZATION.
+  PERFORM bloquear_parametros.
+
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM bloquear_parametros.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_codind-low.
+  PERFORM f_searchhelp_codind CHANGING s_codind-low.
+
+**********************************************************************
+* Definições da classe
+**********************************************************************
+CLASS lcl_relatorio DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF ty_equz,
+        equnr TYPE equz-equnr,
+        datbi TYPE equz-datbi,
+        iwerk TYPE equz-iwerk,
+        tidnr TYPE equz-tidnr,
+        eqktx TYPE eqkt-eqktx,
+        datab TYPE equz-datab,
+      END OF ty_equz,
+
+      BEGIN OF ty_qmih,
+        qmnum TYPE qmih-qmnum,
+        iwerk TYPE qmih-iwerk,
+        equnr TYPE qmih-equnr,
+        msaus TYPE qmih-msaus,
+        ausvn TYPE qmih-ausvn, " Início da avaria (data)
+        ausbs TYPE qmih-ausbs, " Fim da avaria (data)
+        auztv TYPE qmih-auztv, " Início da avaria (hora)
+        auztb TYPE qmih-auztb, " Fim da avaria (hora)
+        qmart TYPE qmel-qmart,
+      END OF ty_qmih,
+
+      BEGIN OF ty_alv_data,
+        werks        TYPE t001w-werks,
+        tidnr        TYPE zpm_t013-tidnr,
+        equnr        TYPE equi-equnr,
+        descr        TYPE char100,
+        datbi        TYPE equz-datbi,
+        baujj        TYPE equi-baujj,
+        jan          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        fev          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mar          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        abr          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mai          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jun          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jul          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        ago          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        set          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        out          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        nov          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        dez          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        acumulado    TYPE p LENGTH 8 DECIMALS 2,
+        meta         TYPE p LENGTH 5 DECIMALS 2,
+        status       TYPE icon_d,
+        status_desc  TYPE char30,
+        disp_teorica TYPE numc15,
+        indisp_real  TYPE numc15,
+        saldo_disp   TYPE p LENGTH 15 DECIMALS 0,
+      END OF ty_alv_data,
+
+      BEGIN OF ty_alv_tree,
+        descr        TYPE char100,
+        datbi        TYPE equz-datbi,
+        baujj        TYPE equi-baujj,
+        jan          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        fev          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mar          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        abr          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mai          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jun          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jul          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        ago          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        set          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        out          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        nov          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        dez          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        acumulado    TYPE char6, " p LENGTH 5 DECIMALS 2,
+        meta         TYPE p LENGTH 5 DECIMALS 2,
+        status       TYPE char30, "icon_d,
+        disp_teorica TYPE numc15,
+        indisp_real  TYPE numc15,
+        saldo_disp   TYPE p LENGTH 15 DECIMALS 0,
+      END OF ty_alv_tree,
+
+      BEGIN OF ty_alv_ind_ac,
+        equnr        TYPE equi-equnr,
+        descr        TYPE char100,
+        datbi        TYPE equz-datbi,
+        tidnr        TYPE zpm_t013-tidnr,
+        baujj        TYPE equi-baujj,
+        jan          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        fev          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mar          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        abr          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        mai          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jun          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        jul          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        ago          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        set          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        out          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        nov          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        dez          TYPE char6, " p LENGTH 4 DECIMALS 2,
+        acumulado    TYPE p LENGTH 5 DECIMALS 2,
+        meta         TYPE p LENGTH 5 DECIMALS 2,
+        status       TYPE icon_d,
+        status_desc  TYPE char30,
+        disp_teorica TYPE numc15,
+        indisp_real  TYPE numc15,
+        saldo_disp   TYPE p LENGTH 15 DECIMALS 0,
+        qtd_mes_meta TYPE i,
+        acima_de3    TYPE abap_bool,
+        color        TYPE lvc_t_scol,
+      END OF ty_alv_ind_ac,
+
+      BEGIN OF ty_alv_ult_mes,
+        tidnr        TYPE zpm_t013-tidnr,
+        descr        TYPE char100,
+        baumm        TYPE equi-baumm,
+        baujj        TYPE equi-baujj,
+        tt_equpto    TYPE i,
+        qtd_mes_meta TYPE i,
+        meta         TYPE p LENGTH 5 DECIMALS 2,
+      END OF ty_alv_ult_mes,
+
+      BEGIN OF ty_alv_ind_equi,
+        equnr       TYPE equi-equnr,
+        descr       TYPE eqkt-eqktx,
+        baumm       TYPE equi-baumm,
+        baujj       TYPE equi-baujj,
+        indisp_real TYPE numc15,
+        disp_perc   TYPE p LENGTH 6 DECIMALS 2, "char6,
+*        disp_teorica TYPE numc15,
+        meta        TYPE p LENGTH 5 DECIMALS 2,
+        color       TYPE lvc_t_scol,
+      END OF ty_alv_ind_equi,
+
+      BEGIN OF ty_disponibilidade,
+        werks  TYPE t001w-werks,
+        tidnr  TYPE zpm_t013-tidnr,
+        equnr  TYPE equi-equnr,
+        mesfim TYPE zpm_t005-mesfim,
+        jan    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        fev    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        mar    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        abr    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        mai    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        jun    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        jul    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        ago    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        set    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        out    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        nov    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+        dez    TYPE i,          " Disponibilidade ou indisponibilidade diária em minutos
+      END OF ty_disponibilidade,
+
+      BEGIN OF ty_periodo_mes,
+        mes        TYPE c LENGTH 2,
+        ultimo_dia TYPE sy-datum,
+        range_dias TYPE RANGE OF sy-datum,
+      END OF ty_periodo_mes,
+
+      BEGIN OF ty_qtd_soma,
+        acumulado TYPE i,
+        jan       TYPE i,
+        fev       TYPE i,
+        mar       TYPE i,
+        abr       TYPE i,
+        mai       TYPE i,
+        jun       TYPE i,
+        jul       TYPE i,
+        ago       TYPE i,
+        set       TYPE i,
+        out       TYPE i,
+        nov       TYPE i,
+        dez       TYPE i,
+      END OF ty_qtd_soma.
+
+    TYPES:
+      tv_dummy_meta      TYPE p LENGTH 5 DECIMALS 2,
+      tv_percent_dummy   TYPE p LENGTH 6 DECIMALS 2,
+      ttr_werks          TYPE RANGE OF t001w-werks,
+      ttr_codind         TYPE RANGE OF zpm_t013-tidnr,
+      ttr_mes            TYPE RANGE OF equi-baumm,
+      ttr_ano            TYPE RANGE OF equi-baujj,
+      ttr_meta           TYPE RANGE OF tv_dummy_meta,
+      tt_t001w           TYPE STANDARD TABLE OF t001w,
+      tt_zpm_t013        TYPE STANDARD TABLE OF zpm_t013,
+      tt_equz            TYPE STANDARD TABLE OF ty_equz,
+      tt_zpm_t005        TYPE STANDARD TABLE OF zpm_t005,
+      tt_qmih            TYPE STANDARD TABLE OF ty_qmih,
+      tt_alv_data        TYPE STANDARD TABLE OF ty_alv_data,
+      tt_alv_ind_ac      TYPE STANDARD TABLE OF ty_alv_ind_ac,
+      tt_alv_ult_mes     TYPE STANDARD TABLE OF ty_alv_ult_mes,
+      tt_alv_ind_equi    TYPE STANDARD TABLE OF ty_alv_ind_equi,
+      tt_periodo_mes     TYPE STANDARD TABLE OF ty_periodo_mes,
+*      tt_disponibilidade TYPE STANDARD TABLE OF ty_disponibilidade.
+      tt_disponibilidade TYPE SORTED TABLE OF ty_disponibilidade WITH UNIQUE KEY werks tidnr equnr.
+
+    METHODS:
+      constructor
+        IMPORTING
+          !ir_werks  TYPE ttr_werks
+          !ir_codind TYPE ttr_codind
+          !ir_mes    TYPE ttr_mes
+          !ir_ano    TYPE ttr_ano
+          !ir_meta   TYPE ttr_meta
+        RAISING
+          cx_idm_error,
+
+      processar_relatorio
+        RAISING
+          cx_idm_error,
+
+      montar_alv_tree.
+
+  PRIVATE SECTION.
+    DATA:
+      gr_werks       TYPE ttr_werks,
+      gr_codind      TYPE ttr_codind,
+      gr_mes         TYPE ttr_mes,
+      gr_ano         TYPE ttr_ano,
+      gr_meta        TYPE ttr_meta,
+      gr_periodo_sel TYPE RANGE OF sy-datum.
+
+    DATA:
+      gt_t001w          TYPE tt_t001w,
+      gt_zpm_t013       TYPE tt_zpm_t013,
+      gt_equz           TYPE tt_equz,
+      gt_zpm_t005       TYPE tt_zpm_t005,
+      gt_qmih           TYPE tt_qmih,
+      gt_alv_data       TYPE tt_alv_data,
+      gt_alv_data_agrp  TYPE tt_alv_data,
+      gt_alv_tree_dummy TYPE STANDARD TABLE OF ty_alv_tree,
+      gt_alv_ind_ac     TYPE tt_alv_ind_ac,
+      gt_alv_ult_mes    TYPE tt_alv_ult_mes,
+      gt_alv_ind_equi   TYPE tt_alv_ind_equi,
+      gt_periodo_mes    TYPE tt_periodo_mes,
+      gt_disp_teorica   TYPE tt_disponibilidade,
+      gt_indisponivel   TYPE tt_disponibilidade.
+
+    DATA:
+      gv_dtini       TYPE sy-datum,
+      gv_dtfim       TYPE sy-datum,
+      gv_print_mode  TYPE abap_bool,
+      gv_update_tree TYPE abap_bool.
+
+    DATA:
+      go_alv_ind_acum TYPE REF TO cl_salv_table.
+
+    METHODS:
+      validar_parametros_selecao
+        RAISING
+          cx_idm_error,
+
+      realizar_selecao
+        RAISING
+          cx_idm_error,
+
+      calcular_ultimos_dias,
+
+      montar_tabelas,
+
+      calcular_meses_disp_teorica
+        IMPORTING
+          !is_zpm_t005     TYPE zpm_t005
+        EXPORTING
+          !es_disp_teorica TYPE ty_disponibilidade,
+
+      calcular_meses_indisp
+        IMPORTING
+          !is_qmih         TYPE ty_qmih
+        EXPORTING
+          !es_indisponivel TYPE ty_disponibilidade,
+
+      montar_dados_alv,
+
+      realizar_totais,
+
+      realizar_soma_individual
+        IMPORTING
+          !iv_soma_mes TYPE ty_alv_data-jan
+        CHANGING
+          cv_qtd_mes   TYPE i
+          cv_soma_mes  TYPE ty_alv_data-jan,
+
+      calcular_percentual
+        IMPORTING
+          !iv_disp       TYPE ty_disponibilidade-jan
+          !iv_indisp     TYPE ty_disponibilidade-jan
+        EXPORTING
+          !ev_percentual TYPE tv_percent_dummy,"ty_alv-jan,
+
+      montar_toolbar,
+
+      montar_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      preencher_alv_tree,
+
+      montar_nivel_werks
+        IMPORTING
+          !iv_werks          TYPE ty_alv_data-werks
+        RETURNING
+          VALUE(rv_node_key) TYPE lvc_nkey,
+
+      montar_soma_werks
+        IMPORTING
+          !iv_werks    TYPE ty_alv_data-werks
+        EXPORTING
+          !es_alv_tree TYPE ty_alv_tree,
+
+      montar_nivel_tidnr
+        IMPORTING
+          !iv_werks          TYPE ty_alv_data-werks
+          !iv_tidnr          TYPE ty_alv_data-tidnr
+          !iv_node_pai       TYPE lvc_nkey
+        RETURNING
+          VALUE(rv_node_key) TYPE lvc_nkey,
+
+      montar_nivel_equnr
+        IMPORTING
+          !iv_equnr          TYPE ty_alv_data-equnr
+          !iv_node_pai       TYPE lvc_nkey
+          !is_alv            TYPE ty_alv_data
+        RETURNING
+          VALUE(rv_node_key) TYPE lvc_nkey,
+
+      montar_layout_linha
+        IMPORTING
+          !is_alv_tree     TYPE ty_alv_tree
+        RETURNING
+          VALUE(rt_layout) TYPE lvc_t_layi,
+
+      tratar_percentual
+        IMPORTING
+          !iv_valor      TYPE any
+        RETURNING
+          VALUE(rv_perc) TYPE ty_alv_data-jan,
+
+      montar_cabecalho_alv
+        RETURNING
+          VALUE(rt_cabecalho) TYPE slis_t_listheader,
+
+      on_function_selected FOR EVENT function_selected OF cl_gui_toolbar
+        IMPORTING fcode,
+
+      relatorio_ind_acum,
+
+      montar_alv_ind_acum,
+
+      relatorio_ind_ult_mes,
+
+      preparar_impressao,
+
+      voltar_padrao_impressao,
+
+      preparar_impressao_ind_ult,
+
+      montar_alv_ind_ult_mes,
+
+      montar_alv_ind_equi,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error
+          cx_salv_not_found,
+
+      on_uc_salv FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function,
+
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function.
+
+ENDCLASS.
+
+** Objetos pertencentes ao ALV tree.
+DATA:
+  tree1        TYPE REF TO cl_gui_alv_tree,
+  mr_toolbar   TYPE REF TO cl_gui_toolbar,
+  gt_dummy_alv TYPE STANDARD TABLE OF lcl_relatorio=>ty_alv_tree,
+  gt_fieldcat  TYPE lvc_t_fcat.
+
+INCLUDE bcalv_toolbar_event_receiver.
+INCLUDE bcalv_tree_event_receiver.
+
+START-OF-SELECTION.
+* " Verifica se tem autorização para o Centro selecionado.
+  PERFORM authority_werks.
+
+  TRY .
+      DATA(go_relatorio) = NEW lcl_relatorio(
+          ir_werks     = s_werks[]
+          ir_codind    = s_codind[]
+          ir_mes       = s_mes[]
+          ir_ano       = s_ano[]
+          ir_meta      = s_meta[]
+      ).
+
+      go_relatorio->processar_relatorio( ).
+
+      CALL SCREEN '9001'.
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+**********************************************************************
+* Implementação da classe
+**********************************************************************
+CLASS lcl_relatorio IMPLEMENTATION.
+  METHOD constructor.
+
+    me->gr_werks[]  = ir_werks[] .
+    me->gr_codind[] = ir_codind[].
+    me->gr_mes[]    = ir_mes[]   .
+    me->gr_ano[]    = ir_ano[]   .
+    me->gr_meta[]   = ir_meta[]  .
+
+    me->calcular_ultimos_dias( ).
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD processar_relatorio.
+    FREE tree1.
+
+    me->validar_parametros_selecao( ).
+
+    me->realizar_selecao( ).
+
+    me->montar_tabelas( ).
+
+    me->montar_dados_alv( ).
+
+  ENDMETHOD. " PROCESSAR_RELATORIO
+
+  METHOD validar_parametros_selecao.
+    DATA: lv_mes TYPE n LENGTH 2.
+
+    IF me->gr_mes[] IS NOT INITIAL.
+      lv_mes = me->gr_mes[ 1 ]-high.
+
+*     " Mês deve ser vazio, menor ou igual a 12 e com 2 caracteres, sempre preenchido com o zero a esquerda.
+*me->gr_mes[ 1 ]-high = '00'
+      IF lv_mes GT 12 OR ( lv_mes GT 0 AND strlen( me->gr_mes[ 1 ]-high ) LT 2 ).
+
+        IF 1 = 2. MESSAGE i014(zpm). ENDIF. " Informar mês utilizando 0 (zero) a esquerda ou deixar campo em branco
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #( type = 'E' id = 'ZPM' number = 014 ).
+
+      ENDIF.
+
+    ENDIF.
+
+    IF gr_meta[] IS NOT INITIAL AND gr_meta[ 1 ]-low GT 100.
+
+      IF 1 = 2. MESSAGE i015(zpm). ENDIF. " Informar valor da meta até 100,00
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZPM' number = 015 ).
+
+    ENDIF.
+
+  ENDMETHOD. " VALIDAR_PARAMETROS_SELECAO
+
+  METHOD realizar_selecao.
+
+*   " Obter centro e descrição
+    SELECT *
+      FROM t001w
+      WHERE werks IN @me->gr_werks
+    INTO TABLE @me->gt_t001w.
+
+    IF me->gt_t001w[] IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZPM' number = 000 message_v1 = 'O centro informado' message_v2 = 'não foi encontrado' ).
+    ENDIF.
+
+*   " Obter Cód.Indicador e descrição
+    SELECT *
+      FROM zpm_t013
+      WHERE werks IN @me->gr_werks
+        AND ano   IN @me->gr_ano
+        AND tidnr IN @me->gr_codind
+    INTO TABLE @me->gt_zpm_t013 .
+
+    IF me->gt_zpm_t013[] IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZPM' number = 000 message_v1 = 'O Cód.Indicador informado' message_v2 = 'não foi encontrado' ).
+    ENDIF.
+
+*   " Obtem os dados referentes aos equipamentos.
+    DATA lr_tidnr TYPE RANGE OF equz-tidnr.
+    lr_tidnr = VALUE #( FOR lw_zpm_t013 IN me->gt_zpm_t013 ( sign = 'I' option = 'EQ' low = lw_zpm_t013-tidnr ) ).
+    SORT lr_tidnr.
+    DELETE ADJACENT DUPLICATES FROM lr_tidnr COMPARING ALL FIELDS.
+
+    SELECT equz~equnr, datbi, iwerk, tidnr, eqktx, equz~datab
+      FROM equz
+      LEFT OUTER JOIN eqkt ON eqkt~equnr = equz~equnr
+                          AND eqkt~spras = @sy-langu
+      WHERE datbi EQ '99991231'
+        AND iwerk IN @me->gr_werks
+        AND tidnr IN @lr_tidnr
+    INTO TABLE @me->gt_equz.
+
+    IF me->gt_equz[] IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZPM' number = 000
+            message_v1 = 'Nenhum equipamento foi encontrado' message_v2 = 'para o Cód.Indicador informado' ).
+    ENDIF.
+
+*   " Obter validade do equipamento
+    SELECT *
+      FROM zpm_t005
+      FOR ALL ENTRIES IN @me->gt_equz
+      WHERE equnr = @me->gt_equz-equnr
+        AND ( ( mesini IN @me->gr_periodo_sel ) OR " Se iniciou no período OU
+              ( mesfim IN @me->gr_periodo_sel ) OR " Se terminou no período OU
+              ( mesini LT @me->gv_dtini AND mesfim GT @me->gv_dtfim ) ) " Iniciou antes E terminou depois - são vigentes.
+    INTO TABLE @me->gt_zpm_t005.
+
+    IF me->gt_zpm_t005[] IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZPM' number = 000 message_v1 = 'Nenhum equipamento válido' message_v2 = 'foi encontrado' ).
+    ENDIF.
+
+*   " Obter indisponibilidades dos equipamentos
+    SELECT qmih~qmnum, iwerk, equnr, msaus, ausvn, ausbs, auztv, auztb, qmart
+      FROM qmih
+      INNER JOIN qmel ON qmel~qmnum EQ qmih~qmnum
+      FOR ALL ENTRIES IN @me->gt_zpm_t005
+      WHERE iwerk IN @me->gr_werks
+        AND msaus EQ @abap_true
+        AND equnr EQ @me->gt_zpm_t005-equnr
+        AND qmart IN ( 'Z1', 'Z4', 'Z8' )
+        AND ( ( ausvn IN @me->gr_periodo_sel ) OR " Se iniciou no período OU
+              ( ausbs IN @me->gr_periodo_sel ) OR " Se terminou no período OU
+              ( ausvn LT @me->gv_dtini AND ausbs GT @me->gv_dtfim ) ) " Iniciou antes E terminou depois
+     INTO TABLE @me->gt_qmih.
+
+  ENDMETHOD. " REALIZAR_SELECAO
+
+  METHOD calcular_ultimos_dias.
+
+    DATA:
+      lv_times TYPE i,
+      lv_month TYPE fcmnr,
+      lv_year  TYPE gjahr,
+      lv_dtfim TYPE sy-datum,
+      lr_dias  TYPE RANGE OF sy-datum.
+
+    IF me->gr_mes[ 1 ]-high IS INITIAL.
+      lv_times = me->gr_mes[ 1 ]-low.
+    ELSE.
+      lv_times = me->gr_mes[ 1 ]-high.
+    ENDIF.
+
+    lv_year = me->gr_ano[ 1 ]-low.
+
+    DO lv_times TIMES.
+      lv_month = sy-index.
+
+      CALL FUNCTION 'OIL_MONTH_GET_FIRST_LAST'
+        EXPORTING
+          i_month    = lv_month
+          i_year     = lv_year
+        IMPORTING
+          e_last_day = lv_dtfim
+        EXCEPTIONS
+          wrong_date = 1
+          OTHERS     = 2.
+      IF sy-subrc EQ 0.
+        lr_dias = VALUE #( ( sign = 'I' option = 'BT' low = |{ lv_year }{ lv_month }01| high = lv_dtfim ) ).
+
+        APPEND VALUE #( mes = lv_month ultimo_dia = lv_dtfim range_dias = lr_dias[] ) TO me->gt_periodo_mes.
+
+*       " Último mês da seleção
+        IF lv_times = lv_month.
+          me->gv_dtini = |{ lv_year }{ me->gr_mes[ 1 ]-low }01|.
+          me->gv_dtfim = lv_dtfim.
+
+          me->gr_periodo_sel = VALUE #( ( sign = 'I' option = 'BT' low = me->gv_dtini high = me->gv_dtfim ) ).
+        ENDIF.
+      ENDIF.
+    ENDDO.
+
+  ENDMETHOD. " CALCULAR_ULTIMOS_DIAS
+
+  METHOD montar_tabelas.
+    DATA:
+      lw_disp_teorica LIKE LINE OF me->gt_disp_teorica,
+      lw_indisponivel LIKE LINE OF me->gt_indisponivel.
+
+    SORT me->gt_t001w BY werks.
+    SORT me->gt_zpm_t013 BY werks ano tidnr.
+    SORT me->gt_equz BY iwerk tidnr.
+    SORT me->gt_zpm_t005 BY equnr mesini.
+    SORT me->gt_qmih BY equnr ausvn ausbs.
+
+    LOOP AT me->gt_t001w ASSIGNING FIELD-SYMBOL(<fl_t001w>).
+
+      READ TABLE me->gt_zpm_t013 WITH KEY werks = <fl_t001w>-werks TRANSPORTING NO FIELDS.
+      LOOP AT me->gt_zpm_t013 FROM sy-tabix ASSIGNING FIELD-SYMBOL(<fl_zpm_t013>).
+        IF <fl_zpm_t013>-werks NE <fl_t001w>-werks.
+          EXIT.
+        ENDIF.
+
+        READ TABLE me->gt_equz WITH KEY iwerk = <fl_zpm_t013>-werks tidnr = <fl_zpm_t013>-tidnr TRANSPORTING NO FIELDS.
+        LOOP AT me->gt_equz FROM sy-tabix ASSIGNING FIELD-SYMBOL(<fl_equz>).
+          IF <fl_equz>-iwerk NE <fl_zpm_t013>-werks OR <fl_equz>-tidnr NE <fl_zpm_t013>-tidnr.
+            EXIT.
+          ENDIF.
+
+*         " O equipamento pode estar disponível em varios meses, em intervalos diferentes.
+*         " Os cálculos abaixo são referentes a disponibilidade teórica do equimaneto.
+          READ TABLE me->gt_zpm_t005 WITH KEY equnr = <fl_equz>-equnr TRANSPORTING NO FIELDS.
+          LOOP AT me->gt_zpm_t005 FROM sy-tabix INTO DATA(lw_zpm_t005).
+            IF lw_zpm_t005-equnr NE <fl_equz>-equnr.
+              EXIT.
+            ENDIF.
+
+            CLEAR lw_disp_teorica.
+
+*           " Verifica os meses em que o equipamento deveria estar disponível.
+            me->calcular_meses_disp_teorica(
+              EXPORTING is_zpm_t005 = lw_zpm_t005
+              IMPORTING es_disp_teorica = lw_disp_teorica ).
+
+            IF lw_disp_teorica IS NOT INITIAL.
+              READ TABLE me->gt_disp_teorica WITH KEY werks = <fl_equz>-iwerk
+                                                      tidnr = <fl_equz>-tidnr
+                                                      equnr = <fl_equz>-equnr ASSIGNING FIELD-SYMBOL(<fl_disp_teorica>) BINARY SEARCH.
+              IF <fl_disp_teorica> IS ASSIGNED.
+*               " Se encontrou a disponibilidade do equipamento em outro mês, modifica a disponibilidade já registrada.
+
+                <fl_disp_teorica>-jan = COND #( WHEN lw_disp_teorica-jan IS NOT INITIAL THEN lw_disp_teorica-jan ELSE <fl_disp_teorica>-jan ).
+                <fl_disp_teorica>-fev = COND #( WHEN lw_disp_teorica-fev IS NOT INITIAL THEN lw_disp_teorica-fev ELSE <fl_disp_teorica>-fev ).
+                <fl_disp_teorica>-mar = COND #( WHEN lw_disp_teorica-mar IS NOT INITIAL THEN lw_disp_teorica-mar ELSE <fl_disp_teorica>-mar ).
+                <fl_disp_teorica>-abr = COND #( WHEN lw_disp_teorica-abr IS NOT INITIAL THEN lw_disp_teorica-abr ELSE <fl_disp_teorica>-abr ).
+                <fl_disp_teorica>-mai = COND #( WHEN lw_disp_teorica-mai IS NOT INITIAL THEN lw_disp_teorica-mai ELSE <fl_disp_teorica>-mai ).
+                <fl_disp_teorica>-jun = COND #( WHEN lw_disp_teorica-jun IS NOT INITIAL THEN lw_disp_teorica-jun ELSE <fl_disp_teorica>-jun ).
+                <fl_disp_teorica>-jul = COND #( WHEN lw_disp_teorica-jul IS NOT INITIAL THEN lw_disp_teorica-jul ELSE <fl_disp_teorica>-jul ).
+                <fl_disp_teorica>-ago = COND #( WHEN lw_disp_teorica-ago IS NOT INITIAL THEN lw_disp_teorica-ago ELSE <fl_disp_teorica>-ago ).
+                <fl_disp_teorica>-set = COND #( WHEN lw_disp_teorica-set IS NOT INITIAL THEN lw_disp_teorica-set ELSE <fl_disp_teorica>-set ).
+                <fl_disp_teorica>-out = COND #( WHEN lw_disp_teorica-out IS NOT INITIAL THEN lw_disp_teorica-out ELSE <fl_disp_teorica>-out ).
+                <fl_disp_teorica>-nov = COND #( WHEN lw_disp_teorica-nov IS NOT INITIAL THEN lw_disp_teorica-nov ELSE <fl_disp_teorica>-nov ).
+                <fl_disp_teorica>-dez = COND #( WHEN lw_disp_teorica-dez IS NOT INITIAL THEN lw_disp_teorica-dez ELSE <fl_disp_teorica>-dez ).
+
+                IF lw_zpm_t005-mesfim GT <fl_disp_teorica>-mesfim.
+                  <fl_disp_teorica>-mesfim = lw_zpm_t005-mesfim.
+                ENDIF.
+
+              ELSE.
+                lw_disp_teorica-werks   = <fl_equz>-iwerk.
+                lw_disp_teorica-tidnr   = <fl_equz>-tidnr.
+                lw_disp_teorica-equnr   = <fl_equz>-equnr.
+                lw_disp_teorica-mesfim  = lw_zpm_t005-mesfim.
+
+                INSERT lw_disp_teorica INTO TABLE me->gt_disp_teorica.
+              ENDIF.
+              UNASSIGN <fl_disp_teorica>.
+            ENDIF.
+
+          ENDLOOP.
+
+*         " O equipamento pode ter ficado indisponível em várias Notas QMNUM.
+          READ TABLE me->gt_qmih WITH KEY equnr = <fl_equz>-equnr TRANSPORTING NO FIELDS.
+          LOOP AT me->gt_qmih FROM sy-tabix INTO DATA(lw_qmih) .
+            IF lw_qmih-equnr NE <fl_equz>-equnr.
+              EXIT.
+            ENDIF.
+
+            CLEAR lw_indisponivel.
+
+*           " Verifica os meses em que o equipamento esteve indisponível.
+            me->calcular_meses_indisp(
+              EXPORTING
+                is_qmih      = lw_qmih
+              IMPORTING
+                es_indisponivel = lw_indisponivel
+            ).
+
+            IF lw_indisponivel IS NOT INITIAL.
+*             " A indisponibilidade deve ser apresentada apenas no período em que esteve disponível.
+              READ TABLE me->gt_disp_teorica WITH KEY werks = <fl_equz>-iwerk
+                                                      tidnr = <fl_equz>-tidnr
+                                                      equnr = <fl_equz>-equnr INTO lw_disp_teorica BINARY SEARCH.
+
+              READ TABLE me->gt_indisponivel WITH KEY werks = <fl_equz>-iwerk
+                                                      tidnr = <fl_equz>-tidnr
+                                                      equnr = <fl_equz>-equnr ASSIGNING FIELD-SYMBOL(<fl_indisponivel>) BINARY SEARCH.
+              IF <fl_indisponivel> IS ASSIGNED.
+
+*               " Se constatou a indisponibilidade do equipamento em outro mês, modifica a já registrada.
+                <fl_indisponivel>-jan = COND #( WHEN lw_disp_teorica-jan IS INITIAL THEN 0 " Deve informar apenas quando houve DISPONIBILIDADE no Mês corrente.
+                                                WHEN lw_indisponivel-jan IS NOT INITIAL THEN lw_indisponivel-jan + <fl_indisponivel>-jan ELSE <fl_indisponivel>-jan ).
+
+                <fl_indisponivel>-fev = COND #( WHEN lw_disp_teorica-fev IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-fev IS NOT INITIAL THEN lw_indisponivel-fev + <fl_indisponivel>-fev ELSE <fl_indisponivel>-fev ).
+
+                <fl_indisponivel>-mar = COND #( WHEN lw_disp_teorica-mar IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-mar IS NOT INITIAL THEN lw_indisponivel-mar + <fl_indisponivel>-mar ELSE <fl_indisponivel>-mar ).
+
+                <fl_indisponivel>-abr = COND #( WHEN lw_disp_teorica-abr IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-abr IS NOT INITIAL THEN lw_indisponivel-abr + <fl_indisponivel>-abr ELSE <fl_indisponivel>-abr ).
+
+                <fl_indisponivel>-mai = COND #( WHEN lw_disp_teorica-mai IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-mai IS NOT INITIAL THEN lw_indisponivel-mai + <fl_indisponivel>-mai ELSE <fl_indisponivel>-mai ).
+
+                <fl_indisponivel>-jun = COND #( WHEN lw_disp_teorica-jun IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-jun IS NOT INITIAL THEN lw_indisponivel-jun + <fl_indisponivel>-jun ELSE <fl_indisponivel>-jun ).
+
+                <fl_indisponivel>-jul = COND #( WHEN lw_disp_teorica-jul IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-jul IS NOT INITIAL THEN lw_indisponivel-jul + <fl_indisponivel>-jul ELSE <fl_indisponivel>-jul ).
+
+                <fl_indisponivel>-ago = COND #( WHEN lw_disp_teorica-ago IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-ago IS NOT INITIAL THEN lw_indisponivel-ago + <fl_indisponivel>-ago ELSE <fl_indisponivel>-ago ).
+
+                <fl_indisponivel>-set = COND #( WHEN lw_disp_teorica-set IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-set IS NOT INITIAL THEN lw_indisponivel-set + <fl_indisponivel>-set ELSE <fl_indisponivel>-set ).
+
+                <fl_indisponivel>-out = COND #( WHEN lw_disp_teorica-out IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-out IS NOT INITIAL THEN lw_indisponivel-out + <fl_indisponivel>-out ELSE <fl_indisponivel>-out ).
+
+                <fl_indisponivel>-nov = COND #( WHEN lw_disp_teorica-nov IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-nov IS NOT INITIAL THEN lw_indisponivel-nov + <fl_indisponivel>-nov ELSE <fl_indisponivel>-nov ).
+
+                <fl_indisponivel>-dez = COND #( WHEN lw_disp_teorica-dez IS INITIAL THEN 0
+                                                WHEN lw_indisponivel-dez IS NOT INITIAL THEN lw_indisponivel-dez + <fl_indisponivel>-dez ELSE <fl_indisponivel>-dez ).
+
+*                <fl_indisponivel>-jan = COND #( WHEN lw_indisponivel-jan IS NOT INITIAL THEN lw_indisponivel-jan ELSE <fl_indisponivel>-jan ).
+*                <fl_indisponivel>-fev = COND #( WHEN lw_indisponivel-fev IS NOT INITIAL THEN lw_indisponivel-fev ELSE <fl_indisponivel>-fev ).
+*                <fl_indisponivel>-mar = COND #( WHEN lw_indisponivel-mar IS NOT INITIAL THEN lw_indisponivel-mar ELSE <fl_indisponivel>-mar ).
+*                <fl_indisponivel>-abr = COND #( WHEN lw_indisponivel-abr IS NOT INITIAL THEN lw_indisponivel-abr ELSE <fl_indisponivel>-abr ).
+*                <fl_indisponivel>-mai = COND #( WHEN lw_indisponivel-mai IS NOT INITIAL THEN lw_indisponivel-mai ELSE <fl_indisponivel>-mai ).
+*                <fl_indisponivel>-jun = COND #( WHEN lw_indisponivel-jun IS NOT INITIAL THEN lw_indisponivel-jun ELSE <fl_indisponivel>-jun ).
+*                <fl_indisponivel>-jul = COND #( WHEN lw_indisponivel-jul IS NOT INITIAL THEN lw_indisponivel-jul ELSE <fl_indisponivel>-jul ).
+*                <fl_indisponivel>-ago = COND #( WHEN lw_indisponivel-ago IS NOT INITIAL THEN lw_indisponivel-ago ELSE <fl_indisponivel>-ago ).
+*                <fl_indisponivel>-set = COND #( WHEN lw_indisponivel-set IS NOT INITIAL THEN lw_indisponivel-set ELSE <fl_indisponivel>-set ).
+*                <fl_indisponivel>-out = COND #( WHEN lw_indisponivel-out IS NOT INITIAL THEN lw_indisponivel-out ELSE <fl_indisponivel>-out ).
+*                <fl_indisponivel>-nov = COND #( WHEN lw_indisponivel-nov IS NOT INITIAL THEN lw_indisponivel-nov ELSE <fl_indisponivel>-nov ).
+*                <fl_indisponivel>-dez = COND #( WHEN lw_indisponivel-dez IS NOT INITIAL THEN lw_indisponivel-dez ELSE <fl_indisponivel>-dez ).
+
+              ELSE.
+                lw_indisponivel-werks = <fl_equz>-iwerk.
+                lw_indisponivel-tidnr = <fl_equz>-tidnr.
+                lw_indisponivel-equnr = <fl_equz>-equnr.
+
+                lw_indisponivel-jan = COND #( WHEN lw_disp_teorica-jan IS INITIAL THEN 0 ELSE lw_indisponivel-jan ).
+                lw_indisponivel-fev = COND #( WHEN lw_disp_teorica-fev IS INITIAL THEN 0 ELSE lw_indisponivel-fev ).
+                lw_indisponivel-mar = COND #( WHEN lw_disp_teorica-mar IS INITIAL THEN 0 ELSE lw_indisponivel-mar ).
+                lw_indisponivel-abr = COND #( WHEN lw_disp_teorica-abr IS INITIAL THEN 0 ELSE lw_indisponivel-abr ).
+                lw_indisponivel-mai = COND #( WHEN lw_disp_teorica-mai IS INITIAL THEN 0 ELSE lw_indisponivel-mai ).
+                lw_indisponivel-jun = COND #( WHEN lw_disp_teorica-jun IS INITIAL THEN 0 ELSE lw_indisponivel-jun ).
+                lw_indisponivel-jul = COND #( WHEN lw_disp_teorica-jul IS INITIAL THEN 0 ELSE lw_indisponivel-jul ).
+                lw_indisponivel-ago = COND #( WHEN lw_disp_teorica-ago IS INITIAL THEN 0 ELSE lw_indisponivel-ago ).
+                lw_indisponivel-set = COND #( WHEN lw_disp_teorica-set IS INITIAL THEN 0 ELSE lw_indisponivel-set ).
+                lw_indisponivel-out = COND #( WHEN lw_disp_teorica-out IS INITIAL THEN 0 ELSE lw_indisponivel-out ).
+                lw_indisponivel-nov = COND #( WHEN lw_disp_teorica-nov IS INITIAL THEN 0 ELSE lw_indisponivel-nov ).
+                lw_indisponivel-dez = COND #( WHEN lw_disp_teorica-dez IS INITIAL THEN 0 ELSE lw_indisponivel-dez ).
+
+                INSERT lw_indisponivel INTO TABLE me->gt_indisponivel.
+              ENDIF.
+
+              UNASSIGN <fl_indisponivel>.
+            ENDIF.
+
+          ENDLOOP.
+
+        ENDLOOP.
+      ENDLOOP.
+
+    ENDLOOP.
+  ENDMETHOD. " MONTAR_TABELAS
+
+  METHOD calcular_meses_disp_teorica.
+    DATA:
+      lv_campo_mes_desc       TYPE c LENGTH 3,
+      lv_mes_dia_ini          TYPE sy-datum,
+      lv_mes_dia_fim          TYPE sy-datum,
+      lv_qtd_dias             TYPE vtbbewe-atage,
+      lv_preenche_todos_meses TYPE abap_bool,
+      lv_flag_mes             TYPE abap_bool.
+
+    FIELD-SYMBOLS:
+      <fl_disp_diaria> TYPE me->ty_disponibilidade-jan.
+
+*	  " ZPM_T005-MESFIM GE ( 28.02.2018 ) Último dia da tela de seleção E
+*	  " ZPM_T005-MESINI LE ( 01.01.2018 ) Primeiro dia da tela de seleção
+*   " Caso entre nesta regra, está dispoível em todos os meses do filtro selecionado.
+    IF is_zpm_t005-mesfim GE me->gv_dtfim AND is_zpm_t005-mesini LE me->gv_dtini.
+      lv_preenche_todos_meses = abap_true.
+    ENDIF.
+
+    LOOP AT me->gt_periodo_mes ASSIGNING FIELD-SYMBOL(<fl_periodo_mes>).
+      lv_mes_dia_ini = <fl_periodo_mes>-range_dias[ 1 ]-low.  " Primeiro dia do mês.
+      lv_mes_dia_fim = <fl_periodo_mes>-range_dias[ 1 ]-high. " Ultimo dia do mês.
+
+      CASE <fl_periodo_mes>-mes.
+        WHEN '01'.
+          lv_campo_mes_desc = 'JAN'.
+        WHEN '02'.
+          lv_campo_mes_desc = 'FEV'.
+        WHEN '03'.
+          lv_campo_mes_desc = 'MAR'.
+        WHEN '04'.
+          lv_campo_mes_desc = 'ABR'.
+        WHEN '05'.
+          lv_campo_mes_desc = 'MAI'.
+        WHEN '06'.
+          lv_campo_mes_desc = 'JUN'.
+        WHEN '07'.
+          lv_campo_mes_desc = 'JUL'.
+        WHEN '08'.
+          lv_campo_mes_desc = 'AGO'.
+        WHEN '09'.
+          lv_campo_mes_desc = 'SET'.
+        WHEN '10'.
+          lv_campo_mes_desc = 'OUT'.
+        WHEN '11'.
+          lv_campo_mes_desc = 'NOV'.
+        WHEN '12'.
+          lv_campo_mes_desc = 'DEZ'.
+      ENDCASE.
+
+      CASE lv_preenche_todos_meses.
+        WHEN abap_true.
+
+*         " Preenche a disponibilidade teórica dos equipamentos em todos os meses do filtro selecionado.
+          lv_flag_mes = abap_true.
+
+        WHEN abap_false.
+
+*         " Verifica a disponibilidade no Mês corrente do LOOP.
+          IF
+*           " Se iniciou ou terminou no mês atual, foi vigente.
+            ( is_zpm_t005-mesini IN <fl_periodo_mes>-range_dias ) OR
+            ( is_zpm_t005-mesfim IN <fl_periodo_mes>-range_dias ) OR
+
+*           " Se iniciou em um mês anterior, mas terminou em um mês posterior.
+            ( is_zpm_t005-mesini LT lv_mes_dia_ini AND ( is_zpm_t005-mesfim GT lv_mes_dia_fim ) ) .
+
+            lv_flag_mes = abap_true.
+
+          ENDIF.
+
+      ENDCASE.
+
+*     " Se esteve disponível no mês, calcula os minutos de disponibilidade.
+      IF lv_flag_mes = abap_true.
+
+*       " Preenche a quantidade de dias disponíveis no mês.
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE es_disp_teorica TO <fl_disp_diaria>.
+        IF <fl_disp_diaria> IS ASSIGNED.
+          CLEAR lv_qtd_dias.
+          CALL FUNCTION 'FIMA_DAYS_AND_MONTHS_AND_YEARS'
+            EXPORTING
+              i_date_from = lv_mes_dia_ini
+              i_date_to   = lv_mes_dia_fim
+            IMPORTING
+              e_days      = lv_qtd_dias.
+
+*         " A diferença de dias é igual a E_DAYS + 1
+          ADD 1 TO lv_qtd_dias.
+
+*         " 2.4	Cálculo mensal disponibilidade teórica e agrupamento por equipamento (EQUZ-EQUNR) e por mês.
+*         " A disponibilidade diária é calculada em minutos.
+          <fl_disp_diaria> = lv_qtd_dias * is_zpm_t005-disp.
+
+        ENDIF.
+      ENDIF.
+
+      UNASSIGN: <fl_disp_diaria>.
+      CLEAR: lv_flag_mes.
+
+    ENDLOOP.
+
+  ENDMETHOD. " CALCULAR_MESES_DISP_TEORICA
+
+  METHOD calcular_meses_indisp.
+    DATA:
+      lv_campo_mes_desc       TYPE c LENGTH 3,
+      lv_mes_dia_ini          TYPE qmih-ausvn, " Inicio do Mes
+      lv_mes_dia_fim          TYPE qmih-ausbs, " Fim do Mes
+      lv_mes_ini_avar         TYPE qmih-ausvn, " Início da avaria (data)
+      lv_mes_fim_avar         TYPE qmih-ausbs, " Fim da avaria (data)
+      lv_hora_ini             TYPE qmih-auztv, " Início da avaria (hora)
+      lv_hora_fim             TYPE qmih-auztb, " Fim da avaria (hora)
+      lv_intervalo_min        TYPE ltak-istwm,
+      lv_preenche_todos_meses TYPE abap_bool,
+      lv_flag_mes             TYPE abap_bool.
+
+    FIELD-SYMBOLS:
+      <fl_indisp_diaria> TYPE me->ty_disponibilidade-jan.
+
+*	  " QMIH-AUSBS GE ( 28.02.2018 ) Último dia da tela de seleção E
+*	  " QMIH-AUSVN LE ( 01.01.2018 ) Primeiro dia da tela de seleção
+*   " Caso entre nesta regra, esteve indisponível em todos os meses do filtro da tela.
+    IF is_qmih-ausbs GE me->gv_dtfim AND is_qmih-ausvn LE me->gv_dtini.
+      lv_preenche_todos_meses = abap_true.
+    ENDIF.
+
+    LOOP AT me->gt_periodo_mes ASSIGNING FIELD-SYMBOL(<fl_periodo_mes>).
+      lv_mes_dia_ini = <fl_periodo_mes>-range_dias[ 1 ]-low.
+      lv_mes_dia_fim = <fl_periodo_mes>-range_dias[ 1 ]-high.
+
+      CASE <fl_periodo_mes>-mes.
+        WHEN '01'.
+          lv_campo_mes_desc = 'JAN'.
+        WHEN '02'.
+          lv_campo_mes_desc = 'FEV'.
+        WHEN '03'.
+          lv_campo_mes_desc = 'MAR'.
+        WHEN '04'.
+          lv_campo_mes_desc = 'ABR'.
+        WHEN '05'.
+          lv_campo_mes_desc = 'MAI'.
+        WHEN '06'.
+          lv_campo_mes_desc = 'JUN'.
+        WHEN '07'.
+          lv_campo_mes_desc = 'JUL'.
+        WHEN '08'.
+          lv_campo_mes_desc = 'AGO'.
+        WHEN '09'.
+          lv_campo_mes_desc = 'SET'.
+        WHEN '10'.
+          lv_campo_mes_desc = 'OUT'.
+        WHEN '11'.
+          lv_campo_mes_desc = 'NOV'.
+        WHEN '12'.
+          lv_campo_mes_desc = 'DEZ'.
+      ENDCASE.
+
+      CASE lv_preenche_todos_meses.
+        WHEN abap_true.
+
+*         " Preenche o mês da indisponibilidade, caso tenha ficado indisponível em todo o periodo de seleção.
+          lv_flag_mes = abap_true.
+
+        WHEN abap_false.
+
+*         " Verifica se houve indisponibilidade no período do LOOP.
+          IF
+*           " Verifica se a indisponibilidade iniciou ou terminou no mês atual.
+            ( is_qmih-ausvn IN <fl_periodo_mes>-range_dias ) OR
+            ( is_qmih-ausbs IN <fl_periodo_mes>-range_dias ) OR
+
+*           " Verifica se a indisponibilidade iniciou em um mês anterior, mas terminou em um mês posterior.
+            ( is_qmih-ausvn LT lv_mes_dia_ini AND ( is_qmih-ausbs GT lv_mes_dia_fim ) ) .
+
+            lv_flag_mes = abap_true.
+
+          ENDIF.
+
+      ENDCASE.
+
+      IF lv_flag_mes = abap_true.
+
+*       " Determina o dia/hora INICIAL da indisponibilidade.
+        IF is_qmih-ausvn IN <fl_periodo_mes>-range_dias. " Iniciou no mês atual.
+          lv_mes_ini_avar = is_qmih-ausvn.
+          lv_hora_ini     = COND #( WHEN is_qmih-auztv = '000000' THEN '000001' ELSE is_qmih-auztv ).
+        ELSE.
+          lv_mes_ini_avar = lv_mes_dia_ini. " Iniciou em um mês anterior.
+          lv_hora_ini     = '000001'.
+        ENDIF.
+
+*       " Determina o dia/hora FINAL da indisponibilidade.
+        IF ( is_qmih-ausbs IN <fl_periodo_mes>-range_dias ). " Terminou no mês atual.
+          lv_mes_fim_avar = is_qmih-ausbs.
+          lv_hora_fim     = COND #( WHEN is_qmih-auztb = '000000' THEN '000001' ELSE is_qmih-auztb ).
+        ELSE.
+          lv_mes_fim_avar = lv_mes_dia_fim. " Terminou em um mês posterior.
+          lv_hora_fim     = '240000'.
+        ENDIF.
+
+*       " Realiza o cálculo da indisponibilidade em minutos.
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE es_indisponivel TO <fl_indisp_diaria>.
+        IF <fl_indisp_diaria> IS ASSIGNED.
+
+          CALL FUNCTION 'L_TO_TIME_DIFF'
+            EXPORTING
+              i_start_date     = lv_mes_ini_avar
+              i_start_time     = lv_hora_ini
+              i_end_date       = lv_mes_fim_avar
+              i_end_time       = lv_hora_fim
+              i_time_uom       = 'MIN'
+            IMPORTING
+              e_time_diff      = lv_intervalo_min
+            EXCEPTIONS
+              input_data_empty = 1
+              OTHERS           = 2.
+          IF sy-subrc <> 0.
+
+          ENDIF.
+
+          <fl_indisp_diaria> = lv_intervalo_min.
+
+        ENDIF.
+
+      ENDIF.
+
+      UNASSIGN: <fl_indisp_diaria>.
+      CLEAR: lv_flag_mes.
+    ENDLOOP.
+
+  ENDMETHOD. " CALCULAR_MESES_INDISP
+
+  METHOD montar_dados_alv.
+
+    DATA:
+      lv_campo_mes_desc TYPE c LENGTH 3,
+      lv_percent_soma   TYPE tv_percent_dummy,
+      lv_qtd_meses      TYPE i,
+      lv_saldo_disp     TYPE p LENGTH 15 DECIMALS 5,
+      lw_alv_data       LIKE LINE OF me->gt_alv_data,
+      lw_disp_teorica   LIKE LINE OF me->gt_disp_teorica,
+      lw_indisponivel   LIKE LINE OF me->gt_indisponivel.
+
+    FIELD-SYMBOLS:
+      <fl_disp>   TYPE ty_disponibilidade-jan,
+      <fl_indisp> TYPE ty_disponibilidade-jan,
+      <fl_perc>   TYPE ty_alv_data-jan.
+
+    SORT me->gt_equz BY iwerk tidnr equnr.
+
+*    DATA(lv_qtd_meses) = lines( me->gt_periodo_mes ).
+
+    DATA(lv_meta) = me->gr_meta[ 1 ]-low.
+
+    LOOP AT me->gt_equz ASSIGNING FIELD-SYMBOL(<fl_equipamento>).
+      CLEAR: lw_alv_data, lw_disp_teorica, lw_indisponivel, lv_percent_soma, lv_qtd_meses.
+
+      lw_alv_data = VALUE #(
+        werks = <fl_equipamento>-iwerk
+        tidnr = <fl_equipamento>-tidnr
+        equnr = <fl_equipamento>-equnr
+        descr = <fl_equipamento>-eqktx
+        baujj = me->gr_ano[ 1 ]-low
+        meta  = lv_meta
+      ).
+
+      READ TABLE me->gt_disp_teorica WITH KEY werks = <fl_equipamento>-iwerk
+                                              tidnr = <fl_equipamento>-tidnr
+                                              equnr = <fl_equipamento>-equnr INTO lw_disp_teorica.
+      CHECK sy-subrc = 0.
+
+      lw_alv_data-datbi = lw_disp_teorica-mesfim.
+
+      READ TABLE me->gt_indisponivel WITH KEY werks = <fl_equipamento>-iwerk
+                                              tidnr = <fl_equipamento>-tidnr
+                                              equnr = <fl_equipamento>-equnr INTO lw_indisponivel.
+
+      LOOP AT me->gt_periodo_mes ASSIGNING FIELD-SYMBOL(<fl_periodo_mes>).
+        CASE <fl_periodo_mes>-mes.
+          WHEN '01'.
+            lv_campo_mes_desc = 'JAN'.
+          WHEN '02'.
+            lv_campo_mes_desc = 'FEV'.
+          WHEN '03'.
+            lv_campo_mes_desc = 'MAR'.
+          WHEN '04'.
+            lv_campo_mes_desc = 'ABR'.
+          WHEN '05'.
+            lv_campo_mes_desc = 'MAI'.
+          WHEN '06'.
+            lv_campo_mes_desc = 'JUN'.
+          WHEN '07'.
+            lv_campo_mes_desc = 'JUL'.
+          WHEN '08'.
+            lv_campo_mes_desc = 'AGO'.
+          WHEN '09'.
+            lv_campo_mes_desc = 'SET'.
+          WHEN '10'.
+            lv_campo_mes_desc = 'OUT'.
+          WHEN '11'.
+            lv_campo_mes_desc = 'NOV'.
+          WHEN '12'.
+            lv_campo_mes_desc = 'DEZ'.
+        ENDCASE.
+
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE lw_disp_teorica TO <fl_disp>.
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE lw_indisponivel TO <fl_indisp>.
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE lw_alv_data     TO <fl_perc>.
+
+        CHECK <fl_disp> IS ASSIGNED AND <fl_indisp> IS ASSIGNED AND <fl_perc> IS ASSIGNED.
+
+        lw_alv_data-disp_teorica = lw_alv_data-disp_teorica + <fl_disp>.
+        lw_alv_data-indisp_real  = lw_alv_data-indisp_real + <fl_indisp>.
+
+*       " O cálculo de percentual deve ser realizado APENAS quando estiver Disponível.
+        IF <fl_disp> IS NOT INITIAL.
+
+          ADD 1 TO lv_qtd_meses. " Deve contabilizar apenas os meses em que esteve disponível.
+
+          me->calcular_percentual(
+            EXPORTING
+              iv_disp       = <fl_disp>
+              iv_indisp     = <fl_indisp>
+            IMPORTING
+              ev_percentual = DATA(lv_percentual)
+          ).
+
+          <fl_perc> = lv_percentual.
+
+        ENDIF.
+
+        lv_percent_soma = lv_percent_soma + lv_percentual.
+
+        CLEAR lv_percentual.
+
+      ENDLOOP.
+
+      lw_alv_data-acumulado = lv_percent_soma / lv_qtd_meses.
+
+      IF lw_alv_data-acumulado GE lv_meta.
+        lw_alv_data-status = icon_green_light.
+        lw_alv_data-status_desc = 'Acima da meta'.
+      ELSE.
+        lw_alv_data-status = icon_red_light .
+        lw_alv_data-status_desc = 'Abaixo da meta'.
+      ENDIF.
+
+*     Indisp - ( (Disp.teorica (min))  *   ((100,00 – META) / 100) )
+      lw_alv_data-saldo_disp = ( lw_alv_data-disp_teorica * ( ( 100 - lv_meta ) / 100 ) ) - lw_alv_data-indisp_real.
+
+      APPEND lw_alv_data TO me->gt_alv_data.
+
+    ENDLOOP.
+
+    me->realizar_totais( ).
+
+  ENDMETHOD. " MONTAR_DADOS_ALV
+
+  METHOD realizar_totais.
+    DATA:
+      lw_alv_data_agrp  LIKE LINE OF me->gt_alv_data_agrp,
+      lw_alv_data_werks LIKE LINE OF me->gt_alv_data_agrp,
+      ls_qtd_soma       TYPE me->ty_qtd_soma,
+      ls_qtd_soma_werks TYPE me->ty_qtd_soma,
+      lv_qtd_acum_werks TYPE i.
+
+    DATA(lv_meta) = me->gr_meta[ 1 ]-low.
+    DATA(lv_ano)  = me->gr_ano[ 1 ]-low.
+
+    lw_alv_data_werks-tidnr = 'TODOS'.
+    lw_alv_data_werks-meta  = lv_meta.
+    lw_alv_data_werks-baujj = lv_ano.
+
+*   " Agrupa os totais de WERKS e TIDNR.
+    LOOP AT me->gt_alv_data INTO DATA(lw_alv_group)
+          GROUP BY ( werks = lw_alv_group-werks
+                     tidnr = lw_alv_group-tidnr
+                     size  = GROUP SIZE
+                     index = GROUP INDEX ) ASCENDING ASSIGNING FIELD-SYMBOL(<group>).
+
+      CLEAR: lw_alv_data_agrp, ls_qtd_soma.
+
+      lw_alv_data_werks-werks = <group>-werks.
+
+      lw_alv_data_agrp-werks  = <group>-werks.
+      lw_alv_data_agrp-tidnr  = <group>-tidnr.
+      lw_alv_data_agrp-meta   = lv_meta.
+      lw_alv_data_agrp-baujj  = lv_ano.
+
+      LOOP AT GROUP <group> ASSIGNING FIELD-SYMBOL(<fl_alv_data>).
+
+        lw_alv_data_agrp-disp_teorica   = lw_alv_data_agrp-disp_teorica + <fl_alv_data>-disp_teorica.
+        lw_alv_data_agrp-indisp_real    = lw_alv_data_agrp-indisp_real + <fl_alv_data>-indisp_real.
+        lw_alv_data_agrp-saldo_disp     = lw_alv_data_agrp-saldo_disp + <fl_alv_data>-saldo_disp.
+
+        IF <fl_alv_data>-jan NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jan
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-jan
+                                                 cv_soma_mes  =  lw_alv_data_agrp-jan ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jan
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-jan
+                                                 cv_soma_mes  = lw_alv_data_werks-jan ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-fev NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-fev
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-fev
+                                                 cv_soma_mes  =  lw_alv_data_agrp-fev ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-fev
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-fev
+                                                 cv_soma_mes  = lw_alv_data_werks-fev ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-mar NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-mar
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-mar
+                                                 cv_soma_mes  =  lw_alv_data_agrp-mar ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-mar
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-mar
+                                                 cv_soma_mes  = lw_alv_data_werks-mar ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-abr NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-abr
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-abr
+                                                 cv_soma_mes  =  lw_alv_data_agrp-abr ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-abr
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-abr
+                                                 cv_soma_mes  = lw_alv_data_werks-abr ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-mai NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-mai
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-mai
+                                                 cv_soma_mes  =  lw_alv_data_agrp-mai ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-mai
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-mai
+                                                 cv_soma_mes  = lw_alv_data_werks-mai ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-jun NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jun
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-jun
+                                                 cv_soma_mes  =  lw_alv_data_agrp-jun ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jun
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-jun
+                                                 cv_soma_mes  = lw_alv_data_werks-jun ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-jul NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jul
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-jul
+                                                 cv_soma_mes  =  lw_alv_data_agrp-jul ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-jul
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-jul
+                                                 cv_soma_mes  = lw_alv_data_werks-jul ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-ago NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-ago
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-ago
+                                                 cv_soma_mes  =  lw_alv_data_agrp-ago ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-ago
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-ago
+                                                 cv_soma_mes  = lw_alv_data_werks-ago ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-set NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-set
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-set
+                                                 cv_soma_mes  =  lw_alv_data_agrp-set ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-set
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-set
+                                                 cv_soma_mes  = lw_alv_data_werks-set ).
+
+        ENDIF.
+
+        IF <fl_alv_data>-out NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-out
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-out
+                                                 cv_soma_mes  =  lw_alv_data_agrp-out ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-out
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-out
+                                                 cv_soma_mes  = lw_alv_data_werks-out ).
+        ENDIF.
+
+        IF <fl_alv_data>-nov NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-nov
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-nov
+                                                 cv_soma_mes  =  lw_alv_data_agrp-nov ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-nov
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-nov
+                                                 cv_soma_mes  = lw_alv_data_werks-nov ).
+        ENDIF.
+
+        IF <fl_alv_data>-dez NE space.
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-dez
+                                         CHANGING cv_qtd_mes  =       ls_qtd_soma-dez
+                                                 cv_soma_mes  =  lw_alv_data_agrp-dez ).
+          me->realizar_soma_individual( EXPORTING iv_soma_mes =     <fl_alv_data>-dez
+                                         CHANGING cv_qtd_mes  = ls_qtd_soma_werks-dez
+                                                 cv_soma_mes  = lw_alv_data_werks-dez ).
+        ENDIF.
+
+        lw_alv_data_agrp-acumulado = lw_alv_data_agrp-acumulado + <fl_alv_data>-acumulado.
+      ENDLOOP.
+
+*     " Ajusta os parcentuais para o padrao solicitado na ESPEC.
+      lw_alv_data_agrp-jan = COND #( WHEN ls_qtd_soma-jan IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-jan / ls_qtd_soma-jan ) ).
+      lw_alv_data_agrp-fev = COND #( WHEN ls_qtd_soma-fev IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-fev / ls_qtd_soma-fev ) ).
+      lw_alv_data_agrp-mar = COND #( WHEN ls_qtd_soma-mar IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-mar / ls_qtd_soma-mar ) ).
+      lw_alv_data_agrp-abr = COND #( WHEN ls_qtd_soma-abr IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-abr / ls_qtd_soma-abr ) ).
+      lw_alv_data_agrp-mai = COND #( WHEN ls_qtd_soma-mai IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-mai / ls_qtd_soma-mai ) ).
+      lw_alv_data_agrp-jun = COND #( WHEN ls_qtd_soma-jun IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-jun / ls_qtd_soma-jun ) ).
+      lw_alv_data_agrp-jul = COND #( WHEN ls_qtd_soma-jul IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-jul / ls_qtd_soma-jul ) ).
+      lw_alv_data_agrp-ago = COND #( WHEN ls_qtd_soma-ago IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-ago / ls_qtd_soma-ago ) ).
+      lw_alv_data_agrp-set = COND #( WHEN ls_qtd_soma-set IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-set / ls_qtd_soma-set ) ).
+      lw_alv_data_agrp-out = COND #( WHEN ls_qtd_soma-out IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-out / ls_qtd_soma-out ) ).
+      lw_alv_data_agrp-nov = COND #( WHEN ls_qtd_soma-nov IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-nov / ls_qtd_soma-nov ) ).
+      lw_alv_data_agrp-dez = COND #( WHEN ls_qtd_soma-dez IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_agrp-dez / ls_qtd_soma-dez ) ).
+
+*     " LAR - 20.09.2021 - Novo tratamento para soma de acumulados - Regra: Somar os percentuais e dividir pelos existentes.
+      lw_alv_data_agrp-acumulado = me->tratar_percentual( iv_valor = lw_alv_data_agrp-acumulado / <group>-size ).
+
+      IF lw_alv_data_agrp-acumulado GE lv_meta.
+        lw_alv_data_agrp-status = icon_green_light.
+        lw_alv_data_agrp-status_desc = 'Acima da meta'.
+      ELSE.
+        lw_alv_data_agrp-status = icon_red_light .
+        lw_alv_data_agrp-status_desc = 'Abaixo da meta'.
+      ENDIF.
+
+      APPEND lw_alv_data_agrp TO me->gt_alv_data_agrp.
+
+*     " Preenche a soma referente ao CENTRO.
+      lw_alv_data_werks-disp_teorica   = lw_alv_data_werks-disp_teorica + lw_alv_data_agrp-disp_teorica.
+      lw_alv_data_werks-indisp_real    = lw_alv_data_werks-indisp_real + lw_alv_data_agrp-indisp_real.
+      lw_alv_data_werks-saldo_disp     = lw_alv_data_werks-saldo_disp + lw_alv_data_agrp-saldo_disp.
+
+      ADD 1 TO lv_qtd_acum_werks.
+      lw_alv_data_werks-acumulado = lw_alv_data_werks-acumulado + lw_alv_data_agrp-acumulado.
+
+    ENDLOOP.
+
+*   " Realiza o cálculo do valor acumulado do centro
+    lw_alv_data_werks-acumulado = me->tratar_percentual( iv_valor = lw_alv_data_werks-acumulado / lv_qtd_acum_werks ).
+
+*    lw_alv_data_werks-acumulado = lw_alv_data_werks-acumulado / ls_qtd_soma_werks-acumulado.
+*    lw_alv_data_werks-acumulado = me->tratar_percentual( iv_valor = lw_alv_data_werks-acumulado ).
+
+*   " Realiza o calculo do percentual o WERKS.
+    lw_alv_data_werks-jan = COND #( WHEN ls_qtd_soma-jan IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-jan / ls_qtd_soma_werks-jan ) ).
+    lw_alv_data_werks-fev = COND #( WHEN ls_qtd_soma-fev IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-fev / ls_qtd_soma_werks-fev ) ).
+    lw_alv_data_werks-mar = COND #( WHEN ls_qtd_soma-mar IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-mar / ls_qtd_soma_werks-mar ) ).
+    lw_alv_data_werks-abr = COND #( WHEN ls_qtd_soma-abr IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-abr / ls_qtd_soma_werks-abr ) ).
+    lw_alv_data_werks-mai = COND #( WHEN ls_qtd_soma-mai IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-mai / ls_qtd_soma_werks-mai ) ).
+    lw_alv_data_werks-jun = COND #( WHEN ls_qtd_soma-jun IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-jun / ls_qtd_soma_werks-jun ) ).
+    lw_alv_data_werks-jul = COND #( WHEN ls_qtd_soma-jul IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-jul / ls_qtd_soma_werks-jul ) ).
+    lw_alv_data_werks-ago = COND #( WHEN ls_qtd_soma-ago IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-ago / ls_qtd_soma_werks-ago ) ).
+    lw_alv_data_werks-set = COND #( WHEN ls_qtd_soma-set IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-set / ls_qtd_soma_werks-set ) ).
+    lw_alv_data_werks-out = COND #( WHEN ls_qtd_soma-out IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-out / ls_qtd_soma_werks-out ) ).
+    lw_alv_data_werks-nov = COND #( WHEN ls_qtd_soma-nov IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-nov / ls_qtd_soma_werks-nov ) ).
+    lw_alv_data_werks-dez = COND #( WHEN ls_qtd_soma-dez IS INITIAL THEN '' ELSE me->tratar_percentual( iv_valor = lw_alv_data_werks-dez / ls_qtd_soma_werks-dez ) ).
+
+    IF lw_alv_data_werks-acumulado GE lv_meta.
+      lw_alv_data_werks-status = icon_green_light.
+      lw_alv_data_werks-status_desc = 'Acima da meta'.
+    ELSE.
+      lw_alv_data_werks-status = icon_red_light .
+      lw_alv_data_werks-status_desc = 'Abaixo da meta'.
+    ENDIF.
+
+*  " LAR - 21.09.2021 - Novo ajuste de valor acumulado. Para Werks, deve somar os acumulados dos equipamentos, e nao dos Cod.Ind.
+    DATA lv_acumulado TYPE p LENGTH 12 DECIMALS 4.
+    LOOP AT me->gt_alv_data INTO DATA(lw_gt_sum).
+      lv_acumulado = lv_acumulado + lw_gt_sum-acumulado.
+    ENDLOOP.
+
+    lw_alv_data_werks-acumulado = lv_acumulado / lines( me->gt_alv_data ).
+
+    APPEND lw_alv_data_werks TO me->gt_alv_data_agrp.
+
+  ENDMETHOD. " REALIZAR_TOTAIS
+
+  METHOD realizar_soma_individual.
+
+    ADD 1 TO cv_qtd_mes.
+
+    cv_soma_mes  = cv_soma_mes  + iv_soma_mes.
+
+  ENDMETHOD. " REALIZAR_SOMA_INDIVIDUAL
+
+  METHOD calcular_percentual.
+    DATA:
+      lv_percent  TYPE p LENGTH 10 DECIMALS 5.
+
+*    IF iv_disp IS INITIAL.
+*      lv_percent = 0.
+*    ELSE.
+*      lv_percent = 100 - ( iv_indisp / iv_disp ) * 100 .
+*    ENDIF.
+
+    lv_percent = 100 - ( iv_indisp / iv_disp ) * 100 .
+
+    ev_percentual = lv_percent.
+
+  ENDMETHOD. " CALCULAR_PERCENTUAL
+
+  METHOD montar_alv_tree.
+
+    IF tree1 IS NOT BOUND.
+      gt_fieldcat = me->montar_fieldcat( it_table = me->gt_alv_tree_dummy ).
+
+      DATA(lo_custom) = NEW cl_gui_custom_container( container_name = 'TREE1' ).
+
+      tree1 = NEW cl_gui_alv_tree(
+        parent              = lo_custom
+        node_selection_mode = cl_gui_column_tree=>node_sel_mode_single
+        item_selection      = abap_true
+        no_toolbar          = abap_false
+        no_html_header      = abap_false
+      ).
+
+      tree1->set_table_for_first_display(
+        EXPORTING
+          is_variant           = VALUE #( report = sy-repid )
+          i_save               = 'A'
+          is_hierarchy_header  = VALUE #(
+            heading = 'Centro / Cód. Indicador / Equipamento'
+            tooltip = 'Centro / Cód. Indicador / Equipamento'
+            width = 33
+            width_pix = '' )
+          it_list_commentary  = montar_cabecalho_alv( )
+        CHANGING
+          it_outtab            = gt_dummy_alv
+          it_fieldcatalog      = gt_fieldcat ).
+
+      me->montar_toolbar( ).
+
+      me->preencher_alv_tree( ).
+
+    ELSE.
+      IF gv_update_tree = abap_true.
+        CLEAR gv_update_tree.
+
+        me->preencher_alv_tree( ).
+      ENDIF.
+    ENDIF.
+
+
+  ENDMETHOD. " MONTAR_ALV_TREE
+
+  METHOD montar_toolbar.
+
+    tree1->get_toolbar_object(
+      IMPORTING
+        er_toolbar = mr_toolbar
+    ).
+
+    mr_toolbar->add_button(
+      EXPORTING
+        fcode     = 'IND_ACUM'
+        icon      = icon_display
+        butn_type = cntb_btype_button
+        text      = 'Indices Acumulados'
+        quickinfo = 'Indices Acumulados' ).
+
+    mr_toolbar->add_button(
+      EXPORTING
+        fcode     = 'IND_ULT_MES'
+        icon      = icon_zoom_in
+        butn_type = cntb_btype_button
+        text      = 'Indices Ult.Mês'
+        quickinfo = 'Indices Ult.Mês' ).
+
+    mr_toolbar->add_button(
+      EXPORTING
+        fcode     = 'PREP_IMPRESSAO'
+        icon      = icon_activity
+        butn_type = cntb_btype_button
+        text      = 'Preparar Impressão'
+        quickinfo = 'Preparar Impressão' ).
+
+    SET HANDLER go_relatorio->on_function_selected FOR mr_toolbar.
+  ENDMETHOD. " MONTAR_TOOLBAR
+
+  METHOD montar_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4.
+      ls_fieldcat-scrtext_m = &3.
+      ls_fieldcat-scrtext_s = &2.
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+*      lt_dummy_alv TYPE STANDARD TABLE OF me->ty_alv_tree,
+      lo_data      TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table. ".
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      CASE <fl_fcat>-fieldname.
+        WHEN 'DESCR'       .
+          dfcat_texto <fl_fcat> 'Descrição' 'Descrição' 'Descrição' 40.
+        WHEN 'DATBI'       .
+          dfcat_texto <fl_fcat> 'Validade' 'Validade' 'Validade' 15.
+        WHEN 'BAUMM'.
+          dfcat_texto <fl_fcat> 'Mês' 'Mês' 'Mês' 8.
+        WHEN 'BAUJJ'       .
+          dfcat_texto <fl_fcat> 'Ano' 'Ano' 'Ano' 10.
+        WHEN 'JAN'         .
+          dfcat_texto <fl_fcat> 'Jan' 'Jan' 'Jan' 10.
+        WHEN 'FEV'         .
+          dfcat_texto <fl_fcat> 'Fev' 'Fev' 'Fev' 10.
+        WHEN 'MAR'         .
+          dfcat_texto <fl_fcat> 'Mar' 'Mar' 'Mar' 10.
+        WHEN 'ABR'         ..
+          dfcat_texto <fl_fcat> 'Abr' 'Abr' 'Abr' 10.
+        WHEN 'MAI'         .
+          dfcat_texto <fl_fcat> 'Mai' 'Mai' 'Mai' 10.
+        WHEN 'JUN'         .
+          dfcat_texto <fl_fcat> 'Jun' 'Jun' 'Jun' 10.
+        WHEN 'JUL'         .
+          dfcat_texto <fl_fcat> 'Jul' 'Jul' 'Jul' 10.
+        WHEN 'AGO'         .
+          dfcat_texto <fl_fcat> 'Ago' 'Ago' 'Ago' 10.
+        WHEN 'SET'         .
+          dfcat_texto <fl_fcat> 'Set' 'Set' 'Set' 10.
+        WHEN 'OUT'         .
+          dfcat_texto <fl_fcat> 'Out' 'Out' 'Out' 10.
+        WHEN 'NOV'         .
+          dfcat_texto <fl_fcat> 'Nov' 'Nov' 'Nov' 10.
+        WHEN 'DEZ'         .
+          dfcat_texto <fl_fcat> 'Dez' 'Dez' 'Dez' 10.
+        WHEN 'ACUMULADO'   .
+          dfcat_texto <fl_fcat> 'Acum(%)' 'Acumulado (%)' 'Acumulado (%)' 10.
+        WHEN 'META'        .
+          dfcat_texto <fl_fcat> 'Meta (%)' 'Meta (%)' 'Meta (%)' 10.
+        WHEN 'STATUS'      .
+          dfcat_texto <fl_fcat> 'Status' 'Status' 'Status' 8.
+          <fl_fcat>-icon = 'X'.
+        WHEN 'STATUS_DESC'      .
+          dfcat_texto <fl_fcat> 'Status' 'Status' 'Status' 20.
+        WHEN 'DISP_TEORICA'.
+          dfcat_texto <fl_fcat> 'Disp.T(min)' 'Disp.teorica (min)' 'Disponibilidade teorica (min)' 12.
+        WHEN 'INDISP_REAL' .
+          dfcat_texto <fl_fcat> 'Indis.R (min)' 'Indisp.real (min)' 'Indisponibilidade real (min)' 12.
+        WHEN 'SALDO_DISP'  .
+          dfcat_texto <fl_fcat> 'Saldo disp.(min)' 'Saldo disp.(min)' 'Saldo disponível (min)' 12.
+        WHEN 'QTD_MES_META'.
+          dfcat_texto <fl_fcat> 'Qtd.Equ<Meta' 'Qtd.Equpto < Meta' 'Qtd.Equiptos < Meta' 12.
+        WHEN 'ACIMA_DE3'.
+          dfcat_texto <fl_fcat> 'Acima de 3' 'Acima de 3 meses' 'Acima de 3 meses' 12.
+        WHEN 'TT_EQUPTO'.
+          dfcat_texto <fl_fcat> 'TotalEqpto' 'Total equiptos' 'Total de equipamentos' 12.
+        WHEN 'DISP_PERC'.
+          dfcat_texto <fl_fcat> 'Disp.(%)' 'Disp.(%)' 'Disp.(%)' 10.
+        WHEN OTHERS.
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " MONTAR_FIELDCAT
+
+  METHOD preencher_alv_tree.
+    DATA:
+      lv_node_werks TYPE lvc_nkey,
+      lv_node_tidnr TYPE lvc_nkey.
+
+    tree1->delete_all_nodes( ).
+
+    LOOP AT me->gt_alv_data INTO DATA(lw_alv_group)
+      GROUP BY ( werks = lw_alv_group-werks
+                 tidnr = lw_alv_group-tidnr
+                 size  = GROUP SIZE
+                 index = GROUP INDEX ) ASCENDING ASSIGNING FIELD-SYMBOL(<group>).
+
+*     " Deve criar o nó do Centro apenas quando o filtro do indicador estiver vazio.
+      IF me->gr_codind IS INITIAL AND lv_node_werks IS INITIAL.
+        lv_node_werks = me->montar_nivel_werks(
+          EXPORTING
+            iv_werks = <group>-werks
+        ).
+      ENDIF.
+
+      CLEAR lv_node_tidnr.
+      lv_node_tidnr = me->montar_nivel_tidnr(
+        EXPORTING
+          iv_werks    = <group>-werks
+          iv_tidnr    = <group>-tidnr
+          iv_node_pai = lv_node_werks
+      ).
+
+      LOOP AT GROUP <group> ASSIGNING FIELD-SYMBOL(<fl_alv_data>).
+
+        me->montar_nivel_equnr(
+          EXPORTING
+            iv_equnr    = <fl_alv_data>-equnr
+            iv_node_pai = lv_node_tidnr
+            is_alv      = <fl_alv_data>
+        ).
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+    CALL METHOD tree1->frontend_update.
+
+  ENDMETHOD. " PREENCHER_ALV_TREE
+
+  METHOD montar_nivel_werks.
+    DATA:
+      lv_node_txt    TYPE lvc_value,
+      ls_outtab_line TYPE me->ty_alv_tree,
+      lt_item_layout TYPE lvc_t_layi.
+
+*    me->montar_soma_werks( EXPORTING iv_werks = iv_werks IMPORTING es_alv_tree = ls_outtab_line ).
+    READ TABLE me->gt_alv_data_agrp WITH KEY werks = iv_werks tidnr = 'TODOS' INTO DATA(lw_alv_data_agrp).
+    ls_outtab_line = CORRESPONDING #( lw_alv_data_agrp ).
+
+    lt_item_layout = me->montar_layout_linha( EXPORTING is_alv_tree = ls_outtab_line ).
+
+    READ TABLE me->gt_t001w WITH KEY werks = iv_werks INTO DATA(lw_t001w).
+    ls_outtab_line-descr = lw_t001w-name1.
+
+    IF gv_print_mode = abap_true.
+      ls_outtab_line-status = lw_alv_data_agrp-status_desc.
+    ENDIF.
+
+    lv_node_txt = iv_werks.
+    tree1->add_node(
+      EXPORTING
+        i_relat_node_key     = space " Nó Inicial
+        i_relationship       = cl_gui_column_tree=>relat_last_child
+        is_outtab_line       = ls_outtab_line
+*      is_node_layout       =                  " Node Layout
+        it_item_layout       = lt_item_layout
+        i_node_text          = lv_node_txt
+      IMPORTING
+        e_new_node_key       = rv_node_key
+      EXCEPTIONS
+        relat_node_not_found = 1
+        node_not_found       = 2
+        OTHERS               = 3
+    ).
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+  ENDMETHOD. " MONTAR_NIVEL_WERKS
+
+  METHOD montar_soma_werks.
+    DATA:
+      lv_linhas TYPE i,
+      lv_acm    TYPE p LENGTH 8 DECIMALS 4,
+      lv_jan    TYPE p LENGTH 8 DECIMALS 4,
+      lv_fev    TYPE p LENGTH 8 DECIMALS 4,
+      lv_mar    TYPE p LENGTH 8 DECIMALS 4,
+      lv_abr    TYPE p LENGTH 8 DECIMALS 4,
+      lv_mai    TYPE p LENGTH 8 DECIMALS 4,
+      lv_jun    TYPE p LENGTH 8 DECIMALS 4,
+      lv_jul    TYPE p LENGTH 8 DECIMALS 4,
+      lv_ago    TYPE p LENGTH 8 DECIMALS 4,
+      lv_set    TYPE p LENGTH 8 DECIMALS 4,
+      lv_out    TYPE p LENGTH 8 DECIMALS 4,
+      lv_nov    TYPE p LENGTH 8 DECIMALS 4,
+      lv_dez    TYPE p LENGTH 8 DECIMALS 4,
+
+      lv_acm_c  TYPE c LENGTH 8,
+      lv_jan_c  TYPE c LENGTH 8,
+      lv_fev_c  TYPE c LENGTH 8,
+      lv_mar_c  TYPE c LENGTH 8,
+      lv_abr_c  TYPE c LENGTH 8,
+      lv_mai_c  TYPE c LENGTH 8,
+      lv_jun_c  TYPE c LENGTH 8,
+      lv_jul_c  TYPE c LENGTH 8,
+      lv_ago_c  TYPE c LENGTH 8,
+      lv_set_c  TYPE c LENGTH 8,
+      lv_out_c  TYPE c LENGTH 8,
+      lv_nov_c  TYPE c LENGTH 8,
+      lv_dez_c  TYPE c LENGTH 8.
+
+    LOOP AT me->gt_alv_data ASSIGNING FIELD-SYMBOL(<fl_alv_data>).
+      ADD 1 TO lv_linhas.
+
+      es_alv_tree-disp_teorica = es_alv_tree-disp_teorica + <fl_alv_data>-disp_teorica.
+      es_alv_tree-indisp_real = es_alv_tree-indisp_real + <fl_alv_data>-indisp_real.
+      es_alv_tree-saldo_disp = es_alv_tree-saldo_disp + <fl_alv_data>-saldo_disp.
+
+      es_alv_tree-acumulado = es_alv_tree-acumulado + <fl_alv_data>-acumulado.
+      es_alv_tree-jan       = es_alv_tree-jan       + <fl_alv_data>-jan.
+      es_alv_tree-fev       = es_alv_tree-fev       + <fl_alv_data>-fev.
+      es_alv_tree-mar       = es_alv_tree-mar       + <fl_alv_data>-mar.
+      es_alv_tree-abr       = es_alv_tree-abr       + <fl_alv_data>-abr.
+      es_alv_tree-mai       = es_alv_tree-mai       + <fl_alv_data>-mai.
+      es_alv_tree-jun       = es_alv_tree-jun       + <fl_alv_data>-jun.
+      es_alv_tree-jul       = es_alv_tree-jul       + <fl_alv_data>-jul.
+      es_alv_tree-ago       = es_alv_tree-ago       + <fl_alv_data>-ago.
+      es_alv_tree-set       = es_alv_tree-set       + <fl_alv_data>-set.
+      es_alv_tree-out       = es_alv_tree-out       + <fl_alv_data>-out.
+      es_alv_tree-nov       = es_alv_tree-nov       + <fl_alv_data>-nov.
+      es_alv_tree-dez       = es_alv_tree-dez       + <fl_alv_data>-dez.
+
+    ENDLOOP.
+
+    lv_jan = es_alv_tree-jan       / lv_linhas.
+    lv_fev = es_alv_tree-fev       / lv_linhas.
+    lv_mar = es_alv_tree-mar       / lv_linhas.
+    lv_abr = es_alv_tree-abr       / lv_linhas.
+    lv_mai = es_alv_tree-mai       / lv_linhas.
+    lv_jun = es_alv_tree-jun       / lv_linhas.
+    lv_jul = es_alv_tree-jul       / lv_linhas.
+    lv_ago = es_alv_tree-ago       / lv_linhas.
+    lv_set = es_alv_tree-set       / lv_linhas.
+    lv_out = es_alv_tree-out       / lv_linhas.
+    lv_nov = es_alv_tree-nov       / lv_linhas.
+    lv_dez = es_alv_tree-dez       / lv_linhas.
+
+    lv_jan_c = lv_jan.
+    lv_fev_c = lv_fev.
+    lv_mar_c = lv_mar.
+    lv_abr_c = lv_abr.
+    lv_mai_c = lv_mai.
+    lv_jun_c = lv_jun.
+    lv_jul_c = lv_jul.
+    lv_ago_c = lv_ago.
+    lv_set_c = lv_set.
+    lv_out_c = lv_out.
+    lv_nov_c = lv_nov.
+    lv_dez_c = lv_dez.
+
+    es_alv_tree-acumulado = me->tratar_percentual( iv_valor = es_alv_tree-acumulado / lv_linhas ).
+    es_alv_tree-jan       = COND #( WHEN lv_jan_c(3) = '100' THEN lv_jan_c(6) ELSE lv_jan_c(5) )..
+    es_alv_tree-fev       = COND #( WHEN lv_fev_c(3) = '100' THEN lv_fev_c(6) ELSE lv_fev_c(5) )..
+    es_alv_tree-mar       = lv_mar_c.
+    es_alv_tree-abr       = lv_abr_c.
+    es_alv_tree-mai       = lv_mai_c.
+    es_alv_tree-jun       = lv_jun_c.
+    es_alv_tree-jul       = lv_jul_c.
+    es_alv_tree-ago       = lv_ago_c.
+    es_alv_tree-set       = lv_set_c.
+    es_alv_tree-out       = lv_out_c.
+    es_alv_tree-nov       = lv_nov_c.
+    es_alv_tree-dez       = lv_dez_c.
+
+    es_alv_tree-baujj = me->gr_ano[ 1 ]-low.
+    es_alv_tree-meta = me->gr_meta[ 1 ]-low.
+
+  ENDMETHOD. " MONTAR_SOMA_WERKS
+
+  METHOD montar_nivel_tidnr.
+
+    DATA:
+      lv_node_txt    TYPE lvc_value,
+      ls_outtab_line TYPE me->ty_alv_tree,
+      lt_item_layout TYPE lvc_t_layi.
+
+    READ TABLE me->gt_alv_data_agrp WITH KEY werks = iv_werks tidnr = iv_tidnr INTO DATA(lw_alv_data_agrp).
+    ls_outtab_line = CORRESPONDING #( lw_alv_data_agrp ).
+
+    lt_item_layout = me->montar_layout_linha( EXPORTING is_alv_tree = ls_outtab_line ).
+
+    READ TABLE me->gt_zpm_t013 WITH KEY werks = iv_werks tidnr = iv_tidnr INTO DATA(lw_zpm_t013).
+    ls_outtab_line-descr = lw_zpm_t013-descr.
+
+    IF gv_print_mode = abap_true.
+      ls_outtab_line-status = lw_alv_data_agrp-status_desc.
+    ENDIF.
+
+    lv_node_txt = iv_tidnr.
+    tree1->add_node(
+      EXPORTING
+        i_relat_node_key     = iv_node_pai
+        i_relationship       = cl_gui_column_tree=>relat_last_child
+        is_outtab_line       = ls_outtab_line
+*      is_node_layout       =                  " Node Layout
+        it_item_layout       = lt_item_layout
+        i_node_text          = lv_node_txt
+      IMPORTING
+        e_new_node_key       = rv_node_key
+      EXCEPTIONS
+        relat_node_not_found = 1
+        node_not_found       = 2
+        OTHERS               = 3
+    ).
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+  ENDMETHOD. " MONTAR_NIVEL_TIDNR
+
+  METHOD montar_nivel_equnr.
+    DATA:
+      ls_alv_tree    TYPE ty_alv_tree,
+      lv_node_txt    TYPE lvc_value,
+      lt_item_layout TYPE lvc_t_layi.
+
+    lt_item_layout = me->montar_layout_linha( EXPORTING is_alv_tree = CORRESPONDING #( is_alv ) ).
+
+    lv_node_txt = iv_equnr.
+    ls_alv_tree = CORRESPONDING #( is_alv ).
+
+    IF gv_print_mode = abap_true.
+      ls_alv_tree-status = is_alv-status_desc.
+    ENDIF.
+
+    tree1->add_node(
+      EXPORTING
+        i_relat_node_key     = iv_node_pai
+        i_relationship       = cl_gui_column_tree=>relat_last_child
+        is_outtab_line       = ls_alv_tree
+*      is_node_layout       =                  " Node Layout
+        it_item_layout       = lt_item_layout
+        i_node_text          = lv_node_txt
+      IMPORTING
+        e_new_node_key       = rv_node_key
+      EXCEPTIONS
+        relat_node_not_found = 1
+        node_not_found       = 2
+        OTHERS               = 3
+    ).
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+  ENDMETHOD. " MONTAR_NIVEL_EQUNR
+
+  METHOD tratar_percentual.
+*    IF iv_valor IS INITIAL.
+*      RETURN.
+*    ENDIF.
+
+    DATA:
+      lv_valor   TYPE p LENGTH 8 DECIMALS 4,
+      lv_valor_c TYPE c LENGTH 8.
+
+    lv_valor = iv_valor.
+    lv_valor_c = lv_valor.
+
+    IF lv_valor_c(3) = '100'.
+      rv_perc = lv_valor_c(6).
+    ELSE.
+      rv_perc = lv_valor_c(5).
+    ENDIF.
+  ENDMETHOD. " TRATAR_PERCENTUAL
+
+  METHOD montar_layout_linha.
+    DATA(lv_meta) = me->gr_meta[ 1 ]-low.
+
+    IF is_alv_tree-acumulado IS NOT INITIAL AND is_alv_tree-acumulado LT lv_meta.
+      APPEND VALUE #( fieldname = 'ACUMULADO' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-jan IS NOT INITIAL AND is_alv_tree-jan LT lv_meta.
+      APPEND VALUE #( fieldname = 'JAN' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-fev IS NOT INITIAL AND is_alv_tree-fev LT lv_meta.
+      APPEND VALUE #( fieldname = 'FEV' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-mar IS NOT INITIAL AND is_alv_tree-mar LT lv_meta.
+      APPEND VALUE #( fieldname = 'MAR' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-abr IS NOT INITIAL AND is_alv_tree-abr LT lv_meta.
+      APPEND VALUE #( fieldname = 'ABR' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-mai IS NOT INITIAL AND is_alv_tree-mai LT lv_meta.
+      APPEND VALUE #( fieldname = 'MAI' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+
+    IF is_alv_tree-jun IS NOT INITIAL AND is_alv_tree-jun LT lv_meta.
+      APPEND VALUE #( fieldname = 'JUN' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-jul IS NOT INITIAL AND is_alv_tree-jul LT lv_meta.
+      APPEND VALUE #( fieldname = 'JUL' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-ago IS NOT INITIAL AND is_alv_tree-ago LT lv_meta.
+      APPEND VALUE #( fieldname = 'AGO' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-set IS NOT INITIAL AND is_alv_tree-set LT lv_meta.
+      APPEND VALUE #( fieldname = 'SET' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-out IS NOT INITIAL AND is_alv_tree-out LT lv_meta.
+      APPEND VALUE #( fieldname = 'OUT' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-nov IS NOT INITIAL AND is_alv_tree-nov LT lv_meta.
+      APPEND VALUE #( fieldname = 'NOV' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+    IF is_alv_tree-dez IS NOT INITIAL AND is_alv_tree-dez LT lv_meta.
+      APPEND VALUE #( fieldname = 'DEZ' style = cl_gui_column_tree=>style_intensifd_critical ) TO rt_layout.
+    ENDIF.
+
+  ENDMETHOD. " MONTAR_LAYOUT_LINHA
+
+  METHOD montar_cabecalho_alv.
+
+    DATA:
+      lv_per_mes  TYPE fcmnr,
+      lv_per_ano  TYPE gjahr,
+      lv_last_day TYPE sy-datum.
+
+    IF me->gr_mes[ 1 ]-high IS NOT INITIAL.
+      lv_per_mes = me->gr_mes[ 1 ]-high.
+    ELSE.
+      lv_per_mes = me->gr_mes[ 1 ]-low.
+    ENDIF.
+
+    lv_per_ano = me->gr_ano[ 1 ]-low.
+
+    CALL FUNCTION 'OIL_MONTH_GET_FIRST_LAST'
+      EXPORTING
+        i_month    = lv_per_mes
+        i_year     = lv_per_ano
+      IMPORTING
+        e_last_day = lv_last_day
+      EXCEPTIONS
+        wrong_date = 1
+        OTHERS     = 2.
+    IF sy-subrc <> 0.
+      EXIT.
+    ENDIF.
+
+    APPEND VALUE #( typ = 'S' info = |Centro: { me->gr_werks[ 1 ]-low }| ) TO rt_cabecalho.
+    IF me->gr_codind IS NOT INITIAL.
+      APPEND VALUE #( typ = 'S' info = |Cód.Indicador: { me->gr_codind[ 1 ]-low }| ) TO rt_cabecalho.
+    ELSE.
+      APPEND VALUE #( typ = 'S' info = |Cód.Indicador: | ) TO rt_cabecalho.
+    ENDIF.
+
+    APPEND VALUE #( typ = 'S'
+      info = |Período: 01.01.{ lv_per_ano } | &
+             |até { lv_last_day+6(2) }.{ lv_last_day+4(2) }.{ lv_last_day(4) }|
+    ) TO rt_cabecalho.
+
+    APPEND VALUE #( typ = 'S' info = |Meta: { me->gr_meta[ 1 ]-low }%| ) TO rt_cabecalho.
+    APPEND VALUE #( typ = 'S' info = space ) TO rt_cabecalho.
+
+  ENDMETHOD. " MONTAR_CABECALHO_ALV
+
+  METHOD on_function_selected.
+    CASE fcode.
+      WHEN 'IND_ACUM'. " Indices acumulados
+        me->relatorio_ind_acum( ).
+
+      WHEN 'IND_ULT_MES'. " Indices Ult.Mês
+        me->relatorio_ind_ult_mes( ).
+
+      WHEN 'PREP_IMPRESSAO'.
+        me->preparar_impressao( ).
+
+      WHEN 'VOLTAR_PADRAO'.
+        me->voltar_padrao_impressao( ).
+
+      WHEN OTHERS.
+        RETURN.
+    ENDCASE.
+  ENDMETHOD. " ON_FUNCTION_SELECTED
+
+  METHOD relatorio_ind_acum.
+    FREE me->gt_alv_ind_ac.
+
+    me->gt_alv_ind_ac = CORRESPONDING #( me->gt_alv_data ).
+    DATA(lv_meta) = me->gr_meta[ 1 ]-low.
+
+    SORT me->gt_alv_ind_ac BY acumulado ASCENDING equnr.
+
+    LOOP AT me->gt_alv_ind_ac ASSIGNING FIELD-SYMBOL(<fl_alv_ind_ac>).
+      IF <fl_alv_ind_ac>-jan IS NOT INITIAL AND <fl_alv_ind_ac>-jan LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'JAN' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-fev IS NOT INITIAL AND <fl_alv_ind_ac>-fev LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'FEV' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-mar IS NOT INITIAL AND <fl_alv_ind_ac>-mar LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'MAR' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-abr IS NOT INITIAL AND <fl_alv_ind_ac>-abr LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'ABR' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-mai IS NOT INITIAL AND <fl_alv_ind_ac>-mai LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'MAI' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-jun IS NOT INITIAL AND <fl_alv_ind_ac>-jun LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'JUN' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-jul IS NOT INITIAL AND <fl_alv_ind_ac>-jul LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'JUL' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-ago IS NOT INITIAL AND <fl_alv_ind_ac>-ago LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'AGO' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-set IS NOT INITIAL AND <fl_alv_ind_ac>-set LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'SET' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-out IS NOT INITIAL AND <fl_alv_ind_ac>-out LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'OUT' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-nov IS NOT INITIAL AND <fl_alv_ind_ac>-nov LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'NOV' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-dez IS NOT INITIAL AND <fl_alv_ind_ac>-dez LT lv_meta.
+        ADD 1 TO <fl_alv_ind_ac>-qtd_mes_meta.
+        APPEND VALUE #( fname = 'DEZ' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-acumulado LT lv_meta.
+        APPEND VALUE #( fname = 'ACUMULADO' color-col = 6 color-inv = 1 ) TO <fl_alv_ind_ac>-color.
+      ENDIF.
+
+      IF <fl_alv_ind_ac>-qtd_mes_meta GT 3.
+        <fl_alv_ind_ac>-acima_de3 = abap_true.
+      ENDIF.
+    ENDLOOP.
+
+    me->montar_alv_ind_acum( ).
+
+  ENDMETHOD. " RELATORIO_IND_ACUM
+
+  METHOD montar_alv_ind_acum.
+    IF me->gt_alv_ind_ac[] IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    FREE me->go_alv_ind_acum.
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = me->go_alv_ind_acum
+      CHANGING
+        t_table      = me->gt_alv_ind_ac ).
+
+    IF me->go_alv_ind_acum IS BOUND.
+      me->go_alv_ind_acum->set_screen_status(
+        pfstatus      =  'ST_IND_ACUM'
+        report        =  sy-repid
+        set_functions = me->go_alv_ind_acum->c_functions_all ).
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_functions) = me->go_alv_ind_acum->get_functions( ).
+      lo_functions->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = me->go_alv_ind_acum->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          lo_columns->set_color_column( value = 'COLOR' ).
+          me->columns_edit( it_table = me->gt_alv_ind_ac io_columns = lo_columns ).
+
+          DATA(lo_column) = lo_columns->get_column( columnname = 'STATUS_DESC' ).
+          lo_column->set_visible( value  = if_salv_c_bool_sap=>false ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = me->go_alv_ind_acum->get_event( ).
+
+      SET HANDLER me->on_user_command FOR lo_events.
+
+      DATA(lo_display) = me->go_alv_ind_acum->get_display_settings( ).
+      lo_display->set_list_header( 'Índices Acumulados' ).
+
+      gs_bt_impressao-icon_id = '@9Y@'.
+      gs_bt_impressao-icon_text = 'Preparar Impressão'.
+      gs_bt_impressao-quickinfo = 'Preparar Impressão'.
+
+      me->go_alv_ind_acum->display( ).
+
+    ENDIF.
+
+  ENDMETHOD. " MONTAR_ALV_IND_ACUM
+
+  METHOD relatorio_ind_ult_mes.
+    DATA:
+      lv_dt_ini         TYPE dats,
+      lv_campo_mes_desc TYPE char3,
+      lw_alv_ind_ac     LIKE LINE OF me->gt_alv_ult_mes,
+      lw_alv_ind_equi   LIKE LINE OF me->gt_alv_ind_equi.
+
+    DATA(lv_meta) = me->gr_meta[ 1 ]-low.
+    DATA(lv_ano) = me->gr_ano[ 1 ]-low.
+    DATA(lv_mes) = me->gr_mes[ 1 ]-high.
+    IF lv_mes IS INITIAL.
+      lv_mes = me->gr_mes[ 1 ]-low.
+    ENDIF.
+
+    DATA(lw_periodo_mes) = me->gt_periodo_mes[ mes = lv_mes ].
+    lv_dt_ini = |{ lv_ano }{ lv_mes }01|.
+
+    FIELD-SYMBOLS:
+      <fl_percent> TYPE ty_alv_data-jan,
+      <fl_indisp>  TYPE ty_disponibilidade-jan.
+
+    FREE: me->gt_alv_ult_mes, me->gt_alv_ind_equi.
+
+    LOOP AT me->gt_alv_data INTO DATA(lw_alv_group)
+      GROUP BY ( werks = lw_alv_group-werks
+                 tidnr = lw_alv_group-tidnr
+                 size  = GROUP SIZE
+                 index = GROUP INDEX ) ASCENDING ASSIGNING FIELD-SYMBOL(<group>).
+      CLEAR lw_alv_ind_ac.
+
+      LOOP AT GROUP <group> ASSIGNING FIELD-SYMBOL(<fl_alv_ind_ac>).
+        CLEAR: lw_alv_ind_equi.
+
+*       IF <fl_alv_ind_ac>-datbi GT gv_dtfim.
+        IF <fl_alv_ind_ac>-datbi IN lw_periodo_mes-range_dias OR <fl_alv_ind_ac>-datbi GT lv_dt_ini.
+        ELSE.
+          CONTINUE.
+        ENDIF.
+
+        ADD 1 TO lw_alv_ind_ac-tt_equpto.
+
+        lw_alv_ind_equi = CORRESPONDING #( <fl_alv_ind_ac> ).
+
+        CASE lv_mes.
+          WHEN '01'.
+            lv_campo_mes_desc = 'JAN'.
+          WHEN '02'.
+            lv_campo_mes_desc = 'FEV'.
+          WHEN '03'.
+            lv_campo_mes_desc = 'MAR'.
+          WHEN '04'.
+            lv_campo_mes_desc = 'ABR'.
+          WHEN '05'.
+            lv_campo_mes_desc = 'MAI'.
+          WHEN '06'.
+            lv_campo_mes_desc = 'JUN'.
+          WHEN '07'.
+            lv_campo_mes_desc = 'JUL'.
+          WHEN '08'.
+            lv_campo_mes_desc = 'AGO'.
+          WHEN '09'.
+            lv_campo_mes_desc = 'SET'.
+          WHEN '10'.
+            lv_campo_mes_desc = 'OUT'.
+          WHEN '11'.
+            lv_campo_mes_desc = 'NOV'.
+          WHEN '12'.
+            lv_campo_mes_desc = 'DEZ'.
+        ENDCASE.
+
+        UNASSIGN <fl_percent>.
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE <fl_alv_ind_ac> TO <fl_percent>.
+        IF <fl_percent> IS ASSIGNED .
+          IF <fl_percent> IS NOT INITIAL AND <fl_percent> LT lv_meta.
+            ADD 1 TO lw_alv_ind_ac-qtd_mes_meta.
+
+            APPEND VALUE #( fname = 'DISP_PERC' color-col = 6 color-inv = 1 ) TO lw_alv_ind_equi-color.
+          ENDIF.
+
+          lw_alv_ind_equi-disp_perc = <fl_percent>.
+
+        ENDIF.
+
+        READ TABLE me->gt_indisponivel WITH KEY werks = <fl_alv_ind_ac>-werks
+                                                tidnr = <fl_alv_ind_ac>-tidnr
+                                                equnr = <fl_alv_ind_ac>-equnr INTO DATA(lw_indisponivel).
+
+        ASSIGN COMPONENT lv_campo_mes_desc OF STRUCTURE lw_indisponivel TO <fl_indisp>.
+        IF <fl_indisp> IS ASSIGNED.
+          lw_alv_ind_equi-indisp_real = <fl_indisp>.
+        ENDIF.
+        CLEAR lw_indisponivel.
+
+        lw_alv_ind_equi-baumm = lv_mes.
+        APPEND lw_alv_ind_equi TO me->gt_alv_ind_equi.
+
+      ENDLOOP.
+
+      READ TABLE me->gt_zpm_t013 WITH KEY werks = <group>-werks tidnr = <group>-tidnr INTO DATA(lw_zpm_t013).
+      lw_alv_ind_ac-descr = lw_zpm_t013-descr.
+
+      lw_alv_ind_ac-tidnr        = <fl_alv_ind_ac>-tidnr.
+      lw_alv_ind_ac-baumm        = lv_mes.
+      lw_alv_ind_ac-baujj        = lv_ano.
+      lw_alv_ind_ac-meta         = <fl_alv_ind_ac>-meta.
+
+      APPEND lw_alv_ind_ac TO me->gt_alv_ult_mes.
+    ENDLOOP.
+
+    me->montar_alv_ind_ult_mes( ).
+
+  ENDMETHOD. " RELATORIO_IND_ULT_MES
+
+  METHOD montar_alv_ind_ult_mes.
+    DATA:
+      lv_ultimo_mes TYPE n LENGTH 2,
+      lv_mes_desc   TYPE string.
+
+    IF me->gt_alv_ult_mes[] IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_alv_ult_mes ).
+
+    IF lo_salv_table IS BOUND.
+      lo_salv_table->set_screen_status(
+        pfstatus      =  'SALV_STANDARD'
+        report        =  sy-repid
+        set_functions = lo_salv_table->c_functions_all ).
+
+*     " Ajusta os dados das colunas
+      DATA(ol_columns) = lo_salv_table->get_columns( ).
+      ol_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = me->gt_alv_ult_mes io_columns = ol_columns ).
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+      SET HANDLER me->on_uc_salv FOR lo_events.
+
+      IF me->gr_mes[ 1 ]-high IS NOT INITIAL.
+        lv_ultimo_mes = me->gr_mes[ 1 ]-high.
+      ELSE.
+        lv_ultimo_mes = me->gr_mes[ 1 ]-low.
+      ENDIF.
+
+      CASE lv_ultimo_mes.
+        WHEN 01.
+          lv_mes_desc = 'Janeiro'.
+        WHEN 02.
+          lv_mes_desc = 'Fevereiro'.
+        WHEN 03.
+          lv_mes_desc = 'Março'.
+        WHEN 04.
+          lv_mes_desc = 'Abril'.
+        WHEN 05.
+          lv_mes_desc = 'Maio'.
+        WHEN 06.
+          lv_mes_desc = 'Junho'.
+        WHEN 07.
+          lv_mes_desc = 'Julho'.
+        WHEN 08.
+          lv_mes_desc = 'Agosto'.
+        WHEN 09.
+          lv_mes_desc = 'Setembro'.
+        WHEN 10.
+          lv_mes_desc = 'Outubro'.
+        WHEN 11.
+          lv_mes_desc = 'Novembro'.
+        WHEN 12.
+          lv_mes_desc = 'Dezembro'.
+      ENDCASE.
+
+      DATA(ol_display) = lo_salv_table->get_display_settings( ).
+      ol_display->set_list_header( |Índice equiptos - Mês { lv_mes_desc }| ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+  ENDMETHOD. " MONTAR_ALV_IND_ULT_MES
+
+  METHOD montar_alv_ind_equi.
+    DATA:
+      lv_ultimo_mes TYPE n LENGTH 2,
+      lv_mes_desc   TYPE string.
+
+    IF me->gt_alv_ind_equi[] IS INITIAL.
+      MESSAGE 'Nenhum equipamento foi encontrado' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_alv_ind_equi ).
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(ol_columns) = lo_salv_table->get_columns( ).
+      ol_columns->set_optimize( abap_true ).
+
+      TRY .
+          ol_columns->set_color_column( value = 'COLOR' ).
+          me->columns_edit( it_table = me->gt_alv_ind_equi io_columns = ol_columns ).
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+      SET HANDLER me->on_uc_salv FOR lo_events.
+
+      IF me->gr_mes[ 1 ]-high IS NOT INITIAL.
+        lv_ultimo_mes = me->gr_mes[ 1 ]-high.
+      ELSE.
+        lv_ultimo_mes = me->gr_mes[ 1 ]-low.
+      ENDIF.
+
+      CASE lv_ultimo_mes.
+        WHEN 01.
+          lv_mes_desc = 'Janeiro'.
+        WHEN 02.
+          lv_mes_desc = 'Fevereiro'.
+        WHEN 03.
+          lv_mes_desc = 'Março'.
+        WHEN 04.
+          lv_mes_desc = 'Abril'.
+        WHEN 05.
+          lv_mes_desc = 'Maio'.
+        WHEN 06.
+          lv_mes_desc = 'Junho'.
+        WHEN 07.
+          lv_mes_desc = 'Julho'.
+        WHEN 08.
+          lv_mes_desc = 'Agosto'.
+        WHEN 09.
+          lv_mes_desc = 'Setembro'.
+        WHEN 10.
+          lv_mes_desc = 'Outubro'.
+        WHEN 11.
+          lv_mes_desc = 'Novembro'.
+        WHEN 12.
+          lv_mes_desc = 'Dezembro'.
+      ENDCASE.
+
+      DATA(ol_display) = lo_salv_table->get_display_settings( ).
+      ol_display->set_list_header( |Índice equiptos - Mês { lv_mes_desc }| ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+  ENDMETHOD. " MONTAR_ALV_IND_EQUI
+
+  METHOD preparar_impressao.
+
+    mr_toolbar->delete_button( fcode = 'PREP_IMPRESSAO' ).
+
+    mr_toolbar->add_button(
+      EXPORTING
+        fcode     = 'VOLTAR_PADRAO'
+        icon      = icon_activity
+        butn_type = cntb_btype_button
+        text      = 'Voltar Padrão'
+        quickinfo = 'Voltar Padrão' ).
+
+    gv_print_mode = abap_true.
+    gv_update_tree = abap_true.
+
+*   " Altera as configurações do botão para apresentar o texto.
+    tree1->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = DATA(lt_fieldcat) ).
+    READ TABLE lt_fieldcat WITH KEY fieldname = 'STATUS' ASSIGNING FIELD-SYMBOL(<fl_field_status>).
+    IF <fl_field_status> IS ASSIGNED.
+      CLEAR <fl_field_status>-icon.
+      <fl_field_status>-outputlen = 20.
+    ENDIF.
+    tree1->set_frontend_fieldcatalog( it_fieldcatalog = lt_fieldcat ).
+
+    tree1->frontend_update( ).
+
+  ENDMETHOD. " PREPARAR_IMPRESSAO
+
+  METHOD voltar_padrao_impressao.
+
+    mr_toolbar->delete_button( fcode = 'VOLTAR_PADRAO' ).
+
+    mr_toolbar->add_button(
+      EXPORTING
+        fcode     = 'PREP_IMPRESSAO'
+        icon      = icon_activity
+        butn_type = cntb_btype_button
+        text      = 'Preparar Impressão'
+        quickinfo = 'Preparar Impressão' ).
+
+    gv_print_mode = abap_false.
+    gv_update_tree = abap_true.
+
+*   " Altera as configurações do botão para apresentar o texto.
+    tree1->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = DATA(lt_fieldcat) ).
+    READ TABLE lt_fieldcat WITH KEY fieldname = 'STATUS' ASSIGNING FIELD-SYMBOL(<fl_field_status>).
+    IF <fl_field_status> IS ASSIGNED.
+      <fl_field_status>-icon = abap_true.
+      <fl_field_status>-outputlen = 8.
+    ENDIF.
+    tree1->set_frontend_fieldcatalog( it_fieldcatalog = lt_fieldcat ).
+
+    tree1->frontend_update( ).
+
+  ENDMETHOD. " VOLTAR_PADRAO_IMPRESSAO
+
+  METHOD preparar_impressao_ind_ult.
+
+    DATA(lo_columns) = me->go_alv_ind_acum->get_columns( ).
+
+    TRY .
+
+        DATA(lo_status_desc) = lo_columns->get_column( columnname = 'STATUS_DESC' ).
+        IF lo_status_desc->is_visible( ) = abap_true.
+          lo_status_desc->set_visible( value  = if_salv_c_bool_sap=>false ).
+
+          gs_bt_impressao-icon_id = '@9Y@'.
+          gs_bt_impressao-icon_text = 'Preparar Impressão'.
+          gs_bt_impressao-quickinfo = 'Preparar Impressão'.
+
+        ELSE.
+          lo_status_desc->set_visible( value  = if_salv_c_bool_sap=>true ).
+
+          gs_bt_impressao-icon_id   = '@9Y@'.
+          gs_bt_impressao-icon_text = 'Voltar Padrão'.
+          gs_bt_impressao-quickinfo = 'Voltar Padrão'.
+
+        ENDIF.
+
+        DATA(lo_status) = lo_columns->get_column( columnname = 'STATUS' ).
+        IF lo_status->is_visible( ) = abap_true.
+          lo_status->set_visible( value  = if_salv_c_bool_sap=>false ).
+        ELSE.
+          lo_status->set_visible( value  = if_salv_c_bool_sap=>true ).
+        ENDIF.
+
+      CATCH cx_salv_not_found .
+      CATCH cx_salv_data_error .
+    ENDTRY.
+  ENDMETHOD. " PREPARAR_IMPRESSAO_IND_ULT
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->montar_fieldcat( it_table = it_table ).
+
+    DATA(tl_columns) = io_columns->get( ).
+    DATA ol_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT tl_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      ol_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        ol_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        ol_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        ol_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        ol_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD on_uc_salv.
+    CASE e_salv_function.
+      WHEN 'IND_EQUIP'.
+
+        me->montar_alv_ind_equi( ).
+
+      WHEN OTHERS.
+    ENDCASE.
+
+  ENDMETHOD. " ON_UC_SALV
+
+  METHOD on_user_command.
+
+    CASE e_salv_function.
+      WHEN 'PRP_IMPRES'.
+
+        me->preparar_impressao_ind_ult( ).
+
+    ENDCASE.
+  ENDMETHOD.                    "on_user_command
+ENDCLASS.
+
+*&---------------------------------------------------------------------*
+*&      Form  BLOQUEAR_PARAMETROS
+*&---------------------------------------------------------------------*
+FORM bloquear_parametros .
+
+  LOOP AT SCREEN.
+    CASE screen-name.
+      WHEN 'S_MES-LOW'.
+        screen-input = '0'.
+        MODIFY SCREEN.
+        EXIT.
+      WHEN OTHERS.
+        CONTINUE.
+    ENDCASE.
+  ENDLOOP.
+
+ENDFORM. " BLOQUEAR_PARAMETROS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SEARCHHELP_CODIND
+*&---------------------------------------------------------------------*
+FORM f_searchhelp_codind CHANGING cv_codind TYPE zpm_t013-tidnr.
+  DATA:
+    lt_return     TYPE STANDARD TABLE OF ddshretval,
+    lt_dynpfields TYPE STANDARD TABLE OF dynpread,
+    lr_werks      TYPE lcl_relatorio=>ttr_werks,
+    lr_ano        TYPE lcl_relatorio=>ttr_ano.
+
+* " Recupera os campos que serão utilizados como filtro no select.
+  lt_dynpfields = VALUE #( ( fieldname = 'S_WERKS-LOW' ) ( fieldname = 'S_ANO-LOW' ) ).
+
+  CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING
+      dyname               = sy-cprog
+      dynumb               = sy-dynnr
+    TABLES
+      dynpfields           = lt_dynpfields
+    EXCEPTIONS
+      invalid_abapworkarea = 1
+      invalid_dynprofield  = 2
+      invalid_dynproname   = 3
+      invalid_dynpronummer = 4
+      invalid_request      = 5
+      no_fielddescription  = 6
+      invalid_parameter    = 7
+      undefind_error       = 8
+      double_conversion    = 9
+      stepl_not_found      = 10
+      OTHERS               = 11.
+  IF sy-subrc <> 0.
+    EXIT.
+  ENDIF.
+
+  lr_werks = VALUE #( sign = 'I' option = 'EQ' ( low = lt_dynpfields[ fieldname = 'S_WERKS-LOW' ]-fieldvalue ) ).
+  lr_ano   = VALUE #( sign = 'I' option = 'EQ' ( low = lt_dynpfields[ fieldname = 'S_ANO-LOW' ]-fieldvalue ) ).
+
+  IF lr_werks[] IS INITIAL OR lr_ano[] IS INITIAL.
+    MESSAGE 'Informar campos obrigatórios' TYPE 'S' DISPLAY LIKE 'E'.
+    EXIT.
+  ENDIF.
+
+* " Seleciona os dados que serão apresentados na ajuda de pesquisa.
+  SELECT *
+    FROM zpm_t013
+    WHERE werks IN @lr_werks
+      AND ano   IN @lr_ano
+  INTO TABLE @DATA(lt_zpm_t013).
+
+  IF lt_zpm_t013[] IS INITIAL.
+    MESSAGE 'Nenhum registro foi encontrado' TYPE 'S' DISPLAY LIKE 'E'.
+    EXIT.
+  ENDIF.
+
+  FREE lt_return.
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield        = 'TIDNR'
+      dynpprog        = sy-cprog
+      dynpnr          = sy-dynnr
+*     dynprofield     = 'S_CODIND-LOW'
+      window_title    = 'Códigos Indicadores'
+      value_org       = 'S'
+    TABLES
+      value_tab       = lt_zpm_t013[]
+      return_tab      = lt_return[]
+    EXCEPTIONS
+      parameter_error = 1
+      no_values_found = 2
+      OTHERS          = 3.
+  IF sy-subrc <> 0.
+    EXIT.
+  ENDIF.
+
+  IF lt_return[] IS NOT INITIAL.
+    cv_codind = lt_return[ 1 ]-fieldval.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AUTHORITY_WERKS
+*&---------------------------------------------------------------------*
+FORM authority_werks .
+
+  AUTHORITY-CHECK OBJECT 'I_SWERK'
+    ID 'TCD'   FIELD 'ZPMR027'
+    ID 'SWERK' FIELD s_werks-low.
+
+  IF sy-subrc <> 0.
+    MESSAGE e000(zpm) WITH 'Sem autorização para o centro:' s_werks-low.
+    STOP.
+  ENDIF.
+
+ENDFORM. " AUTHORITY_WERKS
+
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_9001  OUTPUT
+*&---------------------------------------------------------------------*
+
+MODULE status_9001 OUTPUT.
+  SET PF-STATUS 'STATUS_9001'.
+  SET TITLEBAR 'T9001'.
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*&      Module  INICIALIZAR  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE inicializar OUTPUT.
+
+  go_relatorio->montar_alv_tree( ).
+
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9001  INPUT
+*&---------------------------------------------------------------------*
+MODULE user_command_9001 INPUT.
+  CASE sy-ucomm.
+    WHEN 'EXIT' OR 'BACK' OR 'CANC'.
+      tree1->free( ).
+      LEAVE TO SCREEN 0.
+
+    WHEN OTHERS.
+      CALL METHOD cl_gui_cfw=>dispatch.
+
+  ENDCASE.
+ENDMODULE.
