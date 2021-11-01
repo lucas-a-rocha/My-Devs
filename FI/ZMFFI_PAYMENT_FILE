@@ -1,0 +1,67 @@
+FUNCTION zmffi_payment_file.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(I_FPAYH) TYPE  FPAYH
+*"     REFERENCE(I_FPAYHX) TYPE  FPAYHX
+*"     REFERENCE(I_FORMAT_PARAMS) TYPE  FPM_SELPAR-PARAM
+*"     REFERENCE(I_FORMAT_PARAMS_C) TYPE  FPM_SELPAR-PARAM
+*"     REFERENCE(I_FILENAME) TYPE  REGUT-FSNAM
+*"     REFERENCE(I_XFILESYSTEM) TYPE  DFILESYST
+*"  TABLES
+*"      T_FILE_OUTPUT STRUCTURE  FPM_FILE
+*"  CHANGING
+*"     REFERENCE(C_FILENAME) TYPE  REGUT-FSNAM
+*"----------------------------------------------------------------------
+  DATA:
+    lv_prefixo TYPE char4,
+    lv_banco   TYPE char3,
+    lv_agencia TYPE char4,
+    lv_caminho TYPE string,
+    lv_tipo_sistema TYPE c LENGTH 1.
+
+* " Verifica se é o ambiente produtivo.
+  SELECT SINGLE * FROM T000 WHERE mandt = @sy-mandt INTO @DATA(ls_t000).
+  IF ls_t000-cccategory <> 'P'.
+    lv_tipo_sistema = 'T'.
+  ENDIF.
+
+* " Recupera o caminho padrão.
+  SPLIT c_filename AT '/' INTO TABLE DATA(lt_linhas). " Quebra em linhas
+  DELETE lt_linhas INDEX lines( lt_linhas ). " Remove a ultima linha
+  lv_caminho = substring_to( val = c_filename sub = '/' occ = lines( lt_linhas ) ).
+
+  CASE i_fpayh-rzawe.
+    WHEN 'A' OR 'B' OR 'D' OR 'O' OR 'U'.
+      lv_prefixo = 'PFOR'. " Pagamento de fornecedor
+    WHEN 'R'.
+      lv_prefixo = 'PTR'. " Pagamento de tributos
+    WHEN 'E' OR 'K'.
+      lv_prefixo = 'COBR'. " Cobrança
+  ENDCASE.
+
+  SELECT SINGLE *
+    FROM t012
+    WHERE bukrs = @i_fpayh-zbukr
+      AND hbkid = @i_fpayh-hbkid
+  INTO @DATA(ls_t012).
+
+  IF sy-subrc = 0.
+    lv_banco = ls_t012-bankl(3).
+
+    DATA(lv_tamanho) = strlen( ls_t012-bankl ) - 4.
+    lv_agencia = ls_t012-bankl+lv_tamanho(4).
+
+  ENDIF.
+
+  SELECT SINGLE *
+    FROM t012k
+    WHERE bukrs = @i_fpayh-zbukr
+      AND hbkid = @i_fpayh-hbkid
+      AND hktid = @i_fpayh-hktid
+  INTO @DATA(ls_t012k).
+
+* PREFIXO + NÚMERO DO BANCO +_+ NÚMERO DA AGÊNCIA + CONTA CORRENTE + DD (DIA) + MM (MÊS) + AAAA (ANO) + HH (HORA) + MM (MINUTO) + SS (SEGUNDO) + .REM
+  c_filename = |{ lv_caminho }{ lv_prefixo }{ lv_banco }_{ lv_agencia }{ ls_t012k-bankn }{ sy-datum+6(2) }{ sy-datum+4(2) }{ sy-datum(4) }{ sy-uzeit }{ lv_tipo_sistema }.REM|.
+
+ENDFUNCTION.
