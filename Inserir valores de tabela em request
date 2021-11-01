@@ -1,0 +1,87 @@
+*&---------------------------------------------------------------------*
+*& Form INSERIR_EM_REQUEST
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM inserir_em_request .
+  SELECT *
+    FROM ztfi_016
+    WHERE situacao EQ @w_sit
+      AND blart    EQ @w_blart
+      AND servico  EQ @w_serv
+      AND metodo   EQ @w_met
+  INTO TABLE @DATA(tl_ztfi_016).
+
+  IF tl_ztfi_016 IS INITIAL.
+    MESSAGE 'Não existem dados para serem transportados' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+* " Monta a tabela com os dados que serão inseridos na request.
+  DATA:
+    tl_keys   TYPE cts_strings,
+    tl_fields TYPE cts_sstringtyp,
+    wl_fields LIKE LINE OF tl_fields,
+    wl_key    TYPE e071k_str-tabkey.
+
+  FIELD-SYMBOLS: <fs_campo> TYPE any.
+
+* " Busca a estrutura atualizada.
+  DATA tl_fields_table TYPE ddfields.
+  CALL FUNCTION 'TR_NAMETAB_GET'
+    EXPORTING
+      iv_tabname = 'ZTFI_016'
+    IMPORTING
+      et_dfies   = tl_fields_table
+    EXCEPTIONS
+      not_found  = 1.
+
+  DELETE tl_fields_table WHERE keyflag NE abap_true.
+  LOOP AT tl_ztfi_016 ASSIGNING FIELD-SYMBOL(<fs_ztfi_016>).
+    FREE tl_fields.
+    CLEAR wl_key.
+
+    LOOP AT tl_fields_table ASSIGNING FIELD-SYMBOL(<fs_fields_table>).
+      CLEAR wl_fields.
+
+      ASSIGN COMPONENT <fs_fields_table>-fieldname OF STRUCTURE <fs_ztfi_016> TO <fs_campo>.
+      IF <fs_campo> IS ASSIGNED.
+        wl_fields = <fs_campo>.
+        APPEND wl_fields TO tl_fields.
+      ENDIF.
+
+      UNASSIGN <fs_campo>.
+    ENDLOOP.
+
+    CALL FUNCTION 'TR_CONVERT_FIELDS_TO_STRING'
+      EXPORTING
+        iv_tabname = 'ZTFI_016'
+        it_fields  = tl_fields
+      IMPORTING
+        ev_tabkey  = wl_key.
+
+    IF wl_key IS NOT INITIAL.
+      APPEND wl_key TO tl_keys.
+    ENDIF.
+
+  ENDLOOP.
+
+  TRY .
+      zcl_utilities=>transport_table_data(
+        EXPORTING
+          iv_tablename = 'ZTFI_016'                 " Nome da tabela
+          it_keys      = tl_keys                 " ECTS: Table Type for String
+      ).
+
+      MESSAGE 'Dados inseridos na request com sucesso' TYPE 'S'.
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+ENDFORM.
