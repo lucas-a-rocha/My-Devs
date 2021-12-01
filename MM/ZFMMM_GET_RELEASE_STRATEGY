@@ -1,0 +1,102 @@
+*Estrutura: ZSMM_RELEASE_STRATEGY
+*FRGCO	Types	FRGCO
+*OTYPE	Types	OTYPE
+*OBJID	Types	ACTORID
+*RELEASED	Types	TWB_RELD
+
+FUNCTION zfmmm_get_release_strategy.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_EBELN) TYPE  EKKO-EBELN
+*"  EXPORTING
+*"     VALUE(ET_RELEASE_STRATEGY) TYPE  ZTYMM_RELEASE_STRATEGY
+*"  EXCEPTIONS
+*"      DOCUMENT_NOT_FOUND
+*"      RELEASE_PRE_REQ_NOT_FOUND
+*"----------------------------------------------------------------------
+****************************************************************************************
+*                      &Paracel/&Cast                                                  *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 28.08.2021 09:25:35                                                       *
+****************************************************************************************
+* Descrição: EXN.031-Solución paliativa envio correo aprobacion                        *
+****************************************************************************************
+  DATA:
+    lv_offset           TYPE sy-index,
+    lw_release_strategy LIKE LINE OF et_release_strategy,
+    lt_actors           TYPE tactor_text.
+
+  SELECT SINGLE *
+    FROM ekko
+    INTO @DATA(ls_ekko)
+  WHERE ebeln = @iv_ebeln.
+
+  IF sy-subrc <> 0.
+    RAISE document_not_found.
+  ENDIF.
+
+  SELECT *
+    FROM t16fv
+    WHERE frggr = @ls_ekko-frggr
+      AND frgsx = @ls_ekko-frgsx
+  INTO TABLE @DATA(lt_rel_prereq).
+
+  IF sy-subrc <> 0.
+    RAISE release_pre_req_not_found.
+  ENDIF.
+
+  LOOP AT lt_rel_prereq INTO DATA(ls_rel_prereq).
+    FREE lt_actors.
+
+    lw_release_strategy-frgco = ls_rel_prereq-frgco.
+
+*   " check the release status.
+    CASE abap_true.
+      WHEN ls_rel_prereq-frga1.
+        lv_offset = 0.
+      WHEN ls_rel_prereq-frga2.
+        lv_offset = 1.
+      WHEN ls_rel_prereq-frga3.
+        lv_offset = 2.
+      WHEN ls_rel_prereq-frga4.
+        lv_offset = 3.
+      WHEN ls_rel_prereq-frga5.
+        lv_offset = 4.
+      WHEN ls_rel_prereq-frga6.
+        lv_offset = 5.
+      WHEN ls_rel_prereq-frga7.
+        lv_offset = 6.
+      WHEN ls_rel_prereq-frga8.
+        lv_offset = 7.
+      WHEN OTHERS.
+        CLEAR lv_offset.
+    ENDCASE.
+
+    TRY.
+        DATA(lv_released) = ls_ekko-frgzu+lv_offset(1).
+      CATCH cx_root.
+    ENDTRY.
+
+    lw_release_strategy-released = lv_released.
+
+*   " Look for the responsibles .
+    CALL FUNCTION 'ME_REL_GET_RESPONSIBLE_EKKO'
+      EXPORTING
+        im_ekko   = ls_ekko
+        im_code   = lw_release_strategy-frgco
+      IMPORTING
+        ex_actors = lt_actors.
+
+    LOOP AT lt_actors INTO DATA(lw_actors).
+      lw_release_strategy-otype = lw_actors-otype.
+      lw_release_strategy-objid = lw_actors-objid.
+
+      APPEND lw_release_strategy TO et_release_strategy.
+    ENDLOOP.
+
+    CLEAR: lw_release_strategy, lv_released.
+  ENDLOOP.
+
+ENDFUNCTION.
