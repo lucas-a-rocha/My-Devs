@@ -1,0 +1,134 @@
+FUNCTION ZFM_POPUP_ALV_TABLE.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(I_START_COLUMN) TYPE  I DEFAULT 25
+*"     REFERENCE(I_START_LINE) TYPE  I DEFAULT 6
+*"     REFERENCE(I_END_COLUMN) TYPE  I DEFAULT 100
+*"     REFERENCE(I_END_LINE) TYPE  I DEFAULT 10
+*"     REFERENCE(I_TITLE) TYPE  STRING DEFAULT 'Popup'
+*"     REFERENCE(I_POPUP) TYPE  FLAG DEFAULT ABAP_TRUE
+*"  TABLES
+*"      IT_ALV TYPE  STANDARD TABLE
+*"----------------------------------------------------------------------
+
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = DATA(go_alv)
+        CHANGING
+          t_table      = it_alv[] ).
+
+    CATCH cx_salv_msg.
+  ENDTRY.
+
+* " Insere todos as funcionalidades existentes no ALV OO.
+  DATA(lo_function) = go_alv->get_functions( ).
+  lo_function->set_all( abap_true ).
+
+* " Ajusta os dados das colunas
+  DATA(lo_columns) = go_alv->get_columns( ).
+  lo_columns->set_optimize( abap_true ).
+
+  PERFORM columns_edit_popup TABLES it_alv CHANGING lo_columns.
+
+  IF go_alv IS BOUND.
+    IF i_popup = 'X'.
+      go_alv->set_screen_popup(
+        start_column = i_start_column
+        end_column  = i_end_column
+        start_line  = i_start_line
+        end_line    = i_end_line ).
+    ENDIF.
+
+    go_alv->display( ).
+
+  ENDIF.
+
+ENDFUNCTION.
+
+*&---------------------------------------------------------------------*
+*&      Form  COLUMNS_EDIT_POPUP
+*&---------------------------------------------------------------------*
+FORM columns_edit_popup TABLES it_table
+                      CHANGING io_columns TYPE REF TO cl_salv_columns_table.
+
+  DATA:
+    lt_fieldcat TYPE lvc_t_fcat.
+
+  PERFORM montar_fieldcat_popup TABLES it_table CHANGING lt_fieldcat.
+
+  DATA(tl_columns) = io_columns->get( ).
+  DATA ol_column_table TYPE REF TO cl_salv_column_table.
+
+  LOOP AT tl_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+    ol_column_table ?= <fs_columns>-r_column.
+
+    READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+    IF sy-subrc EQ 0.
+      ol_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+      ol_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+      ol_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+      ol_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM. " COLUMNS_EDIT_POPUP
+
+*&---------------------------------------------------------------------*
+*&      Form  MONTAR_FIELDCAT_POPUP
+*&---------------------------------------------------------------------*
+FORM montar_fieldcat_popup TABLES it_table
+                         CHANGING ct_fieldcat TYPE lvc_t_fcat.
+
+  DATA ls_fieldcat TYPE lvc_s_fcat.
+  DEFINE dfcat_texto.
+
+    ls_fieldcat = CORRESPONDING #( &1 ).
+
+    ls_fieldcat-tooltip   = &4.
+    ls_fieldcat-coltext   = &3.
+
+    ls_fieldcat-scrtext_l = &4.
+    ls_fieldcat-scrtext_m = &3.
+    ls_fieldcat-scrtext_s = &2.
+    ls_fieldcat-outputlen = &5.
+
+    &1 = CORRESPONDING #( ls_fieldcat ).
+
+  END-OF-DEFINITION.
+
+  DATA:
+    lo_data  TYPE REF TO data,
+    lv_tabix TYPE sy-tabix.
+
+  CREATE DATA lo_data LIKE LINE OF it_table.
+  DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+  DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+  ct_fieldcat = CORRESPONDING #( lt_dfies ).
+
+  CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+    CHANGING
+      ct_fieldcat = ct_fieldcat.
+
+  LOOP AT ct_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+    lv_tabix = sy-tabix.
+
+    CASE <fl_fcat>-fieldname.
+      WHEN 'MANDT' OR 'CONTADOR'.
+        DELETE ct_fieldcat INDEX lv_tabix.
+
+      WHEN 'ICON'.
+        dfcat_texto <fl_fcat> 'Status' 'Status' 'Status' 5.
+
+      WHEN 'MESSAGE'.
+        dfcat_texto <fl_fcat> 'Mensagem' 'Mensagem' 'Mensagem' 50.
+
+      WHEN OTHERS.
+    ENDCASE.
+
+  ENDLOOP.
+
+ENDFORM. " MONTAR_FIELDCAT_POPUP
