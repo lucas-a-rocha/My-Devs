@@ -1,0 +1,42 @@
+FORM registrar_msg_proxy  USING iv_type TYPE string
+                                iv_msg  TYPE string
+                       CHANGING ct_return TYPE bapiret2_t.
+  DATA:
+    lv_campo  TYPE i,
+    lv_espaco TYPE i VALUE 1,
+    lt_string TYPE STANDARD TABLE OF string,
+    lw_return LIKE LINE OF ct_return.
+
+  SPLIT iv_msg AT space INTO TABLE lt_string.
+
+  LOOP AT lt_string INTO DATA(lw_string).
+    lv_campo = COND #(
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v1 ) + lv_espaco LE 50 AND lw_return-message_v2 IS INITIAL THEN 1
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v2 ) + lv_espaco LE 50 AND lw_return-message_v3 IS INITIAL THEN 2
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v3 ) + lv_espaco LE 50 AND lw_return-message_v4 IS INITIAL THEN 3
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v4 ) + lv_espaco LE 50 THEN 4
+     ).
+
+    CASE lv_campo.
+      WHEN 1.
+        lw_return-message_v1 = COND #( WHEN lw_return-message_v1 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v1 } { lw_string }|  ).
+      WHEN 2.
+        lw_return-message_v2 = COND #( WHEN lw_return-message_v2 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v2 } { lw_string }|  ).
+      WHEN 3.
+        lw_return-message_v3 = COND #( WHEN lw_return-message_v3 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v3 } { lw_string }|  ).
+      WHEN 4.
+        lw_return-message_v4 = COND #( WHEN lw_return-message_v4 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v4 } { lw_string }|  ).
+    ENDCASE.
+  ENDLOOP.
+
+  IF lw_return IS NOT INITIAL.
+
+    lw_return-type = iv_type.
+    lw_return-id = 'ZPM'.
+    lw_return-number = '000'.
+
+    APPEND lw_return TO ct_return.
+
+  ENDIF.
+
+ENDFORM.
