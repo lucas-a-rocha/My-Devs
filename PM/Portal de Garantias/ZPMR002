@@ -1,0 +1,106 @@
+****************************************************************************************
+*                      &Randon/&Castgroup                                              *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 26.01.2022 15:41:35                                                       *
+****************************************************************************************
+* Descrição: DEM 3788 - Automatização SAP x Portal Garantias                           *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report  ZPMR002
+*&---------------------------------------------------------------------*
+REPORT zpmr002.
+
+TABLES: viqmel, zpmt001.
+
+INCLUDE zpmr002_top.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+
+SELECT-OPTIONS:
+  s_qmnum   FOR viqmel-qmnum ,
+  s_qmtxt   FOR viqmel-qmtxt ,
+  s_qmart   FOR viqmel-qmart NO INTERVALS NO-EXTENSION DEFAULT 'GA' OBLIGATORY ,
+  s_erdat   FOR viqmel-erdat OBLIGATORY ,
+  s_tipo    FOR zpmt001-tipo ,
+  s_portal  FOR zpmt001-status_portal ,
+  s_vkorg   FOR viqmel-vkorg .
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
+PARAMETERS: p_layout TYPE disvariant-variant.
+SELECTION-SCREEN END OF BLOCK b2.
+
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM bloq_campo_sel_screen.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_layout.
+  PERFORM buscar_layout_alv.
+
+START-OF-SELECTION.
+
+  TRY .
+      DATA(go_report) = NEW zcl_pm_auto_sap_garantias(
+          ir_qmnum     = s_qmnum[]
+          ir_qmtxt     = s_qmtxt[]
+          ir_qmart     = s_qmart[]
+          ir_erdat     = s_erdat[]
+          ir_tipo      = s_tipo[]
+          ir_portal    = s_portal[]
+          ir_vkorg     = s_vkorg[]
+          iv_layout    = p_layout
+      ).
+
+      go_report->processar_report( ).
+
+      CALL SCREEN '9001'.
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  BLOQ_CAMPO_SEL_SCREEN
+*&---------------------------------------------------------------------*
+FORM bloq_campo_sel_screen .
+  LOOP AT SCREEN.
+
+    IF screen-name = 'S_QMART-LOW'.
+      screen-input = '0'.
+      MODIFY SCREEN.
+      EXIT.
+    ENDIF.
+
+  ENDLOOP.
+ENDFORM. " BLOQ_CAMPO_SEL_SCREEN
+
+*&---------------------------------------------------------------------*
+*&      Form  BUSCAR_LAYOUT_ALV
+*&---------------------------------------------------------------------*
+FORM buscar_layout_alv .
+  gs_variant-report = sy-repid.
+
+  CALL FUNCTION 'REUSE_ALV_VARIANT_F4'
+    EXPORTING
+      is_variant    = gs_variant
+      i_save        = 'A'
+    IMPORTING
+      es_variant    = gs_variant
+    EXCEPTIONS
+      not_found     = 1
+      program_error = 2
+      OTHERS        = 3.
+
+  IF sy-subrc IS INITIAL.
+    p_layout = gs_variant-variant.
+  ENDIF.
+ENDFORM. " BUSCAR_LAYOUT_ALV
+
+INCLUDE zpmr002_o01.
+
+INCLUDE zpmr002_i01.
