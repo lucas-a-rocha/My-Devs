@@ -1,0 +1,97 @@
+FUNCTION zpm_garantia_status_usuario .
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"     REFERENCE(EV_STATUS_USUARIO) TYPE  ZPMT001-STATUS_USUARIO
+*"  EXCEPTIONS
+*"      ERRO_EXECUCAO_BAPI
+*"      ERRO_DE_EXECUCAO
+*"----------------------------------------------------------------------
+  DATA:
+    ls_notifheader_export TYPE bapi2080_nothdre.
+
+  zcl_pm_auto_sap_garantias=>buscar_parametros_tvarv(
+    IMPORTING
+      er_status_user    = DATA(lr_status_user)
+      et_bapiret        = et_return
+  ).
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_de_execucao.
+  ENDIF.
+
+* " Realiza o ajuste dos campos do RANGE, para utilizar nas validações abaixo.
+  LOOP AT lr_status_user ASSIGNING FIELD-SYMBOL(<fl_status_user>).
+    <fl_status_user>-option = 'CP'.
+    <fl_status_user>-low    = |*{ <fl_status_user>-low }*|.
+  ENDLOOP.
+
+* " Busca pelo status armazenado.
+  FREE et_return.
+  CLEAR ls_notifheader_export.
+  CALL FUNCTION 'BAPI_ALM_NOTIF_GET_DETAIL'
+    EXPORTING
+      number             = iv_qmnum
+      clear_buffer       = abap_true
+    IMPORTING
+      notifheader_export = ls_notifheader_export
+    TABLES
+      return             = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+* " Verifica se contém o status de sucesso (e por algum motivo ainda não registrou na tabela Z).
+  IF ls_notifheader_export-sys_status IN lr_status_user.
+    sy-subrc = 0.
+    ev_status_usuario = abap_true.
+
+    UPDATE zpmt001
+    SET status_usuario = ev_status_usuario
+    WHERE qmnum = iv_qmnum .
+
+    COMMIT WORK AND WAIT.
+
+    RETURN.
+  ENDIF.
+
+  DATA:
+    ls_usr_status TYPE bapi2080_notusrstati.
+
+  ls_usr_status-status_ext = 'ACEI'.
+  ls_usr_status-langu = 'PT'.
+
+  CALL FUNCTION 'BAPI_ALM_NOTIF_CHANGEUSRSTAT'
+    EXPORTING
+      number     = iv_qmnum
+      usr_status = ls_usr_status
+    TABLES
+      return     = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ELSE.
+
+    sy-subrc = 0.
+    ev_status_usuario = abap_true.
+
+    UPDATE zpmt001
+    SET status_usuario = ev_status_usuario
+    WHERE qmnum = iv_qmnum .
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = abap_true.
+
+    PERFORM desbloquear_nota USING iv_qmnum.
+
+  ENDIF.
+
+ENDFUNCTION.
