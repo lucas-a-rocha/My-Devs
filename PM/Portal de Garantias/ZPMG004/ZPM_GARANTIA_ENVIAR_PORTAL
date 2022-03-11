@@ -1,0 +1,69 @@
+FUNCTION zpm_garantia_enviar_portal.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"  CHANGING
+*"     REFERENCE(CV_STATUS_PORTAL) TYPE  ZPMT001-STATUS_PORTAL
+*"  EXCEPTIONS
+*"      NOTA_NAO_ENCONTRADA
+*"      STATUS_INVALIDO
+*"      ERRO_PROXY
+*"----------------------------------------------------------------------
+
+  FREE et_return.
+  CLEAR gs_dados_nota.
+  SELECT SINGLE *
+    FROM zpmt001 AS t001
+      INNER JOIN qmel ON qmel~qmnum = t001~qmnum
+    WHERE t001~qmnum = @iv_qmnum
+  INTO CORRESPONDING FIELDS OF @gs_dados_nota.
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i006(zpm).ENDIF. " Nota & não foi encontrada .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '006' message_v1 = iv_qmnum ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  IF gs_dados_nota-status_portal <> '04'. " Liberado
+    IF 1 = 2. MESSAGE i007(zpm).ENDIF. " Status da Nota &1 inválido para envio ao Portal .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '007' message_v1 = iv_qmnum ) TO et_return.
+
+    RAISE status_invalido.
+  ENDIF.
+
+* Início Ronaldo Pereira
+  IF gs_dados_nota-aufnr IS NOT INITIAL.
+  SELECT SINGLE aufnr, eban~banfn, ebeln
+    FROM ebkn
+    INNER JOIN eban ON eban~banfn = ebkn~banfn
+    WHERE aufnr = @gs_dados_nota-aufnr
+  INTO @DATA(ls_ebkn_eban).
+
+  IF sy-subrc = 0.
+    gs_dados_nota-banfn = ls_ebkn_eban-banfn.
+    gs_dados_nota-ebeln = ls_ebkn_eban-ebeln.
+  ENDIF.
+
+  ENDIF.
+*Fim Ronaldo Pereira.
+
+  PERFORM enviar_para_portal USING gs_dados_nota CHANGING et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_proxy.
+  ENDIF.
+
+  cv_status_portal = '02'. " Enviado .
+
+  UPDATE zpmt001
+  SET status_portal = cv_status_portal
+  WHERE qmnum = iv_qmnum.
+
+  COMMIT WORK.
+
+ENDFUNCTION.
