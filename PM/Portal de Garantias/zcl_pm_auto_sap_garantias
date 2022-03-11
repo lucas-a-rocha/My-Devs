@@ -229,7 +229,7 @@ ENDCLASS.
 
 
 
-CLASS ZCL_PM_AUTO_SAP_GARANTIAS IMPLEMENTATION.
+CLASS zcl_pm_auto_sap_garantias IMPLEMENTATION.
 
 
 * <SIGNATURE>---------------------------------------------------------------------------------------+
@@ -1598,33 +1598,33 @@ CLASS ZCL_PM_AUTO_SAP_GARANTIAS IMPLEMENTATION.
       <fl_executar>-banfn = lw_ebkn_eban-banfn.
       <fl_executar>-ebeln = lw_ebkn_eban-ebeln.
 
-    "Verifica se item e pedido foi eliminado.
-    IF lw_ebkn_eban-ebeln IS NOT INITIAL.
+      "Verifica se item e pedido foi eliminado.
+      IF lw_ebkn_eban-ebeln IS NOT INITIAL.
 
-    SELECT ebeln
-      FROM EKKO
-      INTO TABLE lt_ebeln
-      WHERE EBELN = lw_ebkn_eban-ebeln
-        AND LOEKZ = ' '.
-
-      IF sy-subrc IS INITIAL.
         SELECT ebeln
-          FROM EKPO
+          FROM ekko
           INTO TABLE lt_ebeln
-          WHERE EBELN = lw_ebkn_eban-ebeln
-            AND matnr = 'SERVICOGARANTIA'
-            AND LOEKZ = ' '.
+          WHERE ebeln = lw_ebkn_eban-ebeln
+            AND loekz = ' '.
+
+        IF sy-subrc IS INITIAL.
+          SELECT ebeln
+            FROM ekpo
+            INTO TABLE lt_ebeln
+            WHERE ebeln = lw_ebkn_eban-ebeln
+              AND matnr = 'SERVICOGARANTIA'
+              AND loekz = ' '.
           IF sy-subrc IS NOT INITIAL.
             <fl_executar>-ebeln = ' '.
           ENDIF.
 
-      ELSE.
-      <fl_executar>-ebeln = ' '.
+        ELSE.
+          <fl_executar>-ebeln = ' '.
+        ENDIF.
+
+
       ENDIF.
-
-
-    ENDIF.
-    "Fim da validação de pedido.
+      "Fim da validação de pedido.
       UNASSIGN <fl_executar>.
     ENDLOOP.
 
