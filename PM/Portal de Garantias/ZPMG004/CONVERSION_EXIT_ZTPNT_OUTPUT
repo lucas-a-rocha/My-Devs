@@ -1,0 +1,30 @@
+FUNCTION CONVERSION_EXIT_ZTPNT_OUTPUT.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     VALUE(INPUT) TYPE  ANY
+*"  EXPORTING
+*"     VALUE(OUTPUT) TYPE  ANY
+*"----------------------------------------------------------------------
+
+  DATA:
+    tl_dummy TYPE STANDARD TABLE OF dd07v,
+    tl_dd07v TYPE STANDARD TABLE OF dd07v.
+
+  CALL FUNCTION 'DD_DOMA_GET'
+    EXPORTING
+      domain_name   = 'ZDPM_TIPO_NOTA'
+    TABLES
+      dd07v_tab_a   = tl_dd07v
+      dd07v_tab_n   = tl_dummy
+    EXCEPTIONS
+      illegal_value = 1
+      op_failure    = 2
+      OTHERS        = 3.
+
+  READ TABLE tl_dd07v WITH KEY domvalue_l = input INTO DATA(wl_dd07v).
+  IF sy-subrc EQ 0.
+    output = wl_dd07v-ddtext.
+  ENDIF.
+
+ENDFUNCTION.
