@@ -1,0 +1,97 @@
+*----------------------------------------------------------------------*
+***INCLUDE LZGRMM_001F01.
+*----------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& Form check_parameters
+*&---------------------------------------------------------------------*
+FORM check_parameters  USING    iv_ebeln TYPE ekko-ebeln
+                                iv_banfn TYPE eban-banfn
+                                iv_bnfpo TYPE eban-bnfpo
+                                iv_lblni TYPE essr-lblni
+                       CHANGING cv_error TYPE abap_bool.
+  cv_error = abap_false.
+
+  IF iv_ebeln IS INITIAL AND iv_banfn IS INITIAL AND iv_lblni IS INITIAL.
+    cv_error = abap_true.
+    RETURN.
+  ENDIF.
+
+  IF iv_banfn IS NOT INITIAL AND iv_bnfpo IS INITIAL.
+    cv_error = abap_true.
+    RETURN.
+  ENDIF.
+
+  IF iv_ebeln IS NOT INITIAL AND ( iv_banfn IS NOT INITIAL OR iv_lblni IS NOT INITIAL ).
+    cv_error = abap_true.
+    RETURN.
+  ENDIF.
+
+  IF iv_banfn IS NOT INITIAL AND ( iv_ebeln IS NOT INITIAL OR iv_lblni IS NOT INITIAL ).
+    cv_error = abap_true.
+    RETURN.
+  ENDIF.
+
+  IF iv_lblni IS NOT INITIAL AND ( iv_ebeln IS NOT INITIAL OR iv_banfn IS NOT INITIAL ).
+    cv_error = abap_true.
+    RETURN.
+  ENDIF.
+
+ENDFORM. " CHECK_PARAMETERS
+
+*&---------------------------------------------------------------------*
+*& Form GET_EKKO
+*&---------------------------------------------------------------------*
+FORM get_ekko  USING    iv_ebeln TYPE ekko-ebeln
+               CHANGING cs_ekko TYPE ekko.
+  CLEAR cs_ekko.
+  SELECT SINGLE *
+    FROM ekko
+    WHERE ebeln = @iv_ebeln
+  INTO @cs_ekko.
+ENDFORM. " GET_EKKO
+
+*&---------------------------------------------------------------------*
+*& Form GET_EBAN
+*&---------------------------------------------------------------------*
+FORM get_eban  USING    iv_banfn TYPE eban-banfn
+                        iv_bnfpo TYPE eban-bnfpo
+               CHANGING cs_eban  TYPE eban.
+
+  CLEAR cs_eban.
+  SELECT SINGLE *
+    FROM eban
+    WHERE banfn = @iv_banfn
+      AND bnfpo = @iv_bnfpo
+  INTO @cs_eban.
+
+ENDFORM. " GET_EBAN
+*&---------------------------------------------------------------------*
+*& Form GET_ESSR
+*&---------------------------------------------------------------------*
+FORM get_essr  USING    iv_lblni TYPE essr-lblni
+               CHANGING cs_essr  TYPE essr.
+
+  CLEAR cs_essr.
+  SELECT SINGLE *
+    FROM essr
+    WHERE lblni = @iv_lblni
+  INTO @cs_essr.
+
+ENDFORM. " GET_ESSR
+
+*&---------------------------------------------------------------------*
+*& Form get_rel_prereq
+*&---------------------------------------------------------------------*
+FORM get_rel_prereq USING iv_frggr TYPE t16fv-frggr
+                          iv_frgsx TYPE t16fv-frgsx
+                CHANGING ct_rel_prereq TYPE t16fv_t.
+
+  FREE ct_rel_prereq.
+  SELECT *
+    FROM t16fv
+    WHERE frggr = @iv_frggr
+      AND frgsx = @iv_frgsx
+  INTO TABLE @ct_rel_prereq.
+
+ENDFORM. " GET_REL_PREREQ
