@@ -1,0 +1,71 @@
+FUNCTION zpm_garantia_criar_ncg .
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(EV_NOTACREDITO) TYPE  ZPME005-ZZCVBELN3
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"  EXCEPTIONS
+*"      NOTA_NAO_ENCONTRADA
+*"      DADOS_INVALIDOS
+*"      ERRO_EXECUCAO_BAPI
+*"----------------------------------------------------------------------
+
+  CLEAR gs_viqmel.
+  SELECT SINGLE *
+    FROM viqmel
+    WHERE qmnum = @iv_qmnum
+  INTO @gs_viqmel.
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'QMEL' message_v2 = 'Nota' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  CLEAR gs_zsdt054.
+  SELECT SINGLE *
+    FROM zsdt054
+    WHERE auart = 'ZNCG'
+      AND vkorg = @gs_viqmel-vkorg
+      AND vtweg = @gs_viqmel-vtweg
+  INTO @gs_zsdt054.
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'ZSDT054' message_v2 = 'Nota' ) TO et_return.
+
+    RAISE dados_invalidos.
+  ENDIF.
+
+  FREE gt_zsdt050.
+  SELECT *
+    FROM zsdt050
+    WHERE qmnum = @iv_qmnum
+  INTO TABLE @gt_zsdt050.
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'ZSDT050' message_v2 = 'Nota' ) TO et_return.
+
+    RAISE dados_invalidos.
+  ENDIF.
+
+  PERFORM preencher_dados_ov.
+
+  PERFORM criar_ov_fatura CHANGING ev_notacredito et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0 AND ev_notacredito IS INITIAL.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+  IF ev_notacredito IS NOT INITIAL.
+    FREE et_return.
+  ENDIF.
+
+  PERFORM desbloquear_nota USING iv_qmnum.
+
+ENDFUNCTION.
