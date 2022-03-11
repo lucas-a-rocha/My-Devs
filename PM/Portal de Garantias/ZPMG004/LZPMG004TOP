@@ -1,0 +1,20 @@
+FUNCTION-POOL zpmg004.                      "MESSAGE-ID ..
+
+* INCLUDE LZPMG004D...                       " Local class definition
+
+CONSTANTS:
+  c_doctype TYPE bapisdhd1-doc_type VALUE 'ZNCG'.
+
+DATA:
+  gs_dados_nota TYPE zpme005,
+  gs_viqmel     TYPE viqmel,
+  gs_zsdt054    TYPE zsdt054,
+  gt_zsdt050    TYPE STANDARD TABLE OF zsdt050.
+
+* " Estruturas e tabelas das BAPIs.
+DATA:
+  gs_order_header_in     TYPE bapisdhd1,
+  gs_logic_switch        TYPE bapisdls,
+  gt_order_items_in      TYPE TABLE OF bapisditm,
+  gt_order_partners      TYPE TABLE OF bapiparnr,
+  gt_order_conditions_in TYPE TABLE OF bapicond.
