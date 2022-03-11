@@ -1,0 +1,349 @@
+FUNCTION zpm_garantia_criar_os_req.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(EV_ORDEM_SERVICO) TYPE  QMEL-AUFNR
+*"     REFERENCE(EV_REQUISICAO_COMPRA) TYPE  EBKN-BANFN
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"  EXCEPTIONS
+*"      NOTA_NAO_ENCONTRADA
+*"      DADOS_INVALIDOS
+*"      ERRO_EXECUCAO_BAPI
+*"----------------------------------------------------------------------
+  DATA:
+    lv_objkey      TYPE bapi_alm_order_method-objectkey VALUE '%00000000001',
+    lv_start_date  TYPE sy-datum,
+    lv_finish_date TYPE sy-datum,
+    lv_werks       TYPE tvkwz-werks,
+    lv_quantidade  TYPE zsdt050-zvalor,
+    lt_methods     TYPE STANDARD TABLE OF bapi_alm_order_method,
+    lt_header      TYPE STANDARD TABLE OF bapi_alm_order_headers_i,
+    lt_operation   TYPE STANDARD TABLE OF bapi_alm_order_operation,
+    lt_component   TYPE STANDARD TABLE OF bapi_alm_order_component,
+    lt_srule       TYPE STANDARD TABLE OF bapi_alm_order_srule,
+    lt_srule_up    TYPE STANDARD TABLE OF bapi_alm_order_srule_up,
+    lt_return      TYPE bapiret2_t.
+
+  FREE et_return.
+
+  CLEAR gs_viqmel.
+  SELECT SINGLE *
+    FROM viqmel
+    WHERE qmnum = @iv_qmnum
+  INTO @gs_viqmel.
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'QMEL' message_v2 = 'Nota' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+*  SELECT SINGLE *
+*    FROM t399i
+*    WHERE iwerk = @gs_viqmel-vkorg
+*  INTO @DATA(ls_t399i).
+*
+*  IF sy-subrc <> 0.
+*
+*    IF 1 = 2. MESSAGE i005(zpm).ENDIF. " Organização de vendas da nota não é um centro de manutenção - Centro &1 .
+*    APPEND VALUE #( type = 'E' id = 'ZPM' number = '005' message_v1 = gs_viqmel-vkorg ) TO et_return.
+*
+*    RAISE dados_invalidos.
+*  ENDIF.
+
+  SELECT SINGLE *
+    FROM tvkwz
+    WHERE vkorg = @gs_viqmel-vkorg
+  INTO @DATA(ls_tvkwz).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i005(zpm).ENDIF. " Organização de vendas da nota não é um centro de manutenção - Centro &1 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '005' message_v1 = gs_viqmel-vkorg ) TO et_return.
+
+    RAISE dados_invalidos.
+  ENDIF.
+    "Buscar o centro configurado para transferir o preço da requisição de compras para o pedido.
+    SELECT SINGLE *
+    FROM T399X
+    WHERE WERKS = @ls_tvkwz-werks
+      AND AUART = 'GASE'
+      AND PRUEB = 'X'
+  INTO @DATA(ls_T399X).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i012(zpm).ENDIF. " Não existe configuração no SPRO para o preço ser transferido ao pedido.
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '012' message_v1 = ls_tvkwz-werks ) TO et_return.
+
+    RAISE dados_invalidos.
+  ENDIF.
+
+  lv_werks = ls_tvkwz-werks.
+
+*  SELECT SINGLE *
+*    FROM mbew
+*    WHERE matnr = @zcl_pm_auto_sap_garantias=>gc_material_garantia
+*      AND bwkey = @gs_viqmel-vkorg
+*  INTO @DATA(ls_mbew).
+*
+*  IF sy-subrc <> 0.
+*    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+*    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'MBEW' message_v2 = 'Material' ) TO et_return.
+*
+*    RAISE nota_nao_encontrada.
+*  ENDIF.
+
+  SELECT SINGLE *
+    FROM marc
+    WHERE matnr = @zcl_pm_auto_sap_garantias=>gc_material_garantia
+      AND werks = @lv_werks " gs_viqmel-vkorg
+  INTO @DATA(ls_marc).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'MARC' message_v2 = 'Material' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT SINGLE *
+    FROM t001w
+    WHERE werks = @lv_werks " gs_viqmel-vkorg
+  INTO @DATA(ls_t001w).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'T001W' message_v2 = 'Centro' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT SINGLE *
+    FROM t001k
+    WHERE bwkey  = @lv_werks " gs_viqmel-vkorg
+  INTO @DATA(ls_t001k).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'T001K' message_v2 = 'Empresa' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT SINGLE crco~kostl
+    FROM crhd
+      INNER JOIN crco ON crco~objid = crhd~objid AND crco~endda >= @sy-datum
+  WHERE arbpl = 'GARANTIA'
+    AND lvorm = @space
+    AND crhd~endda >= @sy-datum
+    AND werks = @lv_werks " gs_viqmel-vkorg
+  INTO @DATA(lv_kostl).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'CRCO' message_v2 = 'Centro de Custo' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT SINGLE lifnr
+    FROM kna1
+    WHERE kunnr = @gs_viqmel-kunum
+  INTO @DATA(lv_fornecedor).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i000(zpm).ENDIF.
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '000' message_v1 = 'Número de Fornecedor' message_v2 = 'não foi encontrado para' message_v3 = gs_viqmel-kunum ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT *
+    FROM zsdt050
+    WHERE qmnum = @iv_qmnum
+      AND matnr = 'SERVICOGARANTIA'
+  INTO TABLE @DATA(lt_zsdt050).
+
+  IF sy-subrc <> 0 .
+    IF 1 = 2. MESSAGE i000(zpm).ENDIF.
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '000' message_v1 = 'Não existe valor para o serviço da Nota' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  CLEAR lv_quantidade.
+  LOOP AT lt_zsdt050 INTO DATA(lw_zsdt050).
+
+    lv_quantidade = lv_quantidade + lw_zsdt050-zvalor.
+
+  ENDLOOP.
+
+  IF lv_quantidade IS INITIAL.
+    IF 1 = 2. MESSAGE i000(zpm).ENDIF.
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '000' message_v1 = 'Não existe valor para o serviço da Nota' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  DATA:
+    lv_ebeln TYPE ekko-ebeln,
+    lv_ebelp TYPE ekpo-ebelp,
+    lv_meins TYPE ekpo-meins.
+
+  PERFORM buscar_dados_agreement CHANGING lv_ebeln lv_ebelp lv_meins et_return.
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RETURN.
+  ENDIF.
+
+  FREE:
+    lt_methods, lt_header, lt_operation, lt_component,
+    lt_srule, lt_srule_up, lt_return.
+
+  lt_methods = VALUE #(
+    ( refnumber   = '000001'
+      objecttype  = 'HEADER'    method = 'CREATETONOTIF' objectkey = |{ lv_objkey }{ gs_viqmel-qmnum }| )
+
+    ( refnumber   = '000001'
+      objecttype  = 'OPERATION' method = 'CREATE'        objectkey = |{ lv_objkey }0010| )
+
+    ( refnumber   = '000001'
+      objecttype  = 'COMPONENT' method = 'CREATE'        objectkey = |{ lv_objkey }0010| )
+
+    ( refnumber   = '000001'
+      objecttype  = 'SRULE'     method = 'CREATE'        objectkey = lv_objkey )
+
+    ( refnumber   = '000001'
+      objecttype  = 'HEADER'    method = 'RELEASE'       objectkey = lv_objkey )
+
+    ( refnumber   = '000001'
+      objecttype  = space       method = 'SAVE'          objectkey = lv_objkey )
+  ).
+
+  IF gs_viqmel-strmn LT sy-datum.
+    lv_start_date = sy-datum.
+  ELSE.
+    lv_start_date = gs_viqmel-strmn.
+  ENDIF.
+
+  IF gs_viqmel-ltrmn LT sy-datum.
+    lv_finish_date = sy-datum.
+  ELSE.
+    lv_finish_date = gs_viqmel-ltrmn.
+  ENDIF.
+
+  lt_header = VALUE #( (
+    orderid     = lv_objkey
+    order_type  = 'GASE'
+    planplant   = lv_werks "gs_viqmel-vkorg
+    mn_wk_ctr   = 'GARANTIA'
+    plant       = lv_werks "gs_viqmel-vkorg
+    equipment   = gs_viqmel-equnr
+    start_date  = lv_start_date
+    finish_date = lv_finish_date
+    short_text  = gs_viqmel-qmtxt
+  ) ).
+
+  lt_operation = VALUE #( (
+    activity    = '0010'
+    control_key = 'SM01'
+    description = gs_viqmel-qmtxt
+  ) ).
+
+  lt_component = VALUE #( (
+    material             = zcl_pm_auto_sap_garantias=>gc_material_garantia
+    plant                = lv_werks "gs_viqmel-vkorg
+    item_cat             = 'N'
+    item_number          = '0010'
+    cost_relevant        = 'X'
+    price                = lv_quantidade "ls_mbew-stprs "1
+    pur_group            = ls_marc-ekgrp
+    vendor_no            = lv_fornecedor
+    preq_name            = sy-uname
+    purch_org            = ls_t001w-ekorg
+    requirement_quantity = '1' "lv_quantidade
+    requirement_quantity_unit = lv_meins
+
+    agreement            = lv_ebeln
+    agmt_item            = lv_ebelp
+  ) ).
+
+  lt_srule = VALUE #( (
+    objnr	     = lv_objkey
+    settl_type = 'TOT'
+    percentage = 100
+    comp_code  = ls_t001k-bukrs
+    costcenter = lv_kostl
+    activity   = '0010'
+  ) ).
+
+  lt_srule_up = VALUE #( (
+    settl_type      = abap_true
+    source          = abap_true
+    percentage      = abap_true
+    equiv_number    = abap_true
+    amount          = abap_true
+    bus_area        = abap_true
+    comp_code       = abap_true
+    gl_account      = abap_true
+    profit_ctr      = abap_true
+    costcenter      = abap_true
+    orderid         = abap_true
+    wbs_element     = abap_true
+    asset_no        = abap_true
+    sub_number      = abap_true
+    network         = abap_true
+    activity        = abap_true
+    sales_ord       = abap_true
+    s_ord_item      = abap_true
+    cost_obj        = abap_true
+    co_busproc      = abap_true
+    extnr           = abap_true
+    gbisj           = abap_true
+    gbisp           = abap_true
+    valid_from_year = abap_true
+    valid_from_per  = abap_true
+  ) ).
+
+  CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+    TABLES
+      it_methods   = lt_methods
+      it_header    = lt_header
+      it_operation = lt_operation
+      it_component = lt_component
+      it_srule     = lt_srule
+      it_srule_up  = lt_srule_up
+      return       = lt_return.
+
+  READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+
+    et_return = lt_return.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    RAISE erro_execucao_bapi.
+
+  ELSE.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = abap_true.
+
+    READ TABLE lt_return INTO DATA(lw_return) WITH KEY type = 'S' id = 'IWO_BAPI2' number = 126.
+    IF sy-subrc = 0.
+      ev_ordem_servico = lw_return-message_v2.
+      ev_ordem_servico = |{ ev_ordem_servico ALPHA = IN }|.
+
+      SELECT SINGLE banfn
+        FROM ebkn
+        WHERE aufnr = @ev_ordem_servico
+      INTO @ev_requisicao_compra.
+
+    ENDIF.
+
+    PERFORM desbloquear_nota USING iv_qmnum.
+
+  ENDIF.
+
+ENDFUNCTION.
