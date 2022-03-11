@@ -1,0 +1,1763 @@
+****************************************************************************************
+*                      &Randon/&Castgroup                                              *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 26.01.2022 15:41:35                                                       *
+****************************************************************************************
+* Descrição: DEM 3788 - Automatização SAP x Portal Garantias                           *
+****************************************************************************************
+CLASS zcl_pm_auto_sap_garantias DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    TYPES:
+      BEGIN OF gty_viqmel,
+        qmnum     TYPE viqmel-qmnum,
+        qmart     TYPE viqmel-qmart,
+        qmtxt     TYPE viqmel-qmtxt,
+        erdat     TYPE viqmel-erdat,
+        vkorg     TYPE viqmel-vkorg,
+        kunum     TYPE viqmel-kunum,
+        zzcvbeln3 TYPE viqmel-zzcvbeln3,
+        aufnr     TYPE viqmel-aufnr,
+      END OF gty_viqmel .
+    TYPES:
+      tr_qmnum  TYPE RANGE OF viqmel-qmnum .
+    TYPES:
+      tr_qmtxt  TYPE RANGE OF viqmel-qmtxt .
+    TYPES:
+      tr_qmart  TYPE RANGE OF viqmel-qmart .
+    TYPES:
+      tr_erdat  TYPE RANGE OF viqmel-erdat .
+    TYPES:
+      tr_tipo   TYPE RANGE OF zpmt001-tipo .
+    TYPES:
+      tr_portal TYPE RANGE OF zpmt001-status_portal .
+    TYPES:
+      tr_vkorg  TYPE RANGE OF viqmel-vkorg .
+    TYPES:
+      tr_sys_status TYPE RANGE OF bapi2080_nothdre-sys_status .
+    TYPES:
+      tt_zpme005 TYPE STANDARD TABLE OF zpme005 .
+    TYPES:
+      tt_qmnum TYPE STANDARD TABLE OF zpmt001-qmnum .
+
+    CONSTANTS gc_material_garantia TYPE mara-matnr VALUE 'SERVICOGARANTIA' ##NO_TEXT.
+
+    METHODS constructor
+      IMPORTING
+        !ir_qmnum  TYPE tr_qmnum OPTIONAL
+        !ir_qmtxt  TYPE tr_qmtxt OPTIONAL
+        !ir_qmart  TYPE tr_qmart OPTIONAL
+        !ir_erdat  TYPE tr_erdat OPTIONAL
+        !ir_tipo   TYPE tr_tipo OPTIONAL
+        !ir_portal TYPE tr_portal OPTIONAL
+        !ir_vkorg  TYPE tr_vkorg OPTIONAL
+        !iv_layout TYPE disvariant-variant OPTIONAL
+      RAISING
+        cx_idm_error .
+    METHODS processar_job
+      RAISING
+        cx_idm_error .
+    METHODS processar_report
+      RAISING
+        cx_idm_error .
+    METHODS executar_etapas_por_nota
+      IMPORTING
+        !iv_qmnum            TYPE zpmt001-qmnum
+      CHANGING
+        !cv_aufnr            TYPE zpme005-aufnr OPTIONAL
+        !cv_banfn            TYPE zpme005-banfn OPTIONAL
+        !cv_ebeln            TYPE zpme005-ebeln OPTIONAL
+        !cv_tipo             TYPE zpmt001-tipo OPTIONAL
+        !cv_status_nota      TYPE zpmt001-status_nota OPTIONAL
+        !cv_status_usuario   TYPE zpmt001-status_usuario OPTIONAL
+        !cv_status_medida    TYPE zpmt001-status_medida OPTIONAL
+        !cv_conclusao_medida TYPE zpmt001-conclusao_medida OPTIONAL
+        !cv_status_portal    TYPE zpmt001-status_portal OPTIONAL
+        !cv_zzcvbeln3        TYPE zpme005-zzcvbeln3 OPTIONAL .
+    METHODS processar_alv_report .
+    METHODS refresh_alv_report .
+    CLASS-METHODS buscar_parametros_tvarv
+      EXPORTING
+        !er_status_sistema TYPE tr_sys_status
+        !er_status_sucesso TYPE tr_sys_status
+        !er_status_user    TYPE tr_sys_status
+        !et_bapiret        TYPE bapiret2_t .
+    CLASS-METHODS bloquear_nota
+      IMPORTING
+        !iv_qmnum         TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rs_bapiret) TYPE bapiret2 .
+    CLASS-METHODS desbloquear_nota
+      IMPORTING
+        !iv_qmnum TYPE zpmt001-qmnum .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+
+    CONSTANTS gc_tvarv_status_sistema TYPE tvarvc-name VALUE 'ZPMR002_STATUSSISTEMA' ##NO_TEXT.
+    CONSTANTS gc_tvarv_status_sucesso TYPE tvarvc-name VALUE 'ZPMR002_STATUSSISTEMA_SUCESSO' ##NO_TEXT.
+    CONSTANTS gc_tvarv_status_user_sucesso TYPE tvarvc-name VALUE 'ZPMR002_STATUS_USER_SUCESSO' ##NO_TEXT.
+    DATA:
+      gt_novos_registros TYPE STANDARD TABLE OF gty_viqmel .
+    DATA gt_executar TYPE tt_zpme005 .   "zpmt001 .
+    DATA gt_alv_report TYPE tt_zpme005 .
+    DATA:
+      gt_log_execucao TYPE STANDARD TABLE OF zpmt002 .
+    CLASS-DATA gr_tvarv_status_sistema TYPE tr_sys_status .
+    CLASS-DATA gr_tvarv_status_sucesso TYPE tr_sys_status .
+    CLASS-DATA gr_tvarv_status_user TYPE tr_sys_status .
+    DATA gr_qmnum TYPE tr_qmnum .
+    DATA gr_qmtxt TYPE tr_qmtxt .
+    DATA gr_qmart TYPE tr_qmart .
+    DATA gr_erdat TYPE tr_erdat .
+    DATA gr_tipo TYPE tr_tipo .
+    DATA gr_portal TYPE tr_portal .
+    DATA gr_vkorg TYPE tr_vkorg .
+    DATA gv_layout TYPE disvariant-variant .
+    DATA go_container TYPE REF TO cl_gui_container .
+    DATA go_alv TYPE REF TO cl_gui_alv_grid .
+
+    METHODS atualizar_alv_report .
+    METHODS bloquear_todas_notas .
+    METHODS buscar_tipo_nota
+      IMPORTING
+        !iv_qmnum      TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_tipo) TYPE zpmt001-tipo .
+    METHODS criar_alv_report .
+    METHODS criar_nota_credito
+      IMPORTING
+        !iv_qmnum              TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_nota_credito) TYPE viqmel-zzcvbeln3 .
+    METHODS criar_ordem_serv_requisicao
+      IMPORTING
+        !iv_qmnum TYPE zpmt001-qmnum
+      EXPORTING
+        !ev_aufnr TYPE qmel-aufnr
+        !ev_banfn TYPE ebkn-banfn .
+    METHODS desbloquear_nota_manual
+      IMPORTING
+        !it_qmnum TYPE tt_qmnum .
+    METHODS enviar_portal_manual
+      IMPORTING
+        !it_qmnum TYPE tt_qmnum .
+    METHODS excluir_funcionalidades
+      IMPORTING
+        !iv_bloq            TYPE abap_bool OPTIONAL
+      RETURNING
+        VALUE(rt_functions) TYPE ui_functions .
+    METHODS executar_envio_portal .
+    METHODS executar_etapas .
+    METHODS handle_button_click
+        FOR EVENT button_click OF cl_gui_alv_grid
+      IMPORTING
+        !es_col_id
+        !es_row_no .
+    METHODS handle_toolbar
+        FOR EVENT toolbar OF cl_gui_alv_grid
+      IMPORTING
+        !e_object
+        !e_interactive .
+    METHODS handle_user_command
+        FOR EVENT user_command OF cl_gui_alv_grid
+      IMPORTING
+        !e_ucomm .
+    METHODS handle_hotspot_click
+        FOR EVENT hotspot_click OF cl_gui_alv_grid
+      IMPORTING
+        !e_row_id
+        !e_column_id
+        !es_row_no .
+    METHODS liberar_status_nota
+      IMPORTING
+        !iv_qmnum             TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_status_nota) TYPE zpmt001-status_nota .
+    METHODS modificar_status_medida
+      IMPORTING
+        !iv_qmnum               TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_status_medida) TYPE zpmt001-status_medida .
+    METHODS modificar_status_usuario
+      IMPORTING
+        !iv_qmnum                TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_status_usuario) TYPE zpmt001-status_usuario .
+    METHODS montar_fieldcat_report
+      RETURNING
+        VALUE(rt_fieldcat) TYPE lvc_t_fcat .
+    METHODS processar_novos_registros .
+    METHODS realizar_conclusao_medida
+      IMPORTING
+        !iv_qmnum                  TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_conclusao_medida) TYPE zpmt001-conclusao_medida .
+    METHODS registrar_log_erro
+      IMPORTING
+        !iv_qmnum   TYPE zpmt001-qmnum
+        !is_bapiret TYPE bapiret2 OPTIONAL
+        !it_bapiret TYPE bapiret2_t OPTIONAL .
+    METHODS reprocessar_notas
+      IMPORTING
+        !it_qmnum TYPE tt_qmnum .
+    METHODS selecionar_dados
+      IMPORTING
+        !iv_processar_novos_registros TYPE flag OPTIONAL
+      RAISING
+        cx_idm_error .
+    METHODS selecionar_dados_adicionais .
+    METHODS show_popup_log
+      IMPORTING
+        !iv_qmnum TYPE zpmt001-qmnum .
+    METHODS verificar_bloqueio_nota
+      IMPORTING
+        !iv_qmnum          TYPE zpmt001-qmnum
+      RETURNING
+        VALUE(rv_bloqueio) TYPE zpme005-bloqueio .
+    METHODS verificar_notas_bloqueadas .
+    METHODS verificar_status_duplicidade
+      IMPORTING
+        !iv_qmnum         TYPE zpmt001-qmnum
+      CHANGING
+        !cv_status_portal TYPE zpmt001-status_portal .
+ENDCLASS.
+
+
+
+CLASS ZCL_PM_AUTO_SAP_GARANTIAS IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->ATUALIZAR_ALV_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD atualizar_alv_report.
+    DATA:
+      lr_qmnum  TYPE tr_qmnum,
+      lr_qmtxt  TYPE tr_qmtxt,
+      lr_qmart  TYPE tr_qmart,
+      lr_erdat  TYPE tr_erdat,
+      lr_tipo   TYPE tr_tipo,
+      lr_portal TYPE tr_portal,
+      lr_vkorg  TYPE tr_vkorg.
+
+*   " Armazena temporariamente os filtros informados em tela.
+    lr_qmnum  = me->gr_qmnum .
+    lr_qmtxt  = me->gr_qmtxt .
+    lr_qmart  = me->gr_qmart .
+    lr_erdat  = me->gr_erdat .
+    lr_tipo   = me->gr_tipo  .
+    lr_portal = me->gr_portal.
+    lr_vkorg  = me->gr_vkorg .
+
+    FREE: me->gr_qmnum, me->gr_qmtxt, me->gr_qmart, me->gr_erdat, me->gr_tipo, me->gr_portal, me->gr_vkorg.
+
+    me->gr_qmnum = VALUE #( FOR lw_executar_for IN me->gt_executar ( sign = 'I' option = 'EQ' low = lw_executar_for-qmnum ) ).
+
+    TRY .
+        me->selecionar_dados( iv_processar_novos_registros = abap_false ).
+
+        me->verificar_notas_bloqueadas( ).
+
+      CATCH cx_idm_error INTO DATA(ol_exc).
+    ENDTRY.
+
+*   " Atualiza o ALV com os valores modificados na atualização.
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+      READ TABLE me->gt_alv_report ASSIGNING FIELD-SYMBOL(<fl_alv_report>) WITH KEY qmnum = <fl_executar>-qmnum.
+      CHECK sy-subrc = 0 AND <fl_alv_report> IS ASSIGNED.
+
+      <fl_alv_report> = <fl_executar>.
+
+      UNASSIGN <fl_alv_report>.
+    ENDLOOP.
+
+    FREE me->gr_qmnum.
+
+*   " Armazena novamente os valores do filtro informados em tela.
+    me->gr_qmnum  = lr_qmnum .
+    me->gr_qmtxt  = lr_qmtxt .
+    me->gr_qmart  = lr_qmart .
+    me->gr_erdat  = lr_erdat .
+    me->gr_tipo   = lr_tipo  .
+    me->gr_portal = lr_portal.
+    me->gr_vkorg  = lr_vkorg .
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_PM_AUTO_SAP_GARANTIAS=>BLOQUEAR_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RS_BAPIRET                     TYPE        BAPIRET2
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD bloquear_nota.
+
+    CALL FUNCTION 'ENQUEUE_EZ_ZPMT001'
+      EXPORTING
+        mode_zpmt001   = 'E'
+        mandt          = sy-mandt
+        qmnum          = iv_qmnum
+      EXCEPTIONS
+        foreign_lock   = 1
+        system_failure = 2
+        OTHERS         = 3.
+    IF sy-subrc <> 0.
+
+      rs_bapiret = VALUE #(
+        type       = sy-msgty
+        id         = sy-msgid
+        number     = sy-msgno
+        message_v1 = sy-msgv1
+        message_v2 = sy-msgv2
+        message_v3 = sy-msgv3
+        message_v4 = sy-msgv4
+      ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->BLOQUEAR_TODAS_NOTAS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD bloquear_todas_notas.
+    DATA:
+      ls_bapiret TYPE bapiret2.
+
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+      CLEAR ls_bapiret.
+
+*     " Bloqueia a nota para execução.
+      ls_bapiret = me->bloquear_nota( iv_qmnum = <fl_executar>-qmnum ).
+      IF ls_bapiret-type = 'E'.
+
+        <fl_executar>-bloqueio = abap_true.
+        me->registrar_log_erro( iv_qmnum = <fl_executar>-qmnum is_bapiret = ls_bapiret ).
+
+        CONTINUE.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_PM_AUTO_SAP_GARANTIAS=>BUSCAR_PARAMETROS_TVARV
+* +-------------------------------------------------------------------------------------------------+
+* | [<---] ER_STATUS_SISTEMA              TYPE        TR_SYS_STATUS
+* | [<---] ER_STATUS_SUCESSO              TYPE        TR_SYS_STATUS
+* | [<---] ER_STATUS_USER                 TYPE        TR_SYS_STATUS
+* | [<---] ET_BAPIRET                     TYPE        BAPIRET2_T
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD buscar_parametros_tvarv.
+
+    IF gr_tvarv_status_sistema IS INITIAL.
+      SELECT sign, opti AS option, low, high
+        FROM tvarvc
+        WHERE name = @gc_tvarv_status_sistema
+      INTO TABLE @gr_tvarv_status_sistema.
+
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i002(zpm).ENDIF. " A TVARV &1 não está cadastrada .
+        APPEND VALUE #( type = 'E' id = 'ZPM' number = '002' message_v1 = gc_tvarv_status_sistema  ) TO et_bapiret.
+      ENDIF.
+
+      LOOP AT gr_tvarv_status_sistema ASSIGNING FIELD-SYMBOL(<fl_status_sistema>).
+        IF <fl_status_sistema>-sign IS INITIAL.
+          <fl_status_sistema>-sign = 'I'.
+        ENDIF.
+
+        IF <fl_status_sistema>-option IS INITIAL.
+          <fl_status_sistema>-option = 'EQ'.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    IF gr_tvarv_status_sucesso IS INITIAL.
+      SELECT sign, opti AS option, low, high
+        FROM tvarvc
+        WHERE name = @gc_tvarv_status_sucesso
+      INTO TABLE @gr_tvarv_status_sucesso.
+
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i002(zpm).ENDIF. " A TVARV &1 não está cadastrada .
+        APPEND VALUE #( type = 'E' id = 'ZPM' number = '002' message_v1 = gc_tvarv_status_sucesso  ) TO et_bapiret.
+      ENDIF.
+
+      LOOP AT gr_tvarv_status_sucesso ASSIGNING FIELD-SYMBOL(<fl_status_sucesso>).
+        IF <fl_status_sucesso>-sign IS INITIAL.
+          <fl_status_sucesso>-sign = 'I'.
+        ENDIF.
+
+        IF <fl_status_sucesso>-option IS INITIAL.
+          <fl_status_sucesso>-option = 'EQ'.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    IF gr_tvarv_status_user IS INITIAL.
+      SELECT sign, opti AS option, low, high
+        FROM tvarvc
+        WHERE name = @gc_tvarv_status_user_sucesso
+      INTO TABLE @gr_tvarv_status_user.
+
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i002(zpm).ENDIF. " A TVARV &1 não está cadastrada .
+        APPEND VALUE #( type = 'E' id = 'ZPM' number = '002' message_v1 = gc_tvarv_status_user_sucesso  ) TO et_bapiret.
+      ENDIF.
+
+      LOOP AT gr_tvarv_status_user ASSIGNING FIELD-SYMBOL(<fl_status_user>).
+        IF <fl_status_user>-sign IS INITIAL.
+          <fl_status_user>-sign = 'I'.
+        ENDIF.
+
+        IF <fl_status_user>-option IS INITIAL.
+          <fl_status_user>-option = 'EQ'.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    er_status_sistema   = gr_tvarv_status_sistema.
+    er_status_sucesso   = gr_tvarv_status_sucesso.
+    er_status_user      = gr_tvarv_status_user.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->BUSCAR_TIPO_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_TIPO                        TYPE        ZPMT001-TIPO
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD buscar_tipo_nota.
+
+    SELECT DISTINCT matnr
+      FROM zsdt050
+      WHERE qmnum = @iv_qmnum
+    INTO TABLE @DATA(lt_zsdt050).
+
+    IF sy-subrc <> 0.
+      rv_tipo = '01'.
+
+      IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+      me->registrar_log_erro( iv_qmnum = iv_qmnum is_bapiret = VALUE #( type = 'E' id = 'ZPM' number = '004'
+          message_v1 = 'ZSDT050' message_v2 = 'Materiais' ) ).
+      RETURN.
+    ENDIF.
+
+    READ TABLE lt_zsdt050 WITH KEY matnr = me->gc_material_garantia TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      IF lines( lt_zsdt050 ) GT 1.
+        rv_tipo = '04' . " Ambos
+      ELSE.
+        rv_tipo = '03' . " Compras
+      ENDIF.
+    ELSE.
+      rv_tipo = '02' . " Crédito
+    ENDIF.
+
+    UPDATE zpmt001
+    SET tipo = rv_tipo
+    WHERE qmnum = iv_qmnum .
+
+    COMMIT WORK.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->CONSTRUCTOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IR_QMNUM                       TYPE        TR_QMNUM(optional)
+* | [--->] IR_QMTXT                       TYPE        TR_QMTXT(optional)
+* | [--->] IR_QMART                       TYPE        TR_QMART(optional)
+* | [--->] IR_ERDAT                       TYPE        TR_ERDAT(optional)
+* | [--->] IR_TIPO                        TYPE        TR_TIPO(optional)
+* | [--->] IR_PORTAL                      TYPE        TR_PORTAL(optional)
+* | [--->] IR_VKORG                       TYPE        TR_VKORG(optional)
+* | [--->] IV_LAYOUT                      TYPE        DISVARIANT-VARIANT(optional)
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD constructor.
+
+    me->gr_qmnum  = ir_qmnum .
+    me->gr_qmtxt  = ir_qmtxt .
+    me->gr_qmart  = ir_qmart .
+    me->gr_erdat  = ir_erdat .
+    me->gr_tipo   = ir_tipo  .
+    me->gr_portal = ir_portal.
+    me->gr_vkorg  = ir_vkorg .
+    me->gv_layout = iv_layout.
+
+    IF me->gr_erdat IS INITIAL AND me->gr_qmnum IS INITIAL.
+      APPEND VALUE #( sign = 'I' option = 'EQ' low = sy-datum ) TO me->gr_erdat.
+    ENDIF.
+
+    IF me->gr_qmtxt IS INITIAL.
+      APPEND VALUE #( sign = 'I' option = 'CP' low = 'DRG*' ) TO me->gr_qmtxt.
+    ENDIF.
+
+  ENDMETHOD. " CONSTRUCTOR
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->CRIAR_ALV_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD criar_alv_report.
+
+    CONSTANTS:
+      c_container TYPE scrfname VALUE 'CC_ALV'.
+
+    cl_gui_cfw=>flush( ).
+
+    me->go_container = NEW cl_gui_custom_container( container_name = c_container ).
+    me->go_alv = NEW cl_gui_alv_grid( i_parent = me->go_container ).
+
+    SET HANDLER me->handle_button_click FOR me->go_alv.
+    SET HANDLER me->handle_hotspot_click FOR me->go_alv.
+    SET HANDLER me->handle_toolbar FOR me->go_alv.
+    SET HANDLER me->handle_user_command FOR me->go_alv.
+
+    DATA(lt_fieldcat) = me->montar_fieldcat_report( ).
+    DATA(lt_excl_fn)  = me->excluir_funcionalidades( ).
+
+    DATA(ls_layout) = VALUE lvc_s_layo(
+      zebra       = abap_true
+      box_fname   = 'MARK'
+*      cwidth_opt  = abap_true
+*      stylefname  = 'FIELD_STYLE'
+     ).
+
+    me->go_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
+
+    me->go_alv->set_table_for_first_display(
+      EXPORTING
+        is_variant            = VALUE #( report    = sy-cprog
+                                         username  = sy-uname
+                                         variant   = me->gv_layout )
+        i_save                = 'A' "'U'
+        it_toolbar_excluding  = lt_excl_fn
+        is_layout             = ls_layout
+      CHANGING
+        it_fieldcatalog       = lt_fieldcat
+        it_outtab             = me->gt_alv_report[] ).
+
+    me->go_alv->set_toolbar_interactive( ).
+    me->go_alv->set_ready_for_input( i_ready_for_input = 1 ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->CRIAR_NOTA_CREDITO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_NOTA_CREDITO                TYPE        VIQMEL-ZZCVBELN3
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD criar_nota_credito.
+
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_CRIAR_NCG'
+      EXPORTING
+        iv_qmnum            = iv_qmnum
+      IMPORTING
+        ev_notacredito      = rv_nota_credito
+        et_return           = lt_bapiret
+      EXCEPTIONS
+        nota_nao_encontrada = 1
+        dados_invalidos     = 2
+        erro_execucao_bapi  = 3
+        OTHERS              = 4.
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->CRIAR_ORDEM_SERV_REQUISICAO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<---] EV_AUFNR                       TYPE        QMEL-AUFNR
+* | [<---] EV_BANFN                       TYPE        EBKN-BANFN
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD criar_ordem_serv_requisicao.
+
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_CRIAR_OS_REQ'
+      EXPORTING
+        iv_qmnum             = iv_qmnum
+      IMPORTING
+        ev_ordem_servico     = ev_aufnr
+        ev_requisicao_compra = ev_banfn
+        et_return            = lt_bapiret
+      EXCEPTIONS
+        nota_nao_encontrada  = 1
+        dados_invalidos      = 2
+        erro_execucao_bapi   = 3
+        OTHERS               = 4.
+
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_PM_AUTO_SAP_GARANTIAS=>DESBLOQUEAR_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD desbloquear_nota.
+
+    CALL FUNCTION 'DEQUEUE_EZ_ZPMT001'
+      EXPORTING
+        mode_zpmt001 = 'E'
+        mandt        = sy-mandt
+        qmnum        = iv_qmnum.
+
+    CALL FUNCTION 'DEQUEUE_EIQMEL'
+      EXPORTING
+        mode_qmel = 'E'
+        mandt     = sy-mandt
+        qmnum     = iv_qmnum.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->DESBLOQUEAR_NOTA_MANUAL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_QMNUM                       TYPE        TT_QMNUM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD desbloquear_nota_manual.
+
+    LOOP AT it_qmnum ASSIGNING FIELD-SYMBOL(<fl_qmnum>).
+      READ TABLE me->gt_alv_report ASSIGNING FIELD-SYMBOL(<fl_alv_report>) WITH KEY qmnum = <fl_qmnum>.
+      CHECK sy-subrc = 0 AND <fl_alv_report> IS ASSIGNED.
+
+      <fl_alv_report>-bloqueio = me->verificar_bloqueio_nota( iv_qmnum = <fl_alv_report>-qmnum ).
+      IF <fl_alv_report>-bloqueio = abap_true.
+
+        me->desbloquear_nota( iv_qmnum = <fl_alv_report>-qmnum ).
+        CLEAR <fl_alv_report>-bloqueio.
+
+      ELSE.
+
+        me->bloquear_nota( iv_qmnum = <fl_alv_report>-qmnum ).
+        <fl_alv_report>-bloqueio = abap_true.
+
+      ENDIF.
+
+      UNASSIGN <fl_alv_report>.
+
+    ENDLOOP.
+
+    COMMIT WORK AND WAIT.
+
+    MESSAGE 'Notas bloqueadas/desbloqueadas com sucesso .' TYPE 'S'.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->ENVIAR_PORTAL_MANUAL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_QMNUM                       TYPE        TT_QMNUM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD enviar_portal_manual.
+
+    FREE me->gt_executar.
+    me->gt_executar = VALUE #( FOR lw_qmnum_for IN it_qmnum ( me->gt_alv_report[ qmnum = lw_qmnum_for ] ) ).
+
+    me->executar_envio_portal( ).
+
+*   " Atualiza o ALV com os valores modificados no reprocessamento.
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+      READ TABLE me->gt_alv_report ASSIGNING FIELD-SYMBOL(<fl_alv_report>) WITH KEY qmnum = <fl_executar>-qmnum.
+      CHECK sy-subrc = 0 AND <fl_alv_report> IS ASSIGNED.
+
+      <fl_alv_report> = <fl_executar>.
+
+      UNASSIGN <fl_alv_report>.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->EXCLUIR_FUNCIONALIDADES
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BLOQ                        TYPE        ABAP_BOOL(optional)
+* | [<-()] RT_FUNCTIONS                   TYPE        UI_FUNCTIONS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD excluir_funcionalidades.
+
+    IF iv_bloq EQ abap_true.
+      rt_functions = VALUE #( ( cl_gui_alv_grid=>mc_fc_excl_all ) ). "// Remove todas as funcionalidades.
+
+      RETURN.
+    ENDIF.
+
+    rt_functions = VALUE #(
+          ( cl_gui_alv_grid=>mc_fc_auf                     )
+          ( cl_gui_alv_grid=>mc_fc_average                 )
+          ( cl_gui_alv_grid=>mc_fc_back_classic            )
+          ( cl_gui_alv_grid=>mc_fc_call_abc                )
+          ( cl_gui_alv_grid=>mc_fc_call_chain              )
+          ( cl_gui_alv_grid=>mc_fc_call_crbatch            )
+          ( cl_gui_alv_grid=>mc_fc_call_crweb              )
+          ( cl_gui_alv_grid=>mc_fc_call_lineitems          )
+          ( cl_gui_alv_grid=>mc_fc_call_master_data        )
+          ( cl_gui_alv_grid=>mc_fc_call_more               )
+          ( cl_gui_alv_grid=>mc_fc_call_report             )
+          ( cl_gui_alv_grid=>mc_fc_call_xint               )
+          ( cl_gui_alv_grid=>mc_fc_call_xml_export         )
+          ( cl_gui_alv_grid=>mc_fc_call_xxl                )
+          ( cl_gui_alv_grid=>mc_fc_check                   )
+          ( cl_gui_alv_grid=>mc_fc_col_invisible           )
+          ( cl_gui_alv_grid=>mc_fc_col_optimize            )
+          ( cl_gui_alv_grid=>mc_fc_count                   )
+*          ( cl_gui_alv_grid=>mc_fc_current_variant         )
+          ( cl_gui_alv_grid=>mc_fc_data_save               )
+*          ( cl_gui_alv_grid=>mc_fc_delete_filter           )
+          ( cl_gui_alv_grid=>mc_fc_detail                  )
+          ( cl_gui_alv_grid=>mc_fc_expcrdata               )
+          ( cl_gui_alv_grid=>mc_fc_expcrdesig              )
+          ( cl_gui_alv_grid=>mc_fc_expcrtempl              )
+          ( cl_gui_alv_grid=>mc_fc_expmdb                  )
+          ( cl_gui_alv_grid=>mc_fc_extend                  )
+          ( cl_gui_alv_grid=>mc_fc_f4                      )
+*          ( cl_gui_alv_grid=>mc_fc_filter                  )
+          ( cl_gui_alv_grid=>mc_fc_fix_columns             )
+          ( cl_gui_alv_grid=>mc_fc_graph                   )
+          ( cl_gui_alv_grid=>mc_fc_help                    )
+          ( cl_gui_alv_grid=>mc_fc_html                    )
+          ( cl_gui_alv_grid=>mc_fc_info                    )
+*          ( cl_gui_alv_grid=>mc_fc_load_variant            )
+          ( cl_gui_alv_grid=>mc_fc_loc_append_row          )
+          ( cl_gui_alv_grid=>mc_fc_loc_copy                )
+          ( cl_gui_alv_grid=>mc_fc_loc_copy_row            )
+          ( cl_gui_alv_grid=>mc_fc_loc_cut                 )
+          ( cl_gui_alv_grid=>mc_fc_loc_move_row            )
+          ( cl_gui_alv_grid=>mc_fc_loc_paste               )
+          ( cl_gui_alv_grid=>mc_fc_loc_paste_new_row       )
+          ( cl_gui_alv_grid=>mc_fc_loc_undo                )
+*          ( cl_gui_alv_grid=>mc_fc_maintain_variant        )
+          ( cl_gui_alv_grid=>mc_fc_maximum                 )
+          ( cl_gui_alv_grid=>mc_fc_minimum                 )
+          ( cl_gui_alv_grid=>mc_fc_pc_file                 )
+          ( cl_gui_alv_grid=>mc_fc_print                   )
+          ( cl_gui_alv_grid=>mc_fc_print_back              )
+          ( cl_gui_alv_grid=>mc_fc_print_prev              )
+          ( cl_gui_alv_grid=>mc_fc_refresh                 )
+          ( cl_gui_alv_grid=>mc_fc_reprep                  )
+*          ( cl_gui_alv_grid=>mc_fc_save_variant            )
+          ( cl_gui_alv_grid=>mc_fc_send                    )
+*          ( cl_gui_alv_grid=>mc_fc_separator               )
+          ( cl_gui_alv_grid=>mc_fc_subtot                  )
+          ( cl_gui_alv_grid=>mc_fc_sum                     )
+          ( cl_gui_alv_grid=>mc_fc_to_office               )
+          ( cl_gui_alv_grid=>mc_fc_to_rep_tree             )
+          ( cl_gui_alv_grid=>mc_fc_unfix_columns           )
+          ( cl_gui_alv_grid=>mc_fc_url_copy_to_clipboard   )
+*          ( cl_gui_alv_grid=>mc_fc_variant_admin           )
+          ( cl_gui_alv_grid=>mc_fc_views                   )
+          ( cl_gui_alv_grid=>mc_fc_view_crystal            )
+          ( cl_gui_alv_grid=>mc_fc_view_excel              )
+          ( cl_gui_alv_grid=>mc_fc_view_grid               )
+          ( cl_gui_alv_grid=>mc_fc_view_lotus              )
+          ( cl_gui_alv_grid=>mc_fc_word_processor          )
+          ( cl_gui_alv_grid=>mc_fc_loc_delete_row          )
+          ( cl_gui_alv_grid=>mc_fc_loc_insert_row          )
+        ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->EXECUTAR_ENVIO_PORTAL
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD executar_envio_portal.
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    me->bloquear_todas_notas( ).
+
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+      FREE: lt_bapiret.
+      CHECK <fl_executar>-bloqueio = abap_false . " Verifica se está bloqueado por outro processo.
+      CHECK <fl_executar>-status_portal = '04'. " Liberado para o Envio.
+
+      CALL FUNCTION 'ZPM_GARANTIA_ENVIAR_PORTAL'
+        EXPORTING
+          iv_qmnum            = <fl_executar>-qmnum
+        IMPORTING
+          et_return           = lt_bapiret
+        CHANGING
+          cv_status_portal    = <fl_executar>-status_portal
+        EXCEPTIONS
+          nota_nao_encontrada = 1
+          status_invalido     = 2
+          erro_proxy          = 3
+          OTHERS              = 4.
+      IF sy-subrc <> 0.
+
+        me->registrar_log_erro( iv_qmnum = <fl_executar>-qmnum it_bapiret = lt_bapiret ).
+        me->desbloquear_nota( iv_qmnum = <fl_executar>-qmnum ).
+
+        CONTINUE.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->EXECUTAR_ETAPAS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD executar_etapas.
+
+    me->bloquear_todas_notas( ).
+
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+
+      CHECK <fl_executar>-bloqueio = abap_false . " Verifica se está bloqueado por outro processo.
+
+      CALL FUNCTION 'ZPM_GARANTIA_ETAPA_POR_NOTA'
+        EXPORTING
+          iv_qmnum            = <fl_executar>-qmnum
+        CHANGING
+          cv_aufnr            = <fl_executar>-aufnr
+          cv_banfn            = <fl_executar>-banfn
+          cv_ebeln            = <fl_executar>-ebeln
+          cv_tipo             = <fl_executar>-tipo
+          cv_status_nota      = <fl_executar>-status_nota
+          cv_status_usuario   = <fl_executar>-status_usuario
+          cv_status_medida    = <fl_executar>-status_medida
+          cv_conclusao_medida = <fl_executar>-conclusao_medida
+          cv_status_portal    = <fl_executar>-status_portal
+          cv_zzcvbeln3        = <fl_executar>-zzcvbeln3.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->EXECUTAR_ETAPAS_POR_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-->] CV_AUFNR                       TYPE        ZPME005-AUFNR(optional)
+* | [<-->] CV_BANFN                       TYPE        ZPME005-BANFN(optional)
+* | [<-->] CV_EBELN                       TYPE        ZPME005-EBELN(optional)
+* | [<-->] CV_TIPO                        TYPE        ZPMT001-TIPO(optional)
+* | [<-->] CV_STATUS_NOTA                 TYPE        ZPMT001-STATUS_NOTA(optional)
+* | [<-->] CV_STATUS_USUARIO              TYPE        ZPMT001-STATUS_USUARIO(optional)
+* | [<-->] CV_STATUS_MEDIDA               TYPE        ZPMT001-STATUS_MEDIDA(optional)
+* | [<-->] CV_CONCLUSAO_MEDIDA            TYPE        ZPMT001-CONCLUSAO_MEDIDA(optional)
+* | [<-->] CV_STATUS_PORTAL               TYPE        ZPMT001-STATUS_PORTAL(optional)
+* | [<-->] CV_ZZCVBELN3                   TYPE        ZPME005-ZZCVBELN3(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD executar_etapas_por_nota.
+
+    CHECK cv_status_portal = '01' OR cv_status_portal =  '03' . " Pendente ou Duplicidade.
+
+*   " Varifica o tipo de Marcado. A princípio, o mercado Externo ficará bloqueado.
+    SELECT SINGLE mercado FROM zpmt001 WHERE qmnum = @iv_qmnum INTO @DATA(lv_mercado).
+    IF lv_mercado = '02'. " Externo .
+
+      IF 1 = 2. MESSAGE i011(zpm).ENDIF. " Mercado externo não está previsto no momento .
+      me->registrar_log_erro( iv_qmnum = iv_qmnum is_bapiret = VALUE #( type = 'E' id = 'ZPM' number = '011' ) ).
+      me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+      RETURN.
+
+    ENDIF.
+
+*   " Processa a alteração do status da Nota.
+    IF cv_status_nota = abap_false.
+
+      cv_status_nota = me->liberar_status_nota( iv_qmnum ).
+      IF cv_status_nota = abap_false.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Processa a altereção do status do usuário.
+    IF cv_status_usuario = abap_false AND cv_status_nota = abap_true.
+
+      cv_status_usuario = me->modificar_status_usuario( iv_qmnum ).
+      IF cv_status_usuario = abap_false.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Processa a alteração do status da medida.
+    IF cv_status_medida = abap_false AND cv_status_usuario = abap_true.
+
+      cv_status_medida = me->modificar_status_medida( iv_qmnum ).
+      IF cv_status_medida = abap_false.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Processa a conclusão das medidas.
+    IF cv_conclusao_medida = abap_false AND cv_status_medida = abap_true.
+
+      cv_conclusao_medida = me->realizar_conclusao_medida( iv_qmnum ).
+      IF cv_conclusao_medida = abap_false.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Busca pelo valor correto da coluna Tipo.
+    IF cv_tipo = '01' AND cv_conclusao_medida = abap_true.
+
+      cv_tipo = me->buscar_tipo_nota( iv_qmnum ).
+      IF cv_tipo = '01'.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Processa a criação da Nota de Crédito Garantia.
+    IF cv_tipo IN VALUE tr_tipo( sign = 'I' option = 'EQ' ( low = '02' ) ( low = '04' ) ) " Crédito ou Ambos respectivamente.
+      AND cv_zzcvbeln3 IS INITIAL.
+
+      cv_zzcvbeln3 = me->criar_nota_credito( iv_qmnum ).
+      IF cv_zzcvbeln3 IS INITIAL.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Processa a criação da Ordem de Serviço com Requisição de Compras.
+    IF cv_tipo IN VALUE tr_tipo( sign = 'I' option = 'EQ' ( low = '03' ) ( low = '04' ) )  " Compras ou Ambos respectivamente.
+      AND ( cv_aufnr IS INITIAL OR cv_banfn IS INITIAL ).
+
+      me->criar_ordem_serv_requisicao( EXPORTING iv_qmnum = iv_qmnum
+                                       IMPORTING ev_aufnr = cv_aufnr
+                                                 ev_banfn = cv_banfn ).
+      IF cv_aufnr IS INITIAL.
+        me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+        RETURN.
+      ENDIF.
+
+    ENDIF.
+
+*   " Verifica se existe mais de uma nota com o mesmo DRG - no texto da nota.
+    me->verificar_status_duplicidade( EXPORTING iv_qmnum = iv_qmnum CHANGING cv_status_portal = cv_status_portal ).
+
+*   " Verifica se o Pedido de compra já foi criado pelo usuário. Quando SIM, atualiza para Liberado.
+    IF cv_status_portal = '01'.
+      IF cv_tipo IN VALUE tr_tipo( sign = 'I' option = 'EQ' ( low = '03' ) ( low = '04' ) ) " Compras ou Ambos respectivamente.
+       AND cv_ebeln IS INITIAL.
+
+        IF 1 = 2. MESSAGE i010(zpm).ENDIF. " O Documento de compras não foi encontrado .
+        me->registrar_log_erro( iv_qmnum = iv_qmnum is_bapiret = VALUE #( type = 'E' id = 'ZPM' number = '010' ) ).
+
+        cv_status_portal = '01'.
+
+      ELSE.
+
+        DELETE FROM zpmt002 WHERE qmnum = iv_qmnum.
+
+        cv_status_portal = '04'.
+
+      ENDIF.
+
+    ENDIF.
+
+*   " Se chegou até aqui, tudo ocorreu com sucesso.
+    UPDATE zpmt001
+    SET status_portal = cv_status_portal
+    WHERE qmnum = iv_qmnum.
+
+    me->desbloquear_nota( iv_qmnum = iv_qmnum ).
+
+    COMMIT WORK.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->HANDLE_BUTTON_CLICK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] ES_COL_ID                      LIKE
+* | [--->] ES_ROW_NO                      LIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD handle_button_click.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->HANDLE_HOTSPOT_CLICK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] E_ROW_ID                       LIKE
+* | [--->] E_COLUMN_ID                    LIKE
+* | [--->] ES_ROW_NO                      LIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD handle_hotspot_click.
+
+    READ TABLE me->gt_alv_report ASSIGNING FIELD-SYMBOL(<fl_executar>) INDEX es_row_no-row_id.
+    CHECK sy-subrc = 0 AND <fl_executar> IS ASSIGNED.
+
+    CASE e_column_id-fieldname.
+      WHEN 'QMNUM'.
+
+        me->show_popup_log( iv_qmnum = <fl_executar>-qmnum ).
+
+      WHEN OTHERS.
+    ENDCASE.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->HANDLE_TOOLBAR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] E_OBJECT                       LIKE
+* | [--->] E_INTERACTIVE                  LIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD handle_toolbar.
+
+    APPEND VALUE #(
+      function  = 'ZREFRESH'
+      icon      = icon_refresh
+      quickinfo = 'Atualizar'
+      disabled  = abap_false
+    ) TO e_object->mt_toolbar.
+
+    APPEND VALUE #(
+      function  = 'ZSEP1'
+      butn_type = 3
+      disabled  = abap_false
+    ) TO e_object->mt_toolbar.
+
+    APPEND VALUE #(
+      function  = 'ZREPROCESSAR'
+      icon      = icon_execute_object
+      text      = |Reprocessar|
+      quickinfo = 'Reprocessar notas selecionadas'
+      disabled  = abap_false
+    ) TO e_object->mt_toolbar.
+
+    APPEND VALUE #(
+      function  = 'ZENVIARPORTAL'
+      icon      = icon_system_play
+      text      = |Enviar ao Portal|
+      quickinfo = 'Enviar notas selecionadas para o Portal'
+      disabled  = abap_false
+    ) TO e_object->mt_toolbar.
+
+    APPEND VALUE #(
+      function  = 'ZDESBLOQUEAR'
+      icon      = icon_unlocked
+      text      = |Desbloquear|
+      quickinfo = 'Desbloquear notas selecionadas'
+      disabled  = abap_false
+    ) TO e_object->mt_toolbar.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->HANDLE_USER_COMMAND
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] E_UCOMM                        LIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD handle_user_command.
+    DATA:
+      lt_qmnum TYPE tt_qmnum.
+
+*   " Verifica, para os eventos abaixo, se alguma linha foi selecionada.
+    CASE e_ucomm.
+      WHEN 'ZREPROCESSAR' OR 'ZENVIARPORTAL' OR 'ZDESBLOQUEAR'.
+        me->go_alv->get_selected_rows(
+          IMPORTING
+            et_row_no     = DATA(lt_rows_no)                    " Numeric IDs of Selected Rows
+        ).
+
+        IF lt_rows_no IS INITIAL.
+
+          MESSAGE s000(zpm) WITH 'Selecione ao menos uma linha' 'para realizar esta operação' DISPLAY LIKE 'E'.
+          RETURN.
+
+        ENDIF.
+    ENDCASE.
+
+    CASE e_ucomm.
+      WHEN 'ZREFRESH'.
+
+        me->atualizar_alv_report( ).
+
+      WHEN 'ZREPROCESSAR'.
+
+        lt_qmnum = VALUE #( FOR lw_row_no_for IN lt_rows_no ( me->gt_alv_report[ lw_row_no_for-row_id ]-qmnum ) ).
+
+        me->reprocessar_notas( it_qmnum = lt_qmnum ).
+
+      WHEN 'ZENVIARPORTAL'.
+        lt_qmnum = VALUE #( FOR lw_row_no_for IN lt_rows_no ( me->gt_alv_report[ lw_row_no_for-row_id ]-qmnum ) ).
+
+        me->enviar_portal_manual( it_qmnum = lt_qmnum ).
+
+      WHEN 'ZDESBLOQUEAR'.
+        lt_qmnum = VALUE #( FOR lw_row_no_for IN lt_rows_no ( me->gt_alv_report[ lw_row_no_for-row_id ]-qmnum ) ).
+
+        me->desbloquear_nota_manual( it_qmnum = lt_qmnum ).
+
+    ENDCASE.
+
+    me->refresh_alv_report( ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->LIBERAR_STATUS_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_STATUS_NOTA                 TYPE        ZPMT001-STATUS_NOTA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD liberar_status_nota.
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_STATUS_NOTA'
+      EXPORTING
+        iv_qmnum           = iv_qmnum
+      IMPORTING
+        et_return          = lt_bapiret
+        ev_status_nota     = rv_status_nota
+      EXCEPTIONS
+        erro_bloqueio      = 1
+        erro_execucao_bapi = 2
+        erro_de_execucao   = 3
+        OTHERS             = 4.
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->MODIFICAR_STATUS_MEDIDA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_STATUS_MEDIDA               TYPE        ZPMT001-STATUS_MEDIDA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD modificar_status_medida.
+
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_STATUS_MEDIDA'
+      EXPORTING
+        iv_qmnum           = iv_qmnum
+      IMPORTING
+        et_return          = lt_bapiret
+        ev_status_medida   = rv_status_medida
+      EXCEPTIONS
+        erro_execucao_bapi = 1
+        erro_de_execucao   = 2
+        OTHERS             = 3.
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->MODIFICAR_STATUS_USUARIO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_STATUS_USUARIO              TYPE        ZPMT001-STATUS_USUARIO
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD modificar_status_usuario.
+
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_STATUS_USUARIO'
+      EXPORTING
+        iv_qmnum           = iv_qmnum
+      IMPORTING
+        et_return          = lt_bapiret
+        ev_status_usuario  = rv_status_usuario
+      EXCEPTIONS
+        erro_execucao_bapi = 1
+        erro_de_execucao   = 2
+        OTHERS             = 3.
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->MONTAR_FIELDCAT_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RT_FIELDCAT                    TYPE        LVC_T_FCAT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD montar_fieldcat_report.
+    DATA:
+      ls_dummy    TYPE zpme005. " Apenas para registro de utilização.
+
+    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+      EXPORTING
+        i_structure_name = 'ZPME005'
+      CHANGING
+        ct_fieldcat      = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fs_fieldcat>).
+      CASE <fs_fieldcat>-fieldname.
+        WHEN 'QMNUM'.
+          <fs_fieldcat>-key         = abap_true.
+          <fs_fieldcat>-fix_column  = abap_true.
+          <fs_fieldcat>-hotspot     = abap_true.
+
+        WHEN 'STATUS_NOTA' OR 'STATUS_USUARIO' OR 'STATUS_MEDIDA' OR 'CONCLUSAO_MEDIDA' OR 'BLOQUEIO'.
+          <fs_fieldcat>-just = 'C'.
+
+        WHEN 'MERCADO'.
+          <fs_fieldcat>-outputlen = 10.
+          <fs_fieldcat>-convexit = 'ZMCDO'.
+
+        WHEN 'TIPO'.
+          <fs_fieldcat>-outputlen = 10.
+          <fs_fieldcat>-convexit = 'ZTPNT'.
+
+        WHEN 'STATUS_PORTAL'.
+          <fs_fieldcat>-outputlen = 15.
+          <fs_fieldcat>-convexit = 'ZSPRT'.
+
+        WHEN OTHERS.
+          CONTINUE.
+
+      ENDCASE.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->PROCESSAR_ALV_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD processar_alv_report.
+
+    IF me->go_alv IS NOT BOUND.
+
+      me->criar_alv_report( ).
+
+    ELSE.
+
+      me->refresh_alv_report( ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->PROCESSAR_JOB
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD processar_job.
+    IF me->gr_portal IS INITIAL.
+      me->gr_portal = VALUE #( ( sign = 'I' option = 'EQ' low = '01' )
+                               ( sign = 'I' option = 'EQ' low = '03' ) ). " O job irá executar apenas status Pendente ou Duplicidade.
+    ENDIF.
+
+    me->selecionar_dados( iv_processar_novos_registros = abap_true ).
+
+    me->processar_novos_registros( ).
+
+    me->executar_etapas( ).
+
+*   " Com a tabela de LOG, não é necessário enviar para o SPOOL uma lista com os dados executados.
+    IF sy-batch = abap_false.
+*      me->display_alv_job( ).
+    ENDIF.
+
+  ENDMETHOD. " PROCESSAR_JOB
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->PROCESSAR_NOVOS_REGISTROS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD processar_novos_registros.
+    DATA:
+      lw_zpmt001 TYPE zpmt001..
+
+    CHECK me->gt_novos_registros IS NOT INITIAL.
+
+    SELECT kunnr, land1
+      FROM kna1
+      FOR ALL ENTRIES IN @me->gt_novos_registros
+      WHERE kunnr = @me->gt_novos_registros-kunum
+    INTO TABLE @DATA(lt_kna1).
+
+*   " Insere os novos registros na tabela ZPMT001 de controle, e armazena na tabela interna de execução.
+    LOOP AT me->gt_novos_registros INTO DATA(lw_novos_registros).
+      READ TABLE lt_kna1 INTO DATA(lw_kna1) WITH KEY kunnr = lw_novos_registros-kunum.
+
+      lw_zpmt001 = VALUE #(
+        qmnum          = lw_novos_registros-qmnum
+        mercado        = COND #( WHEN lw_kna1-land1 = 'BR' THEN '01' ELSE '02' ) " 01 = Interno / 02 = Externo
+        tipo           = '01' " Medida
+        status_portal  = '01' " Pendente
+        dtproc         = sy-datum
+        hhproc         = sy-uzeit
+      ).
+
+      INSERT zpmt001 FROM lw_zpmt001.
+      IF sy-subrc = 0.
+        INSERT CORRESPONDING #( lw_zpmt001 ) INTO TABLE me->gt_executar.
+      ENDIF.
+
+      CLEAR: lw_zpmt001, lw_kna1.
+
+    ENDLOOP.
+
+    COMMIT WORK AND WAIT.
+
+    SORT me->gt_executar BY qmnum.
+
+  ENDMETHOD. " PROCESSAR_NOVOS_REGISTROS
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->PROCESSAR_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD processar_report.
+
+    me->selecionar_dados( iv_processar_novos_registros = abap_false ).
+
+    me->verificar_notas_bloqueadas( ).
+
+    APPEND LINES OF me->gt_executar TO me->gt_alv_report.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->REALIZAR_CONCLUSAO_MEDIDA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_CONCLUSAO_MEDIDA            TYPE        ZPMT001-CONCLUSAO_MEDIDA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD realizar_conclusao_medida.
+
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    CALL FUNCTION 'ZPM_GARANTIA_CONCLUIR_MEDIDA'
+      EXPORTING
+        iv_qmnum            = iv_qmnum
+      IMPORTING
+        et_return           = lt_bapiret
+        ev_conclusao_medida = rv_conclusao_medida
+      EXCEPTIONS
+        erro_execucao_bapi  = 1
+        OTHERS              = 2.
+    IF sy-subrc <> 0.
+
+      me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_PM_AUTO_SAP_GARANTIAS->REFRESH_ALV_REPORT
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD refresh_alv_report.
+
+*    me->go_alv->refresh_table_display( i_soft_refresh = abap_true ).
+
+    me->go_alv->refresh_table_display( is_stable = VALUE #( row = 'X' col = 'X' ) ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->REGISTRAR_LOG_ERRO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [--->] IS_BAPIRET                     TYPE        BAPIRET2(optional)
+* | [--->] IT_BAPIRET                     TYPE        BAPIRET2_T(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD registrar_log_erro.
+
+    DATA:
+      lv_contador TYPE zpmt002-contador,
+      lv_message  TYPE zpmt002-message,
+      lt_zpmt002  TYPE STANDARD TABLE OF zpmt002.
+
+    CHECK is_bapiret IS NOT INITIAL OR it_bapiret IS NOT INITIAL.
+
+*   " Remove o LOG antigo para armazenar o novo.
+    DELETE FROM zpmt002 WHERE qmnum = iv_qmnum.
+
+    IF is_bapiret IS NOT INITIAL.
+      ADD 1 TO lv_contador.
+
+      MESSAGE ID is_bapiret-id TYPE 'S' NUMBER is_bapiret-number
+        WITH is_bapiret-message_v1 is_bapiret-message_v2 is_bapiret-message_v3 is_bapiret-message_v4
+        INTO lv_message.
+
+      APPEND VALUE #(
+        qmnum    = iv_qmnum
+        contador = lv_contador
+        type     = is_bapiret-type
+        message  = lv_message
+      ) TO lt_zpmt002.
+    ENDIF.
+
+    LOOP AT it_bapiret INTO DATA(lw_bapiret).
+      ADD 1 TO lv_contador.
+
+      MESSAGE ID lw_bapiret-id TYPE 'S' NUMBER lw_bapiret-number
+        WITH lw_bapiret-message_v1 lw_bapiret-message_v2 lw_bapiret-message_v3 lw_bapiret-message_v4
+        INTO lv_message.
+
+      APPEND VALUE #(
+        qmnum    = iv_qmnum
+        contador = lv_contador
+        type     = lw_bapiret-type
+        message  = lv_message
+      ) TO lt_zpmt002.
+
+    ENDLOOP.
+
+    APPEND LINES OF lt_zpmt002 TO gt_log_execucao.
+
+    MODIFY zpmt002 FROM TABLE lt_zpmt002.
+
+    COMMIT WORK.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->REPROCESSAR_NOTAS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_QMNUM                       TYPE        TT_QMNUM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD reprocessar_notas.
+
+    FREE me->gt_executar.
+    me->gt_executar = VALUE #( FOR lw_qmnum_for IN it_qmnum ( me->gt_alv_report[ qmnum = lw_qmnum_for ] ) ).
+
+    me->executar_etapas( ).
+
+*   " Atualiza o ALV com os valores modificados no reprocessamento.
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+      READ TABLE me->gt_alv_report ASSIGNING FIELD-SYMBOL(<fl_alv_report>) WITH KEY qmnum = <fl_executar>-qmnum.
+      CHECK sy-subrc = 0 AND <fl_alv_report> IS ASSIGNED.
+
+      <fl_alv_report> = <fl_executar>.
+
+      UNASSIGN <fl_alv_report>.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->SELECIONAR_DADOS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_PROCESSAR_NOVOS_REGISTROS   TYPE        FLAG(optional)
+* | [!CX!] CX_IDM_ERROR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD selecionar_dados.
+
+    IF iv_processar_novos_registros = abap_true.
+
+*     " Busca por todos os registros da VIQMEL que NÃO EXISTEM na ZPMT001.
+      SELECT qmnum, qmart, qmtxt, erdat, vkorg, kunum, zzcvbeln3, aufnr
+        FROM viqmel AS qmel
+        WHERE qmnum IN @me->gr_qmnum
+          AND qmart IN @me->gr_qmart
+          AND erdat IN @me->gr_erdat
+          AND vkorg IN @me->gr_vkorg
+          AND qmtxt IN @me->gr_qmtxt " (Texto descritivo com o código “DRG+ ‘ ‘ + 0000000”)
+          AND qmnum NOT IN ( SELECT qmnum FROM zpmt001 AS t001 WHERE t001~qmnum = qmel~qmnum )
+      INTO TABLE @me->gt_novos_registros.
+
+    ENDIF.
+
+*   " Busca por todos os registros existentes em ambas as tabelas (VIQMEL e ZPMT001).
+    SELECT  qmel~qmnum, qmart, qmtxt, qmel~erdat, vkorg, kunum, mercado, tipo,
+            status_nota, status_usuario, status_medida, conclusao_medida, zzcvbeln3, qmel~aufnr,
+            ' ' AS banfn, ' ' AS ebeln, status_portal, dtproc, hhproc
+      FROM qmel
+      INNER JOIN zpmt001 AS t001 ON t001~qmnum = qmel~qmnum
+      WHERE qmel~qmnum          IN @me->gr_qmnum
+        AND qmel~qmart          IN @me->gr_qmart
+        AND qmel~erdat          IN @me->gr_erdat
+        AND qmel~vkorg          IN @me->gr_vkorg
+        AND qmel~qmtxt          IN @me->gr_qmtxt
+        AND t001~tipo           IN @me->gr_tipo
+        AND t001~status_portal  IN @me->gr_portal
+    INTO TABLE @me->gt_executar.
+
+    IF me->gt_novos_registros IS INITIAL AND me->gt_executar IS INITIAL.
+      IF 1 = 2. MESSAGE i001(zpm). ENDIF. " Nenhum registro foi encontrado .
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'W' id = 'ZPM' number = '001' ).
+    ENDIF.
+
+    SORT me->gt_executar BY qmnum.
+
+    me->selecionar_dados_adicionais( ).
+
+  ENDMETHOD. " SELECIONAR_DADOS
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->SELECIONAR_DADOS_ADICIONAIS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD selecionar_dados_adicionais.
+    DATA:
+      lt_aufnr TYPE STANDARD TABLE OF aufnr.
+    DATA:
+      lt_ebeln TYPE STANDARD TABLE OF ebeln.
+
+
+    lt_aufnr = VALUE #( FOR lw_executar_for IN me->gt_executar ( lw_executar_for-aufnr ) ).
+    SORT lt_aufnr.
+    DELETE ADJACENT DUPLICATES FROM lt_aufnr COMPARING ALL FIELDS.
+    DELETE lt_aufnr WHERE table_line IS INITIAL.
+
+    CHECK lt_aufnr IS NOT INITIAL.
+
+    SELECT DISTINCT aufnr, eban~banfn, ebeln
+      FROM ebkn
+      INNER JOIN eban ON eban~banfn = ebkn~banfn
+      FOR ALL ENTRIES IN @lt_aufnr
+      WHERE aufnr = @lt_aufnr-table_line
+    INTO TABLE @DATA(lt_ebkn_eban).
+
+    CHECK sy-subrc = 0.
+
+    LOOP AT lt_ebkn_eban INTO DATA(lw_ebkn_eban).
+      READ TABLE me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>) WITH KEY aufnr = lw_ebkn_eban-aufnr.
+      CHECK sy-subrc = 0 AND <fl_executar> IS ASSIGNED.
+
+      <fl_executar>-banfn = lw_ebkn_eban-banfn.
+      <fl_executar>-ebeln = lw_ebkn_eban-ebeln.
+
+    "Verifica se item e pedido foi eliminado.
+    IF lw_ebkn_eban-ebeln IS NOT INITIAL.
+
+    SELECT ebeln
+      FROM EKKO
+      INTO TABLE lt_ebeln
+      WHERE EBELN = lw_ebkn_eban-ebeln
+        AND LOEKZ = ' '.
+
+      IF sy-subrc IS INITIAL.
+        SELECT ebeln
+          FROM EKPO
+          INTO TABLE lt_ebeln
+          WHERE EBELN = lw_ebkn_eban-ebeln
+            AND matnr = 'SERVICOGARANTIA'
+            AND LOEKZ = ' '.
+          IF sy-subrc IS NOT INITIAL.
+            <fl_executar>-ebeln = ' '.
+          ENDIF.
+
+      ELSE.
+      <fl_executar>-ebeln = ' '.
+      ENDIF.
+
+
+    ENDIF.
+    "Fim da validação de pedido.
+      UNASSIGN <fl_executar>.
+    ENDLOOP.
+
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->SHOW_POPUP_LOG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD show_popup_log.
+
+    SELECT *
+      FROM zpmt002
+      WHERE qmnum = @iv_qmnum
+    INTO TABLE @DATA(lt_log).
+
+    IF sy-subrc <> 0.
+
+      MESSAGE s000(zpm) WITH 'Nenhum registro de Log foi encontrado' DISPLAY LIKE 'E'.
+      RETURN.
+
+    ENDIF.
+
+    CALL FUNCTION 'ZPM_GARANTIA_POPUP_TABLE'
+      TABLES
+        it_alv = lt_log.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->VERIFICAR_BLOQUEIO_NOTA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-()] RV_BLOQUEIO                    TYPE        ZPME005-BLOQUEIO
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD verificar_bloqueio_nota.
+    DATA:
+      ls_dummy TYPE zpmt001,
+      lv_garg  TYPE eqegraarg,
+      lt_enq   TYPE STANDARD TABLE OF seqg3.
+
+    CLEAR: lv_garg, lt_enq.
+    CONCATENATE sy-mandt iv_qmnum INTO lv_garg.
+
+    CALL FUNCTION 'ENQUEUE_READ'
+      EXPORTING
+        gclient               = sy-mandt
+        gname                 = 'ZPMT001'
+        garg                  = lv_garg
+        guname                = '*'
+      TABLES
+        enq                   = lt_enq
+      EXCEPTIONS
+        communication_failure = 1
+        system_failure        = 2.
+
+    READ TABLE lt_enq TRANSPORTING NO FIELDS WITH KEY garg = lv_garg.
+    IF sy-subrc = 0.
+      rv_bloqueio = abap_true.
+    ELSE.
+      CLEAR rv_bloqueio.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->VERIFICAR_NOTAS_BLOQUEADAS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD verificar_notas_bloqueadas.
+    DATA:
+      ls_dummy TYPE zpmt001,
+      lv_garg  TYPE eqegraarg,
+      lt_enq   TYPE STANDARD TABLE OF seqg3.
+
+    LOOP AT me->gt_executar ASSIGNING FIELD-SYMBOL(<fl_executar>).
+
+      <fl_executar>-bloqueio = me->verificar_bloqueio_nota( iv_qmnum = <fl_executar>-qmnum ) .
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_PM_AUTO_SAP_GARANTIAS->VERIFICAR_STATUS_DUPLICIDADE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_QMNUM                       TYPE        ZPMT001-QMNUM
+* | [<-->] CV_STATUS_PORTAL               TYPE        ZPMT001-STATUS_PORTAL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD verificar_status_duplicidade.
+    DATA:
+      lt_bapiret TYPE bapiret2_t.
+
+    SELECT SINGLE qmtxt
+      FROM qmel
+      WHERE qmnum = @iv_qmnum
+    INTO @DATA(lv_qmtxt).
+
+    IF sy-subrc <> 0 OR lv_qmtxt IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT qmnum, qmtxt
+      FROM qmel
+      WHERE qmtxt = @lv_qmtxt
+    INTO TABLE @DATA(lt_duplicidade).
+
+    IF lines( lt_duplicidade ) GT 1.
+      cv_status_portal = '03'. " Duplicidade.
+    ELSE.
+      cv_status_portal = '01'. " Pendente.
+    ENDIF.
+
+    IF 1 = 2. MESSAGE i008(zpm).ENDIF. " A Nota &1 possui a mesma DRG que a Nota &2 : &3 .
+    LOOP AT lt_duplicidade ASSIGNING FIELD-SYMBOL(<fl_duplicidade>).
+      CHECK <fl_duplicidade>-qmnum <> iv_qmnum.
+
+      APPEND VALUE #( type = 'E' id = 'ZPM' number = '008'
+        message_v1 = iv_qmnum message_v2 = <fl_duplicidade>-qmnum message_v3 = <fl_duplicidade>-qmtxt
+       ) TO lt_bapiret.
+
+    ENDLOOP.
+
+    CHECK lt_bapiret IS NOT INITIAL.
+
+    me->registrar_log_erro( iv_qmnum = iv_qmnum it_bapiret = lt_bapiret ).
+
+  ENDMETHOD.
+ENDCLASS.
