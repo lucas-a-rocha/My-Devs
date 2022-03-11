@@ -1,0 +1,73 @@
+FUNCTION zpm_garantia_status_medida .
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"     REFERENCE(EV_STATUS_MEDIDA) TYPE  ZPMT001-STATUS_MEDIDA
+*"  EXCEPTIONS
+*"      ERRO_EXECUCAO_BAPI
+*"----------------------------------------------------------------------
+
+  DATA:
+    lt_notiftask TYPE STANDARD TABLE OF bapi2080_nottaske.
+
+  FREE: lt_notiftask, et_return.
+  CALL FUNCTION 'BAPI_ALM_NOTIF_GET_DETAIL'
+    EXPORTING
+      number       = iv_qmnum
+      clear_buffer = abap_true
+    TABLES
+      notiftask    = lt_notiftask
+      return       = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+  LOOP AT lt_notiftask INTO DATA(lw_notiftask).
+
+    CHECK lw_notiftask-userstatus <> 'ACEI'.
+
+    CALL FUNCTION 'IQS0_CHANGE_TASK_USER_STATUS'
+      EXPORTING
+        i_qmnum             = iv_qmnum
+        i_manum             = lw_notiftask-task_key
+        i_user_stat_intern  = 'E0002'
+        i_langu             = sy-langu
+      EXCEPTIONS
+        foreign_lock        = 1
+        syst_failure        = 2
+        invalid_task        = 3
+        object_not_found    = 4
+        status_inconsistant = 5
+        status_not_allowed  = 6
+        OTHERS              = 7.
+    IF sy-subrc <> 0.
+
+      APPEND VALUE #( type = sy-msgty id = sy-msgid number = sy-msgno
+        message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4
+      ) TO et_return.
+
+      ROLLBACK WORK.
+
+      RAISE erro_execucao_bapi.
+
+    ENDIF.
+
+  ENDLOOP.
+
+  sy-subrc = 0.
+  ev_status_medida = abap_true.
+
+  UPDATE zpmt001
+  SET status_medida = ev_status_medida
+  WHERE qmnum = iv_qmnum .
+
+  COMMIT WORK AND WAIT.
+
+  PERFORM desbloquear_nota USING iv_qmnum.
+
+ENDFUNCTION.
