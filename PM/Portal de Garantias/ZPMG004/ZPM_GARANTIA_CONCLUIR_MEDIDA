@@ -1,0 +1,64 @@
+FUNCTION zpm_garantia_concluir_medida .
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"     REFERENCE(EV_CONCLUSAO_MEDIDA) TYPE  ZPMT001-CONCLUSAO_MEDIDA
+*"  EXCEPTIONS
+*"      ERRO_EXECUCAO_BAPI
+*"----------------------------------------------------------------------
+
+  DATA:
+    lt_notiftask TYPE STANDARD TABLE OF bapi2080_nottaske.
+
+  FREE: lt_notiftask, et_return.
+  CALL FUNCTION 'BAPI_ALM_NOTIF_GET_DETAIL'
+    EXPORTING
+      number       = iv_qmnum
+      clear_buffer = abap_true
+    TABLES
+      notiftask    = lt_notiftask
+      return       = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+  LOOP AT lt_notiftask INTO DATA(lw_notiftask).
+
+    CHECK lw_notiftask-userstatus = 'ACEI'.
+    CHECK lw_notiftask-status <> 'MEDE'.
+
+    FREE et_return.
+    CALL FUNCTION 'BAPI_ALM_NOTIF_TASK_COMPLETE'
+      EXPORTING
+        number           = iv_qmnum
+        task_key         = lw_notiftask-task_key
+        carried_out_by   = sy-uname
+        carried_out_date = sy-datum
+        carried_out_time = sy-uzeit
+      TABLES
+        return           = et_return.
+
+    READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      RAISE erro_execucao_bapi.
+    ENDIF.
+
+  ENDLOOP.
+
+  sy-subrc = 0.
+  ev_conclusao_medida = abap_true.
+
+  UPDATE zpmt001
+  SET conclusao_medida = ev_conclusao_medida
+  WHERE qmnum = iv_qmnum .
+
+  COMMIT WORK AND WAIT.
+
+  PERFORM desbloquear_nota USING iv_qmnum.
+
+ENDFUNCTION.
