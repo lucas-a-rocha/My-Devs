@@ -1,0 +1,386 @@
+*----------------------------------------------------------------------*
+***INCLUDE LZPMG004F01.
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  PREENCHER_DADOS_OV
+*&---------------------------------------------------------------------*
+FORM preencher_dados_ov .
+  DATA:
+    lv_cond_value TYPE bapicond-cond_value.
+
+  CLEAR gs_order_header_in.
+  IF gs_order_header_in-doc_type IS NOT INITIAL.
+    gs_order_header_in-doc_type = gs_zsdt054-auart.
+  ELSE.
+    gs_order_header_in-doc_type = c_doctype.
+  ENDIF.
+
+  gs_order_header_in-sales_org   = gs_viqmel-vkorg  .
+  gs_order_header_in-distr_chan  = gs_viqmel-vtweg  .
+  gs_order_header_in-division    = gs_viqmel-spart  .
+  gs_order_header_in-purch_no_c  = gs_viqmel-qmtxt  .
+  gs_order_header_in-ref_1       = |GAC{ shift_left( val = gs_viqmel-qmnum sub = space ) }|.
+  gs_order_header_in-pmnttrms    = gs_zsdt054-zterm .
+  gs_order_header_in-pymt_meth   = gs_zsdt054-zlsch .
+  gs_order_header_in-created_by  = sy-uname         .
+  gs_order_header_in-sales_grp   = gs_viqmel-vkgrp  .
+  gs_order_header_in-sales_off   = gs_viqmel-vkbur  .
+  gs_order_header_in-purch_no_c  = gs_viqmel-qmtxt  .
+
+  gs_logic_switch-pricing        =  ''.
+
+  FREE gt_order_items_in.
+  gt_order_items_in = VALUE #( (
+    material        = gs_zsdt054-matnr
+    itm_number      = '000010'
+    target_qty      = '1'
+  ) ).
+
+  FREE gt_order_partners.
+  gt_order_partners = VALUE #( (
+    partn_role      = 'AG'
+    partn_numb      = gs_viqmel-kunum
+  ) ).
+
+  CLEAR lv_cond_value.
+  LOOP AT gt_zsdt050 INTO DATA(lw_zsdt050) WHERE matnr <> 'SERVICOGARANTIA' .
+
+    CHECK lw_zsdt050-zaceit = abap_true.
+
+    lv_cond_value = lv_cond_value + lw_zsdt050-zvalor.
+
+  ENDLOOP.
+
+  FREE gt_order_conditions_in.
+  gt_order_conditions_in = VALUE #( (
+    itm_number = '000010'
+    cond_type  = 'ZPR1'
+    currency   = 'BRL'
+    cond_updat = 'X'
+    cond_value = lv_cond_value
+  ) ).
+
+ENDFORM. " PREENCHER_DADOS_OV
+
+*&---------------------------------------------------------------------*
+*&      Form  CRIAR_OV_FATURA
+*&---------------------------------------------------------------------*
+FORM criar_ov_fatura CHANGING cv_fatura TYPE zpme005-zzcvbeln3
+                              ct_bapiret TYPE bapiret2_t.
+  DATA:
+    lv_bukrs  TYPE tvko-bukrs.
+
+  IF gs_zsdt054-kostl IS NOT INITIAL.
+
+*Busca empresa para org. de vendas
+    SELECT SINGLE bukrs
+      FROM tvko
+      INTO lv_bukrs
+      WHERE vkorg = gs_viqmel-vkorg.
+
+*Verifica empresa do centro de custo
+    SELECT COUNT(*)
+      FROM csks
+      WHERE kokrs = 'R100'
+        AND kostl = gs_zsdt054-kostl
+        AND bukrs = lv_bukrs.
+    IF sy-subrc <> 0.
+      MESSAGE s044(zmsd) WITH gs_zsdt054-kostl lv_bukrs DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+  FREE ct_bapiret.
+  CALL FUNCTION 'ZSDCRIA_OV_FATURA_VIQMEL'
+    EXPORTING
+      order_header_in     = gs_order_header_in
+      kostl               = gs_zsdt054-kostl
+      qmnum               = gs_viqmel-qmnum
+    TABLES
+      return              = ct_bapiret
+      order_items_in      = gt_order_items_in
+      order_partners      = gt_order_partners
+      order_conditions_in = gt_order_conditions_in.
+
+  " Nota Crédit Garantia ZZZZZZZZZZ foi gravado(a)
+  READ TABLE ct_bapiret INTO DATA(lw_bapiret) WITH KEY type = 'S' id = 'V1' number = '311'.
+  IF sy-subrc = 0.
+    cv_fatura = lw_bapiret-message_v2.
+
+    UPDATE qmel
+    SET zzcvbeln3 = cv_fatura
+    WHERE qmnum = gs_viqmel-qmnum.
+
+    COMMIT WORK.
+
+  ENDIF.
+
+ENDFORM. " CRIAR_OV_FATURA
+
+*&---------------------------------------------------------------------*
+*&      Form  COLUMNS_EDIT_POPUP
+*&---------------------------------------------------------------------*
+FORM columns_edit_popup TABLES it_table
+                      CHANGING io_columns TYPE REF TO cl_salv_columns_table.
+
+  DATA:
+    lt_fieldcat TYPE lvc_t_fcat.
+
+  PERFORM montar_fieldcat_popup TABLES it_table CHANGING lt_fieldcat.
+
+  DATA(tl_columns) = io_columns->get( ).
+  DATA ol_column_table TYPE REF TO cl_salv_column_table.
+
+  LOOP AT tl_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+    ol_column_table ?= <fs_columns>-r_column.
+
+    READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+    IF sy-subrc EQ 0.
+      ol_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+      ol_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+      ol_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+      ol_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+    ELSE.
+      ol_column_table->set_visible( if_salv_c_bool_sap=>false ).
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM. " COLUMNS_EDIT_POPUP
+
+*&---------------------------------------------------------------------*
+*&      Form  MONTAR_FIELDCAT_POPUP
+*&---------------------------------------------------------------------*
+FORM montar_fieldcat_popup TABLES it_table
+                         CHANGING ct_fieldcat TYPE lvc_t_fcat.
+
+  DATA ls_fieldcat TYPE lvc_s_fcat.
+  DEFINE dfcat_texto.
+
+    ls_fieldcat = CORRESPONDING #( &1 ).
+
+    ls_fieldcat-tooltip   = &4.
+    ls_fieldcat-coltext   = &3.
+
+    ls_fieldcat-scrtext_l = &4.
+    ls_fieldcat-scrtext_m = &3.
+    ls_fieldcat-scrtext_s = &2.
+    ls_fieldcat-outputlen = &5.
+
+    &1 = CORRESPONDING #( ls_fieldcat ).
+
+  END-OF-DEFINITION. " DFCAT_TEXTO
+
+  DATA:
+    lo_data  TYPE REF TO data,
+    lv_tabix TYPE sy-tabix.
+
+  CREATE DATA lo_data LIKE LINE OF it_table.
+  DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+  DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+  ct_fieldcat = CORRESPONDING #( lt_dfies ).
+
+  CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+    CHANGING
+      ct_fieldcat = ct_fieldcat.
+
+  LOOP AT ct_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+    lv_tabix = sy-tabix.
+
+    CASE <fl_fcat>-fieldname.
+      WHEN 'MANDT' OR 'CONTADOR'.
+        DELETE ct_fieldcat INDEX lv_tabix.
+
+      WHEN 'ICON'.
+        dfcat_texto <fl_fcat> 'Status' 'Status' 'Status' 5.
+
+      WHEN 'MESSAGE'.
+        dfcat_texto <fl_fcat> 'Mensagem' 'Mensagem' 'Mensagem' 50.
+
+      WHEN OTHERS.
+    ENDCASE.
+
+  ENDLOOP.
+
+ENDFORM. " MONTAR_FIELDCAT_POPUP
+
+*&---------------------------------------------------------------------*
+*&      Form  BUSCAR_DADOS_AGREEMENT
+*&---------------------------------------------------------------------*
+FORM buscar_dados_agreement CHANGING ev_ebeln   TYPE ekko-ebeln
+                                     ev_ebelp   TYPE ekpo-ebelp
+                                     ev_meins   TYPE ekpo-meins
+                                     et_return  TYPE bapiret2_t.
+
+  SELECT SINGLE *
+    FROM kna1
+    WHERE kunnr = @gs_viqmel-kunum
+  INTO @DATA(ls_kna1).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i004(zpm).ENDIF. " A tabela &1 não retornou registros de &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '004' message_v1 = 'KNA1' message_v2 = 'Fornecedor' ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  SELECT SINGLE *
+    FROM tvkwz
+    WHERE vkorg = @gs_viqmel-vkorg
+  INTO @DATA(ls_tvkwz).
+*Início Ronaldo Eliminar seleção da unidade de medida do contrato.
+  SELECT SINGLE ekko~ebeln, ebelp, ekpo~LMEIN "ekpo~meins
+    FROM ekko
+    INNER JOIN ekpo ON ekpo~ebeln = ekko~ebeln
+    WHERE lifnr = @ls_kna1-lifnr
+      AND bsart IN ( 'MK', 'WK' )
+      AND ekko~loekz = ' '
+      AND ekpo~loekz = ' '
+      AND kdate >= @sy-datum
+      AND matnr = 'SERVICOGARANTIA'
+      AND werks = @ls_tvkwz-werks " gs_viqmel-vkorg
+      AND NETPR = ' ' "Preço precisa ser zero para o item do contrato.
+  INTO @DATA(ls_ekpo).
+
+  IF sy-subrc <> 0.
+    IF 1 = 2. MESSAGE i009(zpm).ENDIF. " Não foi encontrado Contrato de Compras. Fornecedor: &1 Centro: &2 .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '009' message_v1 = ls_kna1-lifnr message_v2 = gs_viqmel-vkorg ) TO et_return.
+
+    RAISE nota_nao_encontrada.
+  ENDIF.
+
+  ev_ebeln = ls_ekpo-ebeln.
+  ev_ebelp = ls_ekpo-ebelp.
+  ev_meins = ls_ekpo-LMEIN. "Alterado de MEINS para LMEIN.
+*fim Ronaldo Eliminar seleção da unidade de medida do contrato.
+ENDFORM. " BUSCAR_DADOS_AGREEMENT
+
+*&---------------------------------------------------------------------*
+*&      Form  DESBLOQUEAR_NOTA
+*&---------------------------------------------------------------------*
+FORM desbloquear_nota  USING iv_qmnum TYPE qmel-qmnum.
+
+  CALL FUNCTION 'DEQUEUE_EIQMEL'
+    EXPORTING
+      mode_qmel = 'E'
+      mandt     = sy-mandt
+      qmnum     = iv_qmnum.
+
+ENDFORM. " DESBLOQUEAR_NOTA
+
+*&---------------------------------------------------------------------*
+*&      Form  ENVIAR_PARA_PORTAL
+*&---------------------------------------------------------------------*
+FORM enviar_para_portal  USING is_dados  TYPE zpme005
+                      CHANGING ct_return TYPE bapiret2_t.
+
+  DATA:
+    lw_drg_os_req  TYPE zmt_set_drg_os_req,
+    lw_drg_os_resp TYPE zmt_set_drg_os_resp,
+    lv_msg         TYPE string.
+
+  TRY.
+      DATA(lo_proxy_drg_os_sync_out) = NEW zco_si_set_drg_os_sync_out( ).
+
+      CLEAR:
+        lw_drg_os_req,
+        lw_drg_os_resp,
+        lv_msg.
+
+      lw_drg_os_req-mt_set_drg_os_req-codigo_drg           = is_dados-qmtxt.
+      lw_drg_os_req-mt_set_drg_os_req-numero_pedido        = COND #( WHEN is_dados-ebeln IS INITIAL THEN '0000000000' ELSE is_dados-ebeln ).
+      lw_drg_os_req-mt_set_drg_os_req-numero_nota_credito  = COND #( WHEN is_dados-zzcvbeln3 IS INITIAL THEN '0000000000' ELSE is_dados-zzcvbeln3 ).
+
+      " Invocar o envio para o PG
+      lo_proxy_drg_os_sync_out->si_set_drg_os_sync_out(
+        EXPORTING
+          output = lw_drg_os_req
+        IMPORTING
+          input = lw_drg_os_resp ).
+
+      " Acumular msgs.
+      CLEAR lv_msg.
+      LOOP AT lw_drg_os_resp-mt_set_drg_os_resp-errors ASSIGNING FIELD-SYMBOL(<fl_error>).
+        CONCATENATE lv_msg <fl_error> INTO lv_msg.
+      ENDLOOP.
+
+      " Tratar o retorno.
+      CASE lw_drg_os_resp-mt_set_drg_os_resp-status_code.
+        WHEN '200' OR '202'.
+          " DRG atualizada com sucesso.
+          PERFORM registrar_msg_proxy USING 'S' lv_msg CHANGING ct_return.
+        WHEN '403'.
+          " Erro de autorização
+          PERFORM registrar_msg_proxy USING 'E' lv_msg CHANGING ct_return.
+        WHEN '500'.
+          " Erro na atualização da DRG
+          PERFORM registrar_msg_proxy USING 'E' lv_msg CHANGING ct_return.
+      ENDCASE.
+
+    CATCH cx_ai_system_fault
+          cx_ai_application_fault INTO DATA(or_system_fault).
+
+      lv_msg = or_system_fault->get_longtext( ).
+      IF lv_msg IS INITIAL.
+        lv_msg = or_system_fault->get_text( ).
+      ENDIF.
+
+      PERFORM registrar_msg_proxy USING 'E' lv_msg CHANGING ct_return.
+
+    CATCH cx_root INTO DATA(or_root).
+      lv_msg = or_root->get_longtext( ).
+      IF lv_msg IS INITIAL.
+        lv_msg = or_root->get_text( ).
+      ENDIF.
+
+      PERFORM registrar_msg_proxy USING 'E' lv_msg CHANGING ct_return.
+
+  ENDTRY.
+
+ENDFORM. " ENVIAR_PARA_PORTAL
+*&---------------------------------------------------------------------*
+*&      Form  REGISTRAR_MSG_PROXY
+*&---------------------------------------------------------------------*
+FORM registrar_msg_proxy  USING iv_type TYPE string
+                                iv_msg  TYPE string
+                       CHANGING ct_return TYPE bapiret2_t.
+  DATA:
+    lv_campo  TYPE i,
+    lv_espaco TYPE i VALUE 1,
+    lt_string TYPE STANDARD TABLE OF string,
+    lw_return LIKE LINE OF ct_return.
+
+  SPLIT iv_msg AT space INTO TABLE lt_string.
+
+  LOOP AT lt_string INTO DATA(lw_string).
+    lv_campo = COND #(
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v1 ) + lv_espaco LE 50 AND lw_return-message_v2 IS INITIAL THEN 1
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v2 ) + lv_espaco LE 50 AND lw_return-message_v3 IS INITIAL THEN 2
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v3 ) + lv_espaco LE 50 AND lw_return-message_v4 IS INITIAL THEN 3
+      WHEN strlen( lw_string ) + strlen( lw_return-message_v4 ) + lv_espaco LE 50 THEN 4
+     ).
+
+    CASE lv_campo.
+      WHEN 1.
+        lw_return-message_v1 = COND #( WHEN lw_return-message_v1 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v1 } { lw_string }|  ).
+      WHEN 2.
+        lw_return-message_v2 = COND #( WHEN lw_return-message_v2 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v2 } { lw_string }|  ).
+      WHEN 3.
+        lw_return-message_v3 = COND #( WHEN lw_return-message_v3 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v3 } { lw_string }|  ).
+      WHEN 4.
+        lw_return-message_v4 = COND #( WHEN lw_return-message_v4 IS INITIAL THEN lw_string ELSE |{ lw_return-message_v4 } { lw_string }|  ).
+    ENDCASE.
+  ENDLOOP.
+
+  IF lw_return IS NOT INITIAL.
+
+    lw_return-type = iv_type.
+    lw_return-id = 'ZPM'.
+    lw_return-number = '000'.
+
+    APPEND lw_return TO ct_return.
+
+  ENDIF.
+
+ENDFORM.
