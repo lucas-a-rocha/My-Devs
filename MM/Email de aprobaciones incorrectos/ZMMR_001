@@ -1,0 +1,1014 @@
+****************************************************************************************
+*                      &Paracel/&Cast                                                  *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 28.08.2021 09:25:35                                                       *
+****************************************************************************************
+* Descrição: EXN.031-Solución paliativa envio correo aprobacion                        *
+****************************************************************************************
+*                      Controle de Atualizações                                                  *
+****************************************************************************************
+* Autor    : Roger Ribeiro                                                               *
+* Data     : 03.03.2022 10:00:00                                                       *
+****************************************************************************************
+* Descrição: 274630, Email de aprobaciones incorrectos                       *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZMMR_001
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmmr_001.
+
+**********************************************************************
+* Difinition
+**********************************************************************
+CLASS lcl_approval DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_eban_list,
+        banfn TYPE eban-banfn,
+        bnfpo TYPE eban-bnfpo,
+        badat TYPE eban-badat,
+        werks TYPE eban-werks,
+        frggr TYPE t16fv-frggr,
+        frgsx TYPE t16fv-frgsx,
+        frgco TYPE t16fv-frgco,
+      END OF gty_eban_list,
+
+      BEGIN OF gty_ekko_list,
+        ebeln TYPE ekko-ebeln,
+        aedat TYPE ekko-aedat,
+        frggr TYPE t16fv-frggr,
+        frgsx TYPE t16fv-frgsx,
+        frgco TYPE t16fv-frgco,
+      END OF gty_ekko_list,
+
+      BEGIN OF gty_essr_list,
+        lblni TYPE essr-lblni,
+        erdat TYPE essr-erdat,
+        frggr TYPE t16fv-frggr,
+        frgsx TYPE t16fv-frgsx,
+        frgco TYPE t16fv-frgco,
+      END OF gty_essr_list,
+
+      BEGIN OF gty_eban_user_data,
+        uname TYPE agr_users-uname,
+        banfn TYPE eban-banfn,
+        badat TYPE eban-badat,
+      END OF gty_eban_user_data,
+
+      BEGIN OF gty_ekko_user_data,
+        uname TYPE agr_users-uname,
+        ebeln TYPE ekko-ebeln,
+        aedat TYPE ekko-aedat,
+      END OF gty_ekko_user_data,
+
+      BEGIN OF gty_essr_user_data,
+        uname TYPE agr_users-uname,
+        lblni TYPE essr-lblni,
+        erdat TYPE essr-erdat,
+      END OF gty_essr_user_data,
+
+      BEGIN OF gty_group_code,
+        frggr TYPE t16fv-frggr,
+        frgco TYPE t16fv-frgco,
+      END OF gty_group_code,
+
+      BEGIN OF gty_group_user,
+        frggr TYPE t16fv-frggr,
+        frgco TYPE t16fv-frgco,
+        uname TYPE agr_users-uname,
+        email TYPE adr6-smtp_addr,
+      END OF gty_group_user,
+
+      BEGIN OF gty_user,
+        uname TYPE agr_users-uname,
+        email TYPE adr6-smtp_addr,
+      END OF gty_user,
+
+      BEGIN OF gty_log,
+        icon    TYPE icon_d,
+        message TYPE string,
+      END OF gty_log.
+
+    TYPES:
+      gtt_group_code     TYPE STANDARD TABLE OF gty_group_code,
+      gtt_group_user     TYPE STANDARD TABLE OF gty_group_user,
+      gtt_eban_user_data TYPE SORTED TABLE OF gty_eban_user_data WITH NON-UNIQUE KEY uname banfn,
+      gtt_ekko_user_data TYPE SORTED TABLE OF gty_ekko_user_data WITH NON-UNIQUE KEY uname ebeln,
+      gtt_essr_user_data TYPE SORTED TABLE OF gty_essr_user_data WITH NON-UNIQUE KEY uname lblni,
+      gtt_user           TYPE SORTED TABLE OF gty_user WITH UNIQUE KEY uname.
+
+    METHODS:
+      constructor
+        RAISING
+          cx_idm_error,
+
+      start
+        RAISING
+          cx_idm_error,
+
+      display_log.
+
+  PRIVATE SECTION.
+    CONSTANTS:
+      c_red    TYPE icon_d VALUE icon_red_light,
+      c_yellow TYPE icon_d VALUE icon_yellow_light,
+      c_green  TYPE icon_d VALUE icon_green_light.
+
+    DATA:
+      gv_subject      TYPE so_obj_des,
+      gv_email_sender TYPE adr6-smtp_addr,
+      gv_url_link_po  TYPE string,
+      gv_url_link_sc  TYPE string,
+      gv_url_link_hs  TYPE string.
+
+    DATA:
+      gt_log            TYPE STANDARD TABLE OF gty_log,
+      gt_user           TYPE gtt_user,
+      gt_eban_list      TYPE STANDARD TABLE OF gty_eban_list,
+      gt_ekko_list      TYPE STANDARD TABLE OF gty_ekko_list,
+      gt_essr_list      TYPE STANDARD TABLE OF gty_essr_list,
+      gt_eban_user_data TYPE gtt_eban_user_data,
+      gt_ekko_user_data TYPE gtt_ekko_user_data,
+      gt_essr_user_data TYPE gtt_essr_user_data.
+
+    METHODS:
+      search_basic_data
+        RAISING
+          cx_idm_error,
+
+      search_purchase_requisitions,
+      search_purchase_order,
+      search_service_sheet,
+
+      search_users_data
+        RAISING
+          cx_idm_error,
+
+      search_users_eban,
+      search_users_ekko,
+      search_users_essr,
+
+      get_users
+        IMPORTING
+          !it_group     TYPE gtt_group_code
+        EXPORTING
+          !et_group_usr TYPE gtt_group_user,
+
+      get_email_subject
+        RETURNING
+          VALUE(rv_subject) TYPE so_obj_des
+        RAISING
+          cx_idm_error,
+
+      get_email_sender
+        RETURNING
+          VALUE(rv_sender) TYPE adr6-smtp_addr
+        RAISING
+          cx_idm_error,
+
+      get_url_link
+        IMPORTING
+          iv_param      TYPE tvarvc-low
+        RETURNING
+          VALUE(rv_url) TYPE string
+        RAISING
+          cx_idm_error,
+
+      create_emails,
+
+      create_email_body
+        IMPORTING
+          !is_user       TYPE gty_user
+        RETURNING
+          VALUE(rt_body) TYPE bcsy_text
+        RAISING
+          cx_idm_error,
+
+      create_body_eban
+        IMPORTING
+          !is_user       TYPE gty_user
+        RETURNING
+          VALUE(rt_body) TYPE bcsy_text,
+
+      create_body_ekko
+        IMPORTING
+          !is_user       TYPE gty_user
+        RETURNING
+          VALUE(rt_body) TYPE bcsy_text,
+
+      create_body_essr
+        IMPORTING
+          !is_user       TYPE gty_user
+        RETURNING
+          VALUE(rt_body) TYPE bcsy_text,
+
+      fill_log
+        IMPORTING
+          !iv_icon     TYPE icon_d OPTIONAL
+          !iv_msg      TYPE string OPTIONAL
+          !is_bapiret2 TYPE bapiret2 OPTIONAL.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+* " Activation control. TCODE ZCAEXTACT.
+  IF NEW zcl_mm_ext031_ext_check( )->is_active( ) = abap_true.
+
+    TRY .
+        DATA(go_approval) = NEW lcl_approval( ).
+
+        go_approval->start( ).
+
+        MESSAGE 'Execution successfully completed .'(002) TYPE 'S'.
+
+      CATCH cx_idm_error INTO DATA(ol_exc).
+        MESSAGE ID ol_exc->message-id TYPE 'S'
+           NUMBER ol_exc->message-number
+             WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+               DISPLAY LIKE ol_exc->message-type.
+
+    ENDTRY.
+
+    IF go_approval IS BOUND.
+      go_approval->display_log( ).
+    ENDIF.
+
+  ENDIF.
+**********************************************************************
+* Implementation
+**********************************************************************
+CLASS lcl_approval IMPLEMENTATION.
+  METHOD constructor.
+
+    me->gv_subject = me->get_email_subject( ).
+
+    me->gv_email_sender = me->get_email_sender( ).
+
+    me->gv_url_link_po = me->get_url_link( iv_param = 'ZMM_APROBACION_URL_LINK_PO' ).
+    me->gv_url_link_sc = me->get_url_link( iv_param = 'ZMM_APROBACION_URL_LINK_SC' ).
+    me->gv_url_link_hs = me->get_url_link( iv_param = 'ZMM_APROBACION_URL_LINK_HS' ).
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD start.
+
+    me->search_basic_data( ).
+
+    me->search_users_data( ).
+
+    me->create_emails( ).
+
+  ENDMETHOD. " START
+
+  METHOD search_basic_data.
+
+    me->search_purchase_requisitions( ).
+
+    me->search_purchase_order( ).
+
+    me->search_service_sheet( ).
+
+    IF me->gt_eban_list IS INITIAL AND me->gt_ekko_list IS INITIAL AND me->gt_essr_list IS INITIAL.
+      IF 1 = 2. MESSAGE i001(zmm). ENDIF. " No records found
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'I' id = 'ZMM' number = 001 ).
+    ENDIF.
+
+  ENDMETHOD. " SEARCH_BASIC_DATA
+
+  METHOD search_purchase_requisitions.
+    DATA:
+      lt_release_list TYPE ztymm_release_strategy,
+      lw_eban_list    LIKE LINE OF me->gt_eban_list.
+
+    SELECT banfn, bnfpo, badat, werks
+      FROM eban
+      WHERE frgkz = 'X'
+        AND banpr = '03'
+        AND loekz = @abap_false
+    INTO TABLE @DATA(lt_eban).
+
+    CHECK lt_eban IS NOT INITIAL.
+
+    FREE me->gt_eban_list.
+    LOOP AT lt_eban INTO DATA(lw_eban).
+      CLEAR lw_eban_list.
+
+      FREE lt_release_list.
+      CALL FUNCTION 'ZFMMM_GET_RELEASE_STRATEGY'
+        EXPORTING
+          iv_banfn                  = lw_eban-banfn
+          iv_bnfpo                  = lw_eban-bnfpo
+        IMPORTING
+          et_release_strategy       = lt_release_list
+        EXCEPTIONS
+          document_not_found        = 1
+          release_pre_req_not_found = 2
+          OTHERS                    = 3.
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i004(zmm). ENDIF. " No release strategy found &1 &2 .
+        me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 004 message_v1 = lw_eban-banfn ) ).
+
+        CONTINUE.
+      ENDIF.
+
+      SORT lt_release_list BY frgsx frgco.
+
+      LOOP AT lt_release_list INTO DATA(lw_release_list) WHERE released = abap_false.
+
+        lw_eban_list = CORRESPONDING #( lw_eban ).
+        lw_eban_list-frggr = lw_release_list-frggr.
+        lw_eban_list-frgsx = lw_release_list-frgsx.
+        lw_eban_list-frgco = lw_release_list-frgco.
+
+        APPEND lw_eban_list TO me->gt_eban_list.
+
+        EXIT.
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+  ENDMETHOD. " SEARCH_PURCHASE_REQUISITIONS
+
+  METHOD search_purchase_order.
+    DATA:
+      lt_release_list TYPE ztymm_release_strategy,
+      lw_ekko_list    LIKE LINE OF me->gt_ekko_list.
+
+    SELECT ebeln, aedat
+      FROM ekko
+      WHERE frgke = 'B'
+        AND frgrl = 'X'
+        AND loekz = @abap_false
+    INTO TABLE @DATA(lt_ekko).
+
+    CHECK lt_ekko IS NOT INITIAL.
+
+    FREE me->gt_ekko_list.
+    LOOP AT lt_ekko INTO DATA(lw_ekko).
+      CLEAR lw_ekko_list.
+
+      FREE lt_release_list.
+      CALL FUNCTION 'ZFMMM_GET_RELEASE_STRATEGY'
+        EXPORTING
+          iv_ebeln                  = lw_ekko-ebeln
+        IMPORTING
+          et_release_strategy       = lt_release_list
+        EXCEPTIONS
+          document_not_found        = 1
+          release_pre_req_not_found = 2
+          OTHERS                    = 3.
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i004(zmm). ENDIF. " No release strategy found &1 &2 .
+        me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 004 message_v1 = lw_ekko-ebeln ) ).
+
+        CONTINUE.
+      ENDIF.
+
+      SORT lt_release_list BY frgsx frgco.
+
+      LOOP AT lt_release_list INTO DATA(lw_release_list) WHERE released = abap_false.
+
+        lw_ekko_list = CORRESPONDING #( lw_ekko ).
+        lw_ekko_list-frggr = lw_release_list-frggr.
+        lw_ekko_list-frgsx = lw_release_list-frgsx.
+        lw_ekko_list-frgco = lw_release_list-frgco.
+
+        APPEND lw_ekko_list TO me->gt_ekko_list.
+
+        EXIT.
+
+      ENDLOOP.
+
+    ENDLOOP.
+  ENDMETHOD. " SEARCH_PURCHASE_ORDER
+
+  METHOD search_service_sheet.
+    DATA:
+      lt_release_list TYPE ztymm_release_strategy,
+      lw_essr_list    LIKE LINE OF me->gt_essr_list.
+
+    SELECT lblni, erdat
+      FROM essr
+      WHERE frgkl = 'A'
+        AND frgrl = 'X'
+        AND loekz = @abap_false
+    INTO TABLE @DATA(lt_essr).
+
+    CHECK lt_essr IS NOT INITIAL.
+
+    FREE me->gt_essr_list.
+    LOOP AT lt_essr INTO DATA(lw_essr).
+      CLEAR lw_essr_list.
+
+      FREE lt_release_list.
+      CALL FUNCTION 'ZFMMM_GET_RELEASE_STRATEGY'
+        EXPORTING
+          iv_lblni                  = lw_essr-lblni
+        IMPORTING
+          et_release_strategy       = lt_release_list
+        EXCEPTIONS
+          document_not_found        = 1
+          release_pre_req_not_found = 2
+          OTHERS                    = 3.
+      IF sy-subrc <> 0.
+        IF 1 = 2. MESSAGE i004(zmm). ENDIF. " No release strategy found &1 &2 .
+        me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 004 message_v1 = lw_essr-lblni ) ).
+
+        CONTINUE.
+      ENDIF.
+
+      SORT lt_release_list BY frgsx frgco.
+
+      LOOP AT lt_release_list INTO DATA(lw_release_list) WHERE released = abap_false.
+
+        lw_essr_list = CORRESPONDING #( lw_essr ).
+        lw_essr_list-frggr = lw_release_list-frggr.
+        lw_essr_list-frgsx = lw_release_list-frgsx.
+        lw_essr_list-frgco = lw_release_list-frgco.
+
+        APPEND lw_essr_list TO me->gt_essr_list.
+
+        EXIT.
+
+      ENDLOOP.
+
+    ENDLOOP.
+  ENDMETHOD. " SEARCH_SERVICE_SHEET
+
+  METHOD search_users_data.
+
+    me->search_users_eban( ). " Purchase Requisitions
+
+    me->search_users_ekko( ). " Purchase Order
+
+    me->search_users_essr( ). " Service Sheet
+
+    IF me->gt_eban_user_data IS INITIAL AND me->gt_ekko_user_data IS INITIAL AND me->gt_essr_user_data IS INITIAL.
+      IF 1 = 2. MESSAGE i002(zmm). ENDIF. " No users data found.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'I' id = 'ZMM' number = 002 ).
+    ENDIF.
+
+  ENDMETHOD. " SEARCH_USERS_DATA
+
+  METHOD search_users_eban.
+    DATA:
+      lt_group_code     TYPE gtt_group_code,
+      lw_eban_user_data LIKE LINE OF me->gt_eban_user_data.
+
+    CHECK me->gt_eban_list IS NOT INITIAL.
+
+    lt_group_code = VALUE #( FOR lw_eban_list_for IN me->gt_eban_list ( CORRESPONDING #( lw_eban_list_for ) ) ).
+    SORT lt_group_code.
+    DELETE ADJACENT DUPLICATES FROM lt_group_code.
+
+    me->get_users(
+      EXPORTING
+        it_group     = lt_group_code
+      IMPORTING
+        et_group_usr = DATA(lt_group_usr)
+    ).
+
+    LOOP AT me->gt_eban_list INTO DATA(lw_eban_list).
+      READ TABLE lt_group_usr WITH KEY frggr = lw_eban_list-frggr
+                                       frgco = lw_eban_list-frgco INTO DATA(lw_group_usr).
+      CHECK sy-subrc = 0.
+
+      CLEAR lw_eban_user_data.
+      lw_eban_user_data-uname = lw_group_usr-uname.
+      lw_eban_user_data-banfn = lw_eban_list-banfn.
+      lw_eban_user_data-badat = lw_eban_list-badat.
+
+      INSERT lw_eban_user_data INTO TABLE me->gt_eban_user_data.
+
+      INSERT VALUE #( uname = lw_group_usr-uname email = lw_group_usr-email ) INTO TABLE me->gt_user.
+
+    ENDLOOP.
+
+    DELETE ADJACENT DUPLICATES FROM me->gt_eban_user_data COMPARING ALL FIELDS.
+
+  ENDMETHOD. " SEARCH_USERS_EBAN
+
+  METHOD search_users_ekko.
+    DATA:
+      lt_group_code     TYPE gtt_group_code,
+      lw_ekko_user_data LIKE LINE OF me->gt_ekko_user_data.
+
+    CHECK me->gt_ekko_list IS NOT INITIAL.
+
+    lt_group_code = VALUE #( FOR lw_ekko_list_for IN me->gt_ekko_list ( CORRESPONDING #( lw_ekko_list_for ) ) ).
+    SORT lt_group_code.
+    DELETE ADJACENT DUPLICATES FROM lt_group_code.
+
+    me->get_users(
+      EXPORTING
+        it_group     = lt_group_code
+      IMPORTING
+        et_group_usr = DATA(lt_group_usr)
+    ).
+
+    LOOP AT me->gt_ekko_list INTO DATA(lw_ekko_list).
+      READ TABLE lt_group_usr WITH KEY frggr = lw_ekko_list-frggr
+                                       frgco = lw_ekko_list-frgco INTO DATA(lw_group_usr).
+      CHECK sy-subrc = 0.
+
+      CLEAR lw_ekko_user_data.
+      lw_ekko_user_data-uname = lw_group_usr-uname.
+      lw_ekko_user_data-ebeln = lw_ekko_list-ebeln.
+      lw_ekko_user_data-aedat = lw_ekko_list-aedat.
+
+      INSERT lw_ekko_user_data INTO TABLE me->gt_ekko_user_data.
+
+      INSERT VALUE #( uname = lw_group_usr-uname email = lw_group_usr-email ) INTO TABLE me->gt_user.
+
+    ENDLOOP.
+
+    DELETE ADJACENT DUPLICATES FROM me->gt_ekko_user_data COMPARING ALL FIELDS.
+  ENDMETHOD. " SEARCH_USERS_EKKO
+
+  METHOD search_users_essr.
+    DATA:
+      lt_group_code     TYPE gtt_group_code,
+      lw_essr_user_data LIKE LINE OF me->gt_essr_user_data.
+
+    CHECK me->gt_essr_list IS NOT INITIAL.
+
+    lt_group_code = VALUE #( FOR lw_essr_list_for IN me->gt_essr_list ( CORRESPONDING #( lw_essr_list_for ) ) ).
+    SORT lt_group_code.
+    DELETE ADJACENT DUPLICATES FROM lt_group_code.
+
+    me->get_users(
+      EXPORTING
+        it_group     = lt_group_code
+      IMPORTING
+        et_group_usr = DATA(lt_group_usr)
+    ).
+
+    LOOP AT me->gt_essr_list INTO DATA(lw_essr_list).
+      READ TABLE lt_group_usr WITH KEY frggr = lw_essr_list-frggr
+                                       frgco = lw_essr_list-frgco INTO DATA(lw_group_usr).
+      CHECK sy-subrc = 0.
+
+      CLEAR lw_essr_user_data.
+      lw_essr_user_data-uname = lw_group_usr-uname.
+      lw_essr_user_data-lblni = lw_essr_list-lblni.
+      lw_essr_user_data-erdat = lw_essr_list-erdat.
+
+      INSERT lw_essr_user_data INTO TABLE me->gt_essr_user_data.
+
+      INSERT VALUE #( uname = lw_group_usr-uname email = lw_group_usr-email ) INTO TABLE me->gt_user.
+
+    ENDLOOP.
+
+    DELETE ADJACENT DUPLICATES FROM me->gt_essr_user_data COMPARING ALL FIELDS.
+  ENDMETHOD. " SEARCH_USERS_ESSR
+
+  METHOD get_users.
+    TYPES:
+      BEGIN OF lty_agr_users,
+        agr_name TYPE agr_users-agr_name,
+        uname    TYPE agr_users-uname,
+        from_dat TYPE agr_users-from_dat,
+        to_dat   TYPE agr_users-to_dat,
+      END OF lty_agr_users.
+
+    DATA:
+      lt_agr_users TYPE STANDARD TABLE OF lty_agr_users,
+      lr_role      TYPE RANGE OF agr_users-agr_name,
+      lw_group_usr LIKE LINE OF et_group_usr.
+
+    lr_role = VALUE #( FOR lw_group_for IN it_group sign = 'I' option = 'CP' ( low = |*{ lw_group_for-frggr }{ lw_group_for-frgco }*| ) ).
+    SORT lr_role BY low.
+    DELETE ADJACENT DUPLICATES FROM lr_role COMPARING low.
+
+    SELECT agr_name, uname, from_dat, to_dat
+      FROM agr_users
+      WHERE agr_name IN @lr_role
+        AND from_dat LE @sy-datum
+        AND to_dat   GE @sy-datum
+    INTO TABLE @DATA(lt_agr_users_list).
+
+    IF lt_agr_users_list IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT bname, persnumber, addrnumber
+      FROM usr21
+      FOR ALL ENTRIES IN @lt_agr_users_list
+      WHERE bname = @lt_agr_users_list-uname
+    INTO TABLE @DATA(lt_usr21).
+
+    IF lt_usr21 IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT addrnumber, persnumber, smtp_addr
+      FROM adr6
+      FOR ALL ENTRIES IN @lt_usr21
+      WHERE addrnumber = @lt_usr21-addrnumber
+        AND persnumber = @lt_usr21-persnumber
+        AND flg_nouse  = @space
+        AND flgdefault = @abap_true
+    INTO TABLE @DATA(lt_adr6).
+
+    SORT lt_agr_users_list BY agr_name.
+    LOOP AT it_group INTO DATA(lw_group).
+      FREE lt_agr_users.
+      lt_agr_users = VALUE #( FOR lw_agr_users_for IN lt_agr_users_list WHERE ( agr_name CS |{ lw_group-frggr }{ lw_group-frgco }| )
+                            ( CORRESPONDING #( lw_agr_users_for ) ) ).
+
+      IF lt_agr_users[] IS INITIAL.
+        IF 1 = 2. MESSAGE i005(zmm). ENDIF. " No roles were found for the group &1 .
+        me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 005 message_v1 = |{ lw_group-frggr }{ lw_group-frgco }| ) ).
+
+        CONTINUE.
+      ENDIF.
+
+      LOOP AT lt_agr_users INTO DATA(lw_agr_users).
+        CLEAR lw_group_usr.
+
+        READ TABLE lt_usr21 WITH KEY bname = lw_agr_users-uname INTO DATA(lw_usr21) .
+        CHECK sy-subrc = 0.
+
+        READ TABLE lt_adr6 WITH KEY addrnumber = lw_usr21-addrnumber
+                                    persnumber = lw_usr21-persnumber INTO DATA(lw_adr6).
+        IF sy-subrc <> 0.
+          IF 1 = 2. MESSAGE i006(zmm). ENDIF. " No address found for user &1 .
+          me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 006 message_v1 = lw_agr_users-uname ) ).
+
+          CONTINUE.
+        ENDIF.
+
+        lw_group_usr-frggr = lw_group-frggr.
+        lw_group_usr-frgco = lw_group-frgco.
+        lw_group_usr-uname = lw_agr_users-uname.
+        lw_group_usr-email = lw_adr6-smtp_addr.
+
+        APPEND lw_group_usr TO et_group_usr.
+      ENDLOOP.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GET_USERS
+
+  METHOD get_email_subject.
+
+    SELECT SINGLE low
+      FROM tvarvc
+      WHERE name = 'ZMM_APROBACION_EMAIL_SUBJECT'
+    INTO @DATA(lv_subject).
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE i003(zmm). ENDIF. " Parameter &1 not found in STVARV.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 003 message_v1 = 'ZMM_APROBACION_EMAIL_SUBJECT' ).
+    ENDIF.
+
+    rv_subject = lv_subject.
+
+  ENDMETHOD. " GET_EMAIL_SUBJECT
+
+  METHOD get_email_sender.
+
+    SELECT SINGLE low
+      FROM tvarvc
+      WHERE name = 'ZMM_APROBACION_EMAIL_REMETENTE'
+    INTO @DATA(lv_sender).
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE i003(zmm). ENDIF. " Parameter &1 not found in STVARV.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 003 message_v1 = 'ZMM_APROBACION_EMAIL_REMETENTE' ).
+    ENDIF.
+
+    rv_sender = lv_sender.
+
+  ENDMETHOD. " GET_EMAIL_SUBJECT
+
+  METHOD get_url_link.
+
+    SELECT SINGLE low
+      FROM tvarvc
+      WHERE name = @iv_param
+    INTO @DATA(lv_url).
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE i003(zmm). ENDIF. " Parameter &1 not found in STVARV.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 003 message_v1 = iv_param ).
+    ENDIF.
+
+    rv_url = lv_url.
+
+  ENDMETHOD. " GET_URL_LINK
+
+  METHOD create_emails.
+    DATA:
+      lv_type         TYPE so_obj_tp VALUE 'HTM',
+      ol_remetente    TYPE REF TO cl_cam_address_bcs,
+      ol_destinatario TYPE REF TO cl_cam_address_bcs.
+
+    LOOP AT me->gt_user INTO DATA(lw_user).
+      TRY .
+
+          DATA(lo_email) = cl_bcs=>create_persistent( ).
+
+          DATA(lt_body_text) = me->create_email_body( is_user = lw_user ).
+
+          DATA(lo_body) = cl_document_bcs=>create_document( i_type    = lv_type
+                                                            i_text    = lt_body_text
+                                                            i_subject = me->gv_subject ).
+          lo_email->set_document( lo_body ).
+
+          DATA(lo_sender) = cl_cam_address_bcs=>create_internet_address( me->gv_email_sender ).
+          lo_email->set_sender( i_sender = lo_sender ).
+
+          DATA(lo_recipient) = cl_cam_address_bcs=>create_internet_address( lw_user-email ).
+          lo_email->add_recipient( i_recipient = lo_recipient i_express = abap_true ) .
+
+          DATA(lv_ok) = lo_email->send( ).
+
+          IF lv_ok = abap_true.
+            COMMIT WORK AND WAIT.
+          ELSE.
+            IF 1 = 2. MESSAGE i007(zmm). ENDIF. " An error occurred while sending email to user &1
+            me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 007 message_v1 = lw_user-uname ) ).
+
+          ENDIF.
+
+        CATCH cx_document_bcs.
+          IF 1 = 2. MESSAGE i007(zmm). ENDIF. " An error occurred while sending email to user &1
+          me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 007 message_v1 = lw_user-uname ) ).
+
+        CATCH cx_send_req_bcs.
+          IF 1 = 2. MESSAGE i007(zmm). ENDIF. " An error occurred while sending email to user &1
+          me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 007 message_v1 = lw_user-uname ) ).
+
+        CATCH cx_address_bcs.
+          IF 1 = 2. MESSAGE i007(zmm). ENDIF. " An error occurred while sending email to user &1
+          me->fill_log( is_bapiret2 = VALUE #( id = 'ZMM' type = 'E' number = 007 message_v1 = lw_user-uname ) ).
+
+        CATCH cx_idm_error INTO DATA(lo_idm_error).
+          me->fill_log( is_bapiret2 = lo_idm_error->get_message( ) ).
+
+      ENDTRY.
+
+      FREE: lo_email, lo_body, lo_sender, lo_recipient, lt_body_text.
+      CLEAR: lv_ok.
+    ENDLOOP.
+
+  ENDMETHOD. " CREATE_EMAILS
+
+  METHOD create_email_body.
+
+    APPEND VALUE #( line = |<html>| ) TO rt_body.
+    APPEND VALUE #( line = |<style type="text/css">| ) TO rt_body.
+    APPEND VALUE #( line = |body \{ background-color: #FFFFE0; \}| ) TO rt_body.
+    APPEND VALUE #( line = |.myTable \{ border-collapse:collapse; \}| ) TO rt_body.
+    APPEND VALUE #( line = |.myTable td, .myTable th \{ padding:5px; border:1px solid #000; \}| ) TO rt_body.
+    APPEND VALUE #( line = |</style>| ) TO rt_body.
+    APPEND VALUE #( line = |<body>| ) TO rt_body.
+    APPEND VALUE #( line = |<p>Aviso. Tiene los siguientes documentos pendientes de aprobación:</p>| ) TO rt_body.
+    APPEND VALUE #( line = |<br/>| ) TO rt_body.
+
+    APPEND LINES OF me->create_body_eban( is_user = is_user ) TO rt_body. " SOLICITUDES DE COMPRA
+    APPEND LINES OF me->create_body_ekko( is_user = is_user ) TO rt_body. " ORDENES DE COMPRA Y CONTRATOS
+    APPEND LINES OF me->create_body_essr( is_user = is_user ) TO rt_body. " HOJA DE SERVICIO
+
+    APPEND VALUE #( line = |</body></html>| ) TO rt_body.
+
+  ENDMETHOD. " CREATE_EMAIL_BODY
+
+  METHOD create_body_eban.
+    DATA:
+      lv_key      TYPE c LENGTH 15,
+      lv_date     TYPE c LENGTH 12,
+      lv_url_link TYPE string.
+
+    READ TABLE me->gt_eban_user_data WITH KEY uname = is_user-uname TRANSPORTING NO FIELDS.
+    LOOP AT me->gt_eban_user_data INTO DATA(lw_user_data) FROM sy-tabix.
+      IF lw_user_data-uname <> is_user-uname.
+        EXIT.
+      ENDIF.
+
+      IF rt_body[] IS INITIAL.
+        APPEND VALUE #( line = |<table class="myTable" >| ) TO rt_body.
+        APPEND VALUE #( line = |<tr><th colspan = "2">SOLICITUDES DE COMPRA</th></tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>NÚMERO DOCUMENTO</th>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>PENDIENTE DESDE</th>| ) TO rt_body.
+        APPEND VALUE #( line = |</tr>| ) TO rt_body.
+      ENDIF.
+
+      WRITE lw_user_data-banfn TO lv_key.
+      WRITE lw_user_data-badat TO lv_date.
+
+      lv_url_link = |{ me->gv_url_link_sc }{ lv_key }|.
+
+      APPEND VALUE #( line = |<tr>| ) TO rt_body.
+      IF me->gv_url_link_sc IS INITIAL.
+        APPEND VALUE #( line = |<td>{ lv_key }</td>| ) TO rt_body.
+      ELSE.
+        APPEND VALUE #( line = |<td><a href="{ lv_url_link }">{ lv_key }</a></td>| ) TO rt_body.
+      ENDIF.
+
+      APPEND VALUE #( line = |<td>{ lv_date }</td>| ) TO rt_body.
+      APPEND VALUE #( line = |</tr>| ) TO rt_body.
+
+    ENDLOOP.
+
+    IF rt_body IS NOT INITIAL.
+      APPEND VALUE #( line = |</table>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+      APPEND VALUE #( line = |<p>Para realizar la liberación, ingrese a la aplicación Caja de entrada en SAP!</p>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+    ENDIF.
+
+  ENDMETHOD. " CREATE_BODY_EBAN
+
+  METHOD create_body_ekko.
+    DATA:
+      lv_key      TYPE c LENGTH 15,
+      lv_date     TYPE c LENGTH 12,
+      lv_url_link TYPE string.
+
+    READ TABLE me->gt_ekko_user_data WITH KEY uname = is_user-uname TRANSPORTING NO FIELDS.
+    LOOP AT me->gt_ekko_user_data INTO DATA(lw_user_data) FROM sy-tabix.
+      IF lw_user_data-uname <> is_user-uname.
+        EXIT.
+      ENDIF.
+
+      IF rt_body[] IS INITIAL.
+        APPEND VALUE #( line = |<table class="myTable" >| ) TO rt_body.
+        APPEND VALUE #( line = |<tr><th colspan = "2">ORDENES DE COMPRA Y CONTRATOS</th></tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>NÚMERO DOCUMENTO</th>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>PENDIENTE DESDE</th>| ) TO rt_body.
+        APPEND VALUE #( line = |</tr>| ) TO rt_body.
+      ENDIF.
+
+      WRITE lw_user_data-ebeln TO lv_key.
+      WRITE lw_user_data-aedat TO lv_date.
+
+      lv_url_link = |{ me->gv_url_link_po }{ lv_key }|.
+
+      APPEND VALUE #( line = |<tr>| ) TO rt_body.
+
+      IF me->gv_url_link_po IS INITIAL.
+        APPEND VALUE #( line = |<td>{ lv_key }</td>| ) TO rt_body.
+      ELSE.
+        APPEND VALUE #( line = |<td><a href="{ lv_url_link }">{ lv_key }</a></td>| ) TO rt_body.
+      ENDIF.
+
+      APPEND VALUE #( line = |<td>{ lv_date }</td>| ) TO rt_body.
+      APPEND VALUE #( line = |</tr>| ) TO rt_body.
+
+    ENDLOOP.
+
+    IF rt_body IS NOT INITIAL.
+      APPEND VALUE #( line = |</table>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+      APPEND VALUE #( line = |<p>Para realizar la liberación, ingrese a la aplicación Caja de entrada en SAP!</p>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+    ENDIF.
+
+  ENDMETHOD. " CREATE_BODY_EKKO
+
+  METHOD create_body_essr.
+    DATA:
+      lv_key      TYPE c LENGTH 15,
+      lv_date     TYPE c LENGTH 12,
+      lv_url_link TYPE string.
+
+    READ TABLE me->gt_essr_user_data WITH KEY uname = is_user-uname TRANSPORTING NO FIELDS.
+    LOOP AT me->gt_essr_user_data INTO DATA(lw_user_data) FROM sy-tabix.
+      IF lw_user_data-uname <> is_user-uname.
+        EXIT.
+      ENDIF.
+
+      IF rt_body[] IS INITIAL.
+        APPEND VALUE #( line = |<table class="myTable" >| ) TO rt_body.
+        APPEND VALUE #( line = |<tr><th colspan = "3">HOJA DE SERVICIO</th></tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<tr>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>NÚMERO DOCUMETO</th>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>PENDIENTE DESDE</th>| ) TO rt_body.
+        APPEND VALUE #( line = |<th>GRUPO Y CÓDIGO LIBERACIÓN</th>| ) TO rt_body.
+        APPEND VALUE #( line = |</tr>| ) TO rt_body.
+      ENDIF.
+
+      READ TABLE me->gt_essr_list WITH KEY lblni = lw_user_data-lblni INTO DATA(lw_essr_list).
+
+      WRITE lw_user_data-lblni TO lv_key.
+      WRITE lw_user_data-erdat TO lv_date.
+
+      lv_url_link = |{ me->gv_url_link_hs }{ lv_key }|.
+
+      APPEND VALUE #( line = |<tr>| ) TO rt_body.
+
+      IF me->gv_url_link_hs IS INITIAL.
+        APPEND VALUE #( line = |<td>{ lv_key }</td>| ) TO rt_body.
+      ELSE.
+        APPEND VALUE #( line = |<td><a href="{ lv_url_link }">{ lv_key }</a></td>| ) TO rt_body.
+      ENDIF.
+
+      APPEND VALUE #( line = |<td>{ lv_date }</td>| ) TO rt_body.
+      APPEND VALUE #( line = |<td>{ lw_essr_list-frggr }{ lw_essr_list-frgco }</td>| ) TO rt_body.
+      APPEND VALUE #( line = |</tr>| ) TO rt_body.
+
+    ENDLOOP.
+
+    IF rt_body IS NOT INITIAL.
+      APPEND VALUE #( line = |</table>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+      APPEND VALUE #( line = |<p>Para llevar a cabo la liberación, ingrese la transacción ML81N | &&
+                             |con la hoja de trabajo y el código de liberación de arriba!</p>| ) TO rt_body.
+      APPEND VALUE #( line = |<br/>| ) TO rt_body.
+    ENDIF.
+
+  ENDMETHOD. " CREATE_BODY_ESSR
+
+  METHOD fill_log.
+    DATA:
+      lv_icon TYPE icon_d,
+      lv_msg  TYPE string.
+
+    CASE is_bapiret2-type.
+      WHEN 'E'.
+        lv_icon = c_red.
+      WHEN 'W' OR 'I'.
+        lv_icon = c_yellow.
+      WHEN 'S'.
+        lv_icon = c_green.
+      WHEN OTHERS.
+        lv_icon = iv_icon.
+    ENDCASE.
+
+    IF is_bapiret2 IS NOT INITIAL.
+      MESSAGE ID is_bapiret2-id TYPE 'S' NUMBER is_bapiret2-number WITH is_bapiret2-message_v1 is_bapiret2-message_v2 is_bapiret2-message_v3 is_bapiret2-message_v4
+        INTO lv_msg.
+    ELSE.
+      lv_msg = iv_msg.
+    ENDIF.
+
+    APPEND VALUE #( icon = lv_icon message = lv_msg ) TO me->gt_log.
+  ENDMETHOD. " FILL_LOG
+
+  METHOD display_log.
+    DATA:
+      lo_column_table TYPE REF TO cl_salv_column_table.
+
+    CHECK me->gt_log IS NOT INITIAL.
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_log ).
+
+    IF lo_salv_table IS BOUND.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      DATA(lt_columns) = lo_columns->get( ).
+      LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fl_columns>).
+        lo_column_table ?= <fl_columns>-r_column.
+
+        CASE <fl_columns>-columnname.
+          WHEN 'ICON'.
+            lo_column_table->set_short_text(  value = 'Status' ).
+            lo_column_table->set_medium_text( value = 'Status' ).
+            lo_column_table->set_long_text(   value = 'Status' ).
+            lo_column_table->set_tooltip(     value = 'Status' ).
+          WHEN 'MESSAGE'.
+            lo_column_table->set_short_text(  value = 'Message' ).
+            lo_column_table->set_medium_text( value = 'Message' ).
+            lo_column_table->set_long_text(   value = 'Message' ).
+            lo_column_table->set_tooltip(     value = 'Message' ).
+          WHEN OTHERS.
+        ENDCASE.
+      ENDLOOP.
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_list_header( TEXT-001 ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+  ENDMETHOD. " DISPLAY_LOG
+
+ENDCLASS.
