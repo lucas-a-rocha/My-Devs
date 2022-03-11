@@ -1,0 +1,41 @@
+FUNCTION zpm_garantia_etapa_por_nota.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     VALUE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  CHANGING
+*"     VALUE(CV_AUFNR) TYPE  ZPME005-AUFNR
+*"     VALUE(CV_BANFN) TYPE  ZPME005-BANFN
+*"     VALUE(CV_EBELN) TYPE  ZPME005-EBELN
+*"     VALUE(CV_TIPO) TYPE  ZPMT001-TIPO
+*"     VALUE(CV_STATUS_NOTA) TYPE  ZPMT001-STATUS_NOTA
+*"     VALUE(CV_STATUS_USUARIO) TYPE  ZPMT001-STATUS_USUARIO
+*"     VALUE(CV_STATUS_MEDIDA) TYPE  ZPMT001-STATUS_MEDIDA
+*"     VALUE(CV_CONCLUSAO_MEDIDA) TYPE  ZPMT001-CONCLUSAO_MEDIDA
+*"     VALUE(CV_STATUS_PORTAL) TYPE  ZPMT001-STATUS_PORTAL
+*"     VALUE(CV_ZZCVBELN3) TYPE  ZPME005-ZZCVBELN3
+*"----------------------------------------------------------------------
+  TRY .
+
+      DATA(lo_executar) = NEW zcl_pm_auto_sap_garantias( ).
+      lo_executar->executar_etapas_por_nota(
+        EXPORTING
+          iv_qmnum            = iv_qmnum   " Nº da nota
+        CHANGING
+          cv_aufnr            = cv_aufnr               " Nº ordem
+          cv_banfn            = cv_banfn               " Nº requisição de compra
+          cv_ebeln            = cv_ebeln               " Nº Pedido de Compras
+          cv_tipo             = cv_tipo                " Tipo de Fluxo da Nota
+          cv_status_nota      = cv_status_nota         " Status Nota
+          cv_status_usuario   = cv_status_usuario      " Status Usuário
+          cv_status_medida    = cv_status_medida       " Status Medida
+          cv_conclusao_medida = cv_conclusao_medida    " Conclusão Medidas
+          cv_status_portal    = cv_status_portal       " Status envio portal
+          cv_zzcvbeln3        = cv_zzcvbeln3           " Nota de crédito
+      ).
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+
+  ENDTRY.
+
+ENDFUNCTION.
