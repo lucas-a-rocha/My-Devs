@@ -1,0 +1,137 @@
+FUNCTION zpm_garantia_status_nota .
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_QMNUM) TYPE  ZPMT001-QMNUM
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"     REFERENCE(EV_STATUS_NOTA) TYPE  ZPMT001-STATUS_NOTA
+*"  EXCEPTIONS
+*"      ERRO_BLOQUEIO
+*"      ERRO_EXECUCAO_BAPI
+*"      ERRO_DE_EXECUCAO
+*"----------------------------------------------------------------------
+  DATA:
+    ls_notifheader_export TYPE bapi2080_nothdre.
+
+  FREE: et_return.
+
+  zcl_pm_auto_sap_garantias=>buscar_parametros_tvarv(
+    IMPORTING
+      er_status_sistema = DATA(lr_status_sistema)
+      er_status_sucesso = DATA(lr_status_sucesso)
+      et_bapiret        = et_return
+  ).
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_de_execucao.
+  ENDIF.
+
+* " Realiza o ajuste dos campos do RANGE, para utilizar nas validações abaixo.
+  LOOP AT lr_status_sistema ASSIGNING FIELD-SYMBOL(<fl_status_sistema>).
+    <fl_status_sistema>-option = 'CP'.
+    <fl_status_sistema>-low    = |*{ <fl_status_sistema>-low }*|.
+  ENDLOOP.
+
+  LOOP AT lr_status_sucesso ASSIGNING FIELD-SYMBOL(<fl_status_sucesso>).
+    <fl_status_sucesso>-option = 'CP'.
+    <fl_status_sucesso>-low    = |*{ <fl_status_sucesso>-low }*|.
+  ENDLOOP.
+
+* " Busca pelo status armazenado.
+  FREE et_return.
+  CLEAR ls_notifheader_export.
+  CALL FUNCTION 'BAPI_ALM_NOTIF_GET_DETAIL'
+    EXPORTING
+      number             = iv_qmnum
+      clear_buffer       = abap_true
+    IMPORTING
+      notifheader_export = ls_notifheader_export
+    TABLES
+      return             = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+* " Verifica se contém o status de sucesso (e por algum motivo ainda não registrou na tabela Z).
+  IF ls_notifheader_export-sys_status IN lr_status_sucesso.
+    sy-subrc = 0.
+    ev_status_nota = abap_true.
+
+    UPDATE zpmt001
+    SET status_nota = ev_status_nota
+    WHERE qmnum = iv_qmnum .
+
+    COMMIT WORK AND WAIT.
+
+    RETURN.
+  ENDIF.
+
+* " Verifica se contém o status de sistema.
+  IF ls_notifheader_export-sys_status IN lr_status_sistema.
+  ELSE.
+    IF 1 = 2. MESSAGE i003(zpm). ENDIF. " Status &1 inválido(s) para liberação da Nota .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '003' message_v1 = ls_notifheader_export-sys_status ) TO et_return.
+    RAISE erro_de_execucao.
+  ENDIF.
+
+  FREE et_return.
+  CALL FUNCTION 'BAPI_SERVNOT_PUTINPROGRESS'
+    EXPORTING
+      number = iv_qmnum
+    TABLES
+      return = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ELSE.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = abap_true.
+
+  ENDIF.
+
+* " Busca pelo status armazenado.
+  FREE et_return.
+  CLEAR ls_notifheader_export.
+  CALL FUNCTION 'BAPI_ALM_NOTIF_GET_DETAIL'
+    EXPORTING
+      number             = iv_qmnum
+      clear_buffer       = abap_true
+    IMPORTING
+      notifheader_export = ls_notifheader_export
+    TABLES
+      return             = et_return.
+
+  READ TABLE et_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    RAISE erro_execucao_bapi.
+  ENDIF.
+
+* " Verifica se foi liberado com sucesso.
+  IF ls_notifheader_export-sys_status IN lr_status_sucesso.
+    sy-subrc = 0.
+    ev_status_nota = abap_true.
+
+    UPDATE zpmt001
+    SET status_nota = ev_status_nota
+    WHERE qmnum = iv_qmnum .
+
+    COMMIT WORK AND WAIT.
+
+    PERFORM desbloquear_nota USING iv_qmnum.
+
+  ELSE.
+
+    IF 1 = 2. MESSAGE i003(zpm). ENDIF. " Status &1 inválido(s) para liberação da Nota .
+    APPEND VALUE #( type = 'E' id = 'ZPM' number = '003' message_v1 = ls_notifheader_export-sys_status ) TO et_return.
+    RAISE erro_de_execucao.
+
+  ENDIF.
+
+ENDFUNCTION.
