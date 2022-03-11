@@ -1,0 +1,163 @@
+FUNCTION zfmmm_get_release_strategy.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_EBELN) TYPE  EKKO-EBELN OPTIONAL
+*"     VALUE(IV_BANFN) TYPE  EBAN-BANFN OPTIONAL
+*"     VALUE(IV_BNFPO) TYPE  EBAN-BNFPO OPTIONAL
+*"     VALUE(IV_LBLNI) TYPE  ESSR-LBLNI OPTIONAL
+*"  EXPORTING
+*"     VALUE(ET_RELEASE_STRATEGY) TYPE  ZTYMM_RELEASE_STRATEGY
+*"  EXCEPTIONS
+*"      DOCUMENT_NOT_FOUND
+*"      RELEASE_PRE_REQ_NOT_FOUND
+*"----------------------------------------------------------------------
+****************************************************************************************
+*                      &Paracel/&Cast                                                  *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 28.08.2021 09:25:35                                                       *
+****************************************************************************************
+* Descrição: EXN.031-Solución paliativa envio correo aprobacion                        *
+****************************************************************************************
+  DATA:
+    lv_error            TYPE abap_bool,
+    lv_offset           TYPE sy-index,
+    ls_ekko             TYPE ekko,
+    ls_eban             TYPE eban,
+    ls_essr             TYPE essr,
+    lw_release_strategy LIKE LINE OF et_release_strategy,
+    lt_rel_prereq       TYPE STANDARD TABLE OF t16fv,
+    lt_actors           TYPE tactor_text.
+
+  PERFORM check_parameters USING iv_ebeln iv_banfn iv_bnfpo iv_lblni CHANGING lv_error.
+  CHECK lv_error = abap_false.
+
+* " Purchasing Document
+  IF iv_ebeln IS NOT INITIAL.
+
+    PERFORM get_ekko USING iv_ebeln CHANGING ls_ekko.
+    IF sy-subrc <> 0.
+      RAISE document_not_found.
+    ENDIF.
+
+    PERFORM get_rel_prereq USING ls_ekko-frggr ls_ekko-frgsx CHANGING lt_rel_prereq.
+    IF sy-subrc <> 0.
+      RAISE release_pre_req_not_found.
+    ENDIF.
+
+  ENDIF.
+
+* " Purchase Requisition
+  IF iv_banfn IS NOT INITIAL.
+
+    PERFORM get_eban USING iv_banfn iv_bnfpo CHANGING ls_eban.
+    IF sy-subrc <> 0.
+      RAISE document_not_found.
+    ENDIF.
+
+    PERFORM get_rel_prereq USING ls_eban-frggr ls_eban-frgst CHANGING lt_rel_prereq.
+    IF sy-subrc <> 0.
+      RAISE release_pre_req_not_found.
+    ENDIF.
+
+  ENDIF.
+
+* " Service Sheet
+  IF iv_lblni IS NOT INITIAL.
+
+    PERFORM get_essr USING iv_lblni CHANGING ls_essr.
+    IF sy-subrc <> 0.
+      RAISE document_not_found.
+    ENDIF.
+
+    PERFORM get_rel_prereq USING ls_essr-frggr ls_essr-frgsx CHANGING lt_rel_prereq.
+    IF sy-subrc <> 0.
+      RAISE release_pre_req_not_found.
+    ENDIF.
+
+  ENDIF.
+
+  LOOP AT lt_rel_prereq INTO DATA(ls_rel_prereq).
+    FREE lt_actors.
+    lw_release_strategy-frggr = ls_rel_prereq-frggr.
+    lw_release_strategy-frgsx = ls_rel_prereq-frgsx.
+    lw_release_strategy-frgco = ls_rel_prereq-frgco.
+
+*   " check the release status.
+    CASE abap_true.
+      WHEN ls_rel_prereq-frga1.
+        lv_offset = 0.
+      WHEN ls_rel_prereq-frga2.
+        lv_offset = 1.
+      WHEN ls_rel_prereq-frga3.
+        lv_offset = 2.
+      WHEN ls_rel_prereq-frga4.
+        lv_offset = 3.
+      WHEN ls_rel_prereq-frga5.
+        lv_offset = 4.
+      WHEN ls_rel_prereq-frga6.
+        lv_offset = 5.
+      WHEN ls_rel_prereq-frga7.
+        lv_offset = 6.
+      WHEN ls_rel_prereq-frga8.
+        lv_offset = 7.
+      WHEN OTHERS.
+        CLEAR lv_offset.
+    ENDCASE.
+
+    IF ls_ekko IS NOT INITIAL. " Purchasing Document
+      TRY.
+          DATA(lv_released) = ls_ekko-frgzu+lv_offset(1).
+        CATCH cx_root.
+      ENDTRY.
+
+*     " Look for the responsibles .
+      CALL FUNCTION 'ME_REL_GET_RESPONSIBLE_EKKO'
+        EXPORTING
+          im_ekko   = ls_ekko
+          im_code   = lw_release_strategy-frgco
+        IMPORTING
+          ex_actors = lt_actors.
+
+    ELSEIF ls_eban IS NOT INITIAL. " Purchase Requisition
+
+      TRY.
+          lv_released = ls_eban-frgzu+lv_offset(1).
+        CATCH cx_root.
+      ENDTRY.
+
+*     " Look for the responsibles .
+      CALL FUNCTION 'ME_REL_GET_RESPONSIBLE_EBAN'
+        EXPORTING
+          im_eban   = ls_eban
+          im_code   = lw_release_strategy-frgco
+        IMPORTING
+          ex_actors = lt_actors.
+
+    ELSE. " Service Sheet
+
+      TRY.
+          lv_released = ls_essr-frgzu+lv_offset(1).
+        CATCH cx_root.
+      ENDTRY.
+
+    ENDIF.
+
+    lw_release_strategy-released = lv_released.
+
+    IF lt_actors IS INITIAL.
+      APPEND lw_release_strategy TO et_release_strategy.
+    ENDIF.
+
+    LOOP AT lt_actors INTO DATA(lw_actors).
+      lw_release_strategy-otype = lw_actors-otype.
+      lw_release_strategy-objid = lw_actors-objid.
+
+      APPEND lw_release_strategy TO et_release_strategy.
+    ENDLOOP.
+
+    CLEAR: lw_release_strategy, lv_released.
+  ENDLOOP.
+
+ENDFUNCTION.
