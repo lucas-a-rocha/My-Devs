@@ -1,0 +1,117 @@
+  METHODS:
+        display_alv,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat.
+  
+  METHOD display_alv .
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_data_update ).
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = me->gt_data_update io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_list_header( |Log de Execução| ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD . " DISPLAY_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4.
+      ls_fieldcat-scrtext_m = &3.
+      ls_fieldcat-scrtext_s = &2.
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      CASE <fl_fcat>-fieldname.
+        WHEN 'FDGRV_OLD'.
+          dfcat_texto <fl_fcat> 'OldPlanGrp' 'Old Planning Group' 'Old Planning Group' 10.
+        WHEN 'FDGRV_NEW'.
+          dfcat_texto <fl_fcat> 'NewPlanGrp' 'New Planning Group' 'New Planning Group' 10.
+        WHEN OTHERS.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
