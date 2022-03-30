@@ -1,0 +1,324 @@
+****************************************************************************************
+*                      &Paracel/&Cast                                                  *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 30.03.2022 14:41:01                                                       *
+****************************************************************************************
+* Descrição: Programa de actualización de HBKID HKTID                                  *
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZFIR_002
+*&---------------------------------------------------------------------*
+REPORT zfir_002.
+
+TABLES: bseg.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+  SELECT-OPTIONS:
+    s_bukrs FOR bseg-bukrs NO-EXTENSION NO INTERVALS DEFAULT '1000' OBLIGATORY,
+    s_belnr FOR bseg-belnr,
+    s_gjahr FOR bseg-gjahr NO-EXTENSION NO INTERVALS DEFAULT sy-datum(4),
+    s_hkont FOR bseg-hkont.
+
+  PARAMETERS p_check AS CHECKBOX DEFAULT abap_true.
+SELECTION-SCREEN: END OF BLOCK b1.
+
+**********************************************************************
+* Definições da classe
+**********************************************************************
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_role_data,
+        bukrs TYPE skb1-bukrs,
+        saknr TYPE skb1-saknr,
+        hbkid TYPE skb1-hbkid,
+        hktid TYPE skb1-hktid,
+      END OF gty_role_data,
+      gtt_role_data TYPE STANDARD TABLE OF gty_role_data,
+
+      BEGIN OF gty_data_update,
+        bukrs     TYPE bseg-bukrs,
+        belnr     TYPE bseg-belnr,
+        gjahr     TYPE bseg-gjahr,
+        buzei     TYPE bseg-buzei,
+        hkont     TYPE bseg-hkont,
+        hbkid_old TYPE bseg-hbkid,
+        hbkid_new TYPE bseg-hbkid,
+        hktid_old TYPE bseg-hktid,
+        hktid_new TYPE bseg-hktid,
+      END OF gty_data_update,
+      gtt_data_update TYPE STANDARD TABLE OF gty_data_update,
+
+      gtr_bukrs       TYPE RANGE OF bseg-bukrs,
+      gtr_belnr       TYPE RANGE OF bseg-belnr,
+      gtr_gjahr       TYPE RANGE OF bseg-gjahr,
+      gtr_hkont       TYPE RANGE OF bseg-hkont.
+
+    METHODS:
+      constructor
+        IMPORTING
+          !ir_bukrs      TYPE gtr_bukrs
+          !ir_belnr      TYPE gtr_belnr
+          !ir_gjahr      TYPE gtr_gjahr
+          !ir_hkont      TYPE gtr_hkont
+          !iv_only_check TYPE flag
+        RAISING
+          cx_idm_error,
+
+      start_processing
+        RAISING
+          cx_idm_error,
+
+      select_data
+        RAISING
+          cx_idm_error,
+
+      update_data,
+
+      display_alv,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat.
+
+  PRIVATE SECTION.
+    DATA:
+      gr_bukrs       TYPE gtr_bukrs,
+      gr_belnr       TYPE gtr_belnr,
+      gr_gjahr       TYPE gtr_gjahr,
+      gr_hkont       TYPE gtr_hkont,
+      gt_role_data   TYPE gtt_role_data,
+      gt_data_update TYPE gtt_data_update,
+      gv_only_check  TYPE flag.
+
+ENDCLASS.
+
+START-OF-SELECTION .
+
+  TRY .
+      DATA(go_report) = NEW lcl_report(
+        ir_bukrs = s_bukrs[]
+        ir_belnr = s_belnr[]
+        ir_gjahr = s_gjahr[]
+        ir_hkont = s_hkont[]
+        iv_only_check = p_check ).
+
+      go_report->start_processing( ).
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+**********************************************************************
+* Implementação da classe
+**********************************************************************
+CLASS lcl_report IMPLEMENTATION.
+  METHOD constructor.
+
+    me->gr_bukrs = ir_bukrs .
+    me->gr_belnr = ir_belnr .
+    me->gr_gjahr = ir_gjahr .
+    me->gr_hkont = ir_hkont .
+    me->gv_only_check = iv_only_check .
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD start_processing.
+
+    me->select_data( ).
+
+    IF me->gv_only_check = abap_false.
+      me->update_data( ).
+    ENDIF.
+
+    me->display_alv( ).
+
+  ENDMETHOD. " START_PROCESSING
+
+  METHOD select_data.
+
+    SELECT bukrs, belnr, gjahr, buzei, hkont, hbkid AS hbkid_old, @space AS hbkid_new, hktid AS hktid_old, @space AS hktid_new
+      FROM bseg
+      WHERE bukrs IN @me->gr_bukrs
+        AND belnr IN @me->gr_belnr
+        AND gjahr IN @me->gr_gjahr
+        AND hkont IN @me->gr_hkont
+    INTO TABLE @me->gt_data_update.
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE i001(zfi). ENDIF. " No se encontraron registros .
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'W' id = 'ZFI' number = 001 ).
+    ENDIF.
+
+    SORT me->gt_data_update BY bukrs belnr gjahr buzei hkont.
+
+    DATA lr_saknr TYPE RANGE OF skb1-saknr.
+    lr_saknr = VALUE #( FOR lw_data_update_for IN me->gt_data_update ( sign = 'I' option = 'EQ' low = lw_data_update_for-hkont ) ).
+    SORT lr_saknr BY low.
+    DELETE ADJACENT DUPLICATES FROM lr_saknr COMPARING low.
+    DELETE lr_saknr WHERE low IS INITIAL .
+
+    SELECT bukrs, saknr, hbkid, hktid
+      FROM skb1
+      WHERE saknr IN @lr_saknr
+    INTO TABLE @me->gt_role_data.
+
+    LOOP AT me->gt_data_update ASSIGNING FIELD-SYMBOL(<fl_data_update>).
+      READ TABLE me->gt_role_data INTO DATA(lw_role_data) WITH KEY bukrs = <fl_data_update>-bukrs saknr = <fl_data_update>-hkont.
+      CHECK sy-subrc = 0 AND lw_role_data IS NOT INITIAL.
+
+      <fl_data_update>-hbkid_new = lw_role_data-hbkid.
+      <fl_data_update>-hktid_new = lw_role_data-hktid.
+
+      CLEAR lw_role_data.
+    ENDLOOP.
+
+  ENDMETHOD . " SELECT_DATA
+
+  METHOD update_data.
+
+    LOOP AT me->gt_data_update ASSIGNING FIELD-SYMBOL(<fl_data_update>).
+
+      CHECK <fl_data_update>-hbkid_new IS NOT INITIAL AND <fl_data_update>-hktid_new IS NOT INITIAL.
+
+      UPDATE bseg
+      SET hbkid  = <fl_data_update>-hbkid_new
+          hktid  = <fl_data_update>-hktid_new
+      WHERE bukrs = <fl_data_update>-bukrs
+        AND belnr = <fl_data_update>-belnr
+        AND gjahr = <fl_data_update>-gjahr
+        AND buzei = <fl_data_update>-buzei .
+
+    ENDLOOP.
+
+    COMMIT WORK AND WAIT.
+
+  ENDMETHOD . " UPDATE_DATA
+
+  METHOD display_alv .
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_data_update ).
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = me->gt_data_update io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_list_header( 'Execution Log'(t01) ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD . " DISPLAY_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4.
+      ls_fieldcat-scrtext_m = &3.
+      ls_fieldcat-scrtext_s = &2.
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'HBKID_OLD'.
+          dfcat_texto <fl_fcat> 'OldHouseBk'(t02) 'Old House Bank'(t03) 'Old House Bank'(t03) 5.
+        WHEN 'HBKID_NEW'.
+          dfcat_texto <fl_fcat> 'NewHouseBk'(t04) 'New House Bank'(t05) 'New House Bank'(t05) 5.
+        WHEN 'HKTID_OLD'.
+          dfcat_texto <fl_fcat> 'OldAcctID'(t06) 'Old Account ID'(t07) 'Old Account ID'(t07) 5.
+        WHEN 'HKTID_NEW'.
+          dfcat_texto <fl_fcat> 'NewAcctID'(t08) 'New Account ID'(t09) 'New Account ID'(t10) 5.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+ENDCLASS.
