@@ -1,0 +1,864 @@
+****************************************************************************************
+*                      &Randon/&Castgroup                                              *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 18.04.2022 09:52:24                                                       *
+****************************************************************************************
+* Descrição: 18735 - Identificação Clientes Afetados                                   *
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report  ZSDR193
+*&---------------------------------------------------------------------*
+REPORT zsdr193.
+
+TABLES: mara, marc, mvke, kna1, knvv.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+
+SELECT-OPTIONS:
+  s_matnrc FOR marc-matnr OBLIGATORY,
+  s_werks  FOR marc-werks OBLIGATORY,
+  s_matnrv FOR mara-matnr ,
+  s_vkorg  FOR mvke-vkorg ,
+  s_vtweg  FOR mvke-vtweg ,
+  s_spart  FOR knvv-spart ,
+  s_kunnr  FOR kna1-kunnr .
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+CLASS zcl_clientes_afetados DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_comp_material,
+        componente TYPE marc-matnr,
+        werks      TYPE marc-werks,
+        matnr      TYPE mara-matnr,
+        emeng      TYPE stpov-emeng,
+      END OF gty_comp_material,
+      gtt_comp_material TYPE SORTED TABLE OF gty_comp_material WITH UNIQUE KEY componente werks matnr,
+*      gtt_comp_material TYPE STANDARD TABLE OF gty_comp_material,
+
+      BEGIN OF gty_vinculo_tabelas,
+        matnr TYPE mara-matnr,
+      END OF gty_vinculo_tabelas,
+      gtt_vinculo_tabelas TYPE SORTED TABLE OF gty_vinculo_tabelas WITH UNIQUE KEY matnr,
+
+      BEGIN OF gty_a930,
+        matnr TYPE mara-matnr,
+        kunnr TYPE a930-kunnr,
+      END OF gty_a930,
+      gtt_a930 TYPE SORTED TABLE OF gty_a930 WITH UNIQUE KEY matnr,
+
+      BEGIN OF gty_makt,
+        matnr TYPE makt-matnr,
+        spras TYPE makt-spras,
+        maktx TYPE makt-maktx,
+      END OF gty_makt,
+      gtt_makt TYPE SORTED TABLE OF gty_makt WITH UNIQUE KEY matnr,
+
+      BEGIN OF gty_kna1,
+        kunnr TYPE kna1-kunnr,
+        name1 TYPE kna1-name1,
+        name2 TYPE kna1-name2,
+      END OF gty_kna1,
+      gtt_kna1 TYPE SORTED TABLE OF gty_kna1 WITH UNIQUE KEY kunnr,
+
+      BEGIN OF gty_mvke,
+        matnr TYPE mvke-matnr,
+        vkorg TYPE mvke-vkorg,
+        vtweg TYPE mvke-vtweg,
+      END OF gty_mvke,
+      gtt_mvke TYPE SORTED TABLE OF gty_mvke WITH UNIQUE KEY matnr vkorg vtweg,
+
+      BEGIN OF gty_knvv,
+        kunnr TYPE knvv-kunnr,
+        vkorg TYPE knvv-vkorg,
+        vtweg TYPE knvv-vtweg,
+        spart TYPE knvv-spart,
+      END OF gty_knvv,
+      gtt_knvv TYPE SORTED TABLE OF gty_knvv WITH UNIQUE KEY kunnr vkorg vtweg spart,
+
+      BEGIN OF gty_alv,
+        componente      TYPE marc-matnr,
+        desc_componente TYPE makt-maktx,
+        matnr           TYPE mara-matnr,
+        maktx           TYPE makt-maktx,
+        werks           TYPE marc-werks,
+        emeng           TYPE p LENGTH 16 DECIMALS 3,
+        chaves          TYPE text60,
+        kunnr           TYPE kna1-kunnr,
+        nome            TYPE text100,
+      END OF gty_alv.
+
+    TYPES:
+      tr_matnrc TYPE RANGE OF marc-matnr,
+      tr_werks  TYPE RANGE OF marc-werks,
+      tr_matnrv TYPE RANGE OF mara-matnr,
+      tr_vkorg  TYPE RANGE OF mvke-vkorg,
+      tr_vtweg  TYPE RANGE OF mvke-vtweg,
+      tr_spart  TYPE RANGE OF knvv-spart,
+      tr_kunnr  TYPE RANGE OF kna1-kunnr.
+
+    METHODS:
+      constructor
+        IMPORTING
+          !ir_matnrc TYPE tr_matnrc OPTIONAL
+          !ir_werks  TYPE tr_werks  OPTIONAL
+          !ir_matnrv TYPE tr_matnrv OPTIONAL
+          !ir_vkorg  TYPE tr_vkorg  OPTIONAL
+          !ir_vtweg  TYPE tr_vtweg  OPTIONAL
+          !ir_spart  TYPE tr_spart  OPTIONAL
+          !ir_kunnr  TYPE tr_kunnr  OPTIONAL
+        RAISING
+          cx_idm_error ,
+
+      processar
+        RAISING
+          cx_idm_error,
+
+      result_rfc_cs15
+        IMPORTING
+          p_task TYPE any.
+
+  PRIVATE SECTION .
+    DATA:
+      gr_matnrc TYPE tr_matnrc,
+      gr_werks  TYPE tr_werks,
+      gr_matnrv TYPE tr_matnrv,
+      gr_vkorg  TYPE tr_vkorg,
+      gr_vtweg  TYPE tr_vtweg,
+      gr_spart  TYPE tr_spart,
+      gr_kunnr  TYPE tr_kunnr.
+
+    DATA:
+      gt_comp_material TYPE gtt_comp_material,
+      gt_makt          TYPE gtt_makt,
+      gt_kna1          TYPE gtt_kna1,
+      gt_mvke          TYPE gtt_mvke,
+      gt_knvv          TYPE gtt_knvv,
+      gt_alv           TYPE STANDARD TABLE OF gty_alv,
+      gt_a930          TYPE gtt_a930,
+      gt_a932          TYPE gtt_vinculo_tabelas,
+      gt_a933          TYPE gtt_vinculo_tabelas,
+      gt_a949          TYPE gtt_vinculo_tabelas,
+      gt_a954          TYPE gtt_vinculo_tabelas,
+      gt_a955          TYPE gtt_vinculo_tabelas,
+      gt_a972          TYPE gtt_vinculo_tabelas,
+      gt_stpov_alv     TYPE zsdt_stpov_alv.
+
+    DATA:
+      gv_vtweg_requerido TYPE flag VALUE abap_false,
+      gv_spart_requerido TYPE flag VALUE abap_false,
+      gv_rfc_cs15_conc   TYPE flag.
+
+    METHODS:
+      selecionar_dados
+        RAISING
+          cx_idm_error,
+
+      buscar_materiais
+        RAISING
+          cx_idm_error,
+
+      buscar_material_utilizacao
+        IMPORTING
+          !iv_componente_pai TYPE marc-matnr
+          !iv_werks          TYPE marc-werks
+          !iv_matnr          TYPE mara-matnr,
+
+      buscar_material_util_submit
+        IMPORTING
+          !iv_componente_pai TYPE marc-matnr
+          !iv_werks          TYPE marc-werks,
+
+      buscar_dados_vk13
+        RAISING
+          cx_idm_error,
+
+      check_a930
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a932
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a933
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a949
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a954
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a955
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+      check_a972
+        IMPORTING
+          !iv_matnr TYPE mara-matnr,
+
+      buscar_dados_adicionais,
+
+      montar_alv,
+
+      display_alv,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY .
+
+      DATA(go_clientes_afetados) = NEW zcl_clientes_afetados(
+          ir_matnrc = s_matnrc[]
+          ir_werks  = s_werks[]
+          ir_matnrv = s_matnrv[]
+          ir_vkorg  = s_vkorg[]
+          ir_vtweg  = s_vtweg[]
+          ir_spart  = s_spart[]
+          ir_kunnr  = s_kunnr[]
+      ).
+
+      go_clientes_afetados->processar( ).
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+END-OF-SELECTION.
+
+CLASS zcl_clientes_afetados IMPLEMENTATION.
+
+  METHOD constructor.
+
+    me->gr_matnrc = ir_matnrc .
+    me->gr_werks  = ir_werks  .
+    me->gr_matnrv = ir_matnrv .
+    me->gr_vkorg  = ir_vkorg  .
+    me->gr_vtweg  = ir_vtweg  .
+    me->gr_spart  = ir_spart  .
+    me->gr_kunnr  = ir_kunnr  .
+
+    IF me->gr_vtweg[] IS NOT INITIAL.
+      me->gv_vtweg_requerido = abap_true.
+    ENDIF.
+
+    IF me->gr_spart[] IS NOT INITIAL.
+      me->gv_spart_requerido = abap_true.
+    ENDIF.
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD processar.
+
+    me->selecionar_dados( ).
+
+    me->montar_alv( ).
+
+    IF me->gt_alv IS INITIAL.
+      IF 1 = 2. MESSAGE w005(zsd).ENDIF. " Nenhum registro foi encontrado .
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'W' id = 'ZSD' number = 005 ).
+    ENDIF.
+
+    me->display_alv( ).
+
+  ENDMETHOD. " PROCESSAR
+
+  METHOD selecionar_dados.
+
+    me->buscar_materiais( ).
+
+    me->buscar_dados_vk13( ).
+
+    me->buscar_dados_adicionais( ).
+
+  ENDMETHOD. " SELECIONAR_DADOS
+
+  METHOD buscar_materiais.
+
+*   " Busca pelos componentes informados em tela .
+    SELECT matnr, werks
+      FROM marc
+      WHERE matnr IN @me->gr_matnrc
+        AND werks IN @me->gr_werks
+    INTO TABLE @DATA(lt_componentes).
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE w004(zsd).ENDIF. " Nenhum componente foi encontrado .
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'W' id = 'ZSD' number = 004 ).
+    ENDIF.
+
+    LOOP AT lt_componentes ASSIGNING FIELD-SYMBOL(<fl_componentes>).
+
+*     " Inicia a busca pelos Materiais utilizados pelos componentes .
+      me->buscar_material_util_submit(
+        EXPORTING
+          iv_componente_pai = <fl_componentes>-matnr
+          iv_werks          = <fl_componentes>-werks
+      ).
+
+    ENDLOOP.
+
+  ENDMETHOD . " BUSCAR_MATERIAIS
+
+  METHOD buscar_material_utilizacao.
+
+    DATA:
+      lt_wultb   TYPE STANDARD TABLE OF stpov,
+      lt_equicat TYPE STANDARD TABLE OF cscequi,
+      lt_kndcat  TYPE STANDARD TABLE OF cscknd,
+      lt_matcat  TYPE STANDARD TABLE OF cscmat,
+      lt_stdcat  TYPE STANDARD TABLE OF cscstd,
+      lt_tplcat  TYPE STANDARD TABLE OF csctpl.
+
+    FREE: lt_wultb, lt_equicat, lt_kndcat, lt_matcat, lt_stdcat, lt_tplcat.
+
+    CALL FUNCTION 'CS_WHERE_USED_MAT'
+      EXPORTING
+        datub                      = sy-datum
+        datuv                      = sy-datum
+        matnr                      = iv_matnr
+        werks                      = iv_werks
+      TABLES
+        wultb                      = lt_wultb
+        equicat                    = lt_equicat
+        kndcat                     = lt_kndcat
+        matcat                     = lt_matcat
+        stdcat                     = lt_stdcat
+        tplcat                     = lt_tplcat
+      EXCEPTIONS
+        call_invalid               = 1
+        material_not_found         = 2
+        no_where_used_rec_found    = 3
+        no_where_used_rec_selected = 4
+        no_where_used_rec_valid    = 5
+        OTHERS                     = 6.
+
+    CHECK sy-subrc = 0.
+
+    LOOP AT lt_wultb ASSIGNING FIELD-SYMBOL(<fl_wultb>).
+
+      CHECK <fl_wultb>-matnr IN me->gr_matnrv.
+
+*     " Verifica se o componente já foi adicionado em outro material .
+      READ TABLE me->gt_comp_material WITH KEY componente = iv_componente_pai werks = iv_werks matnr = <fl_wultb>-matnr
+        TRANSPORTING NO FIELDS BINARY SEARCH.
+      CHECK sy-subrc <> 0 .
+
+      INSERT VALUE #(
+        componente = iv_componente_pai
+        werks      = iv_werks
+        matnr      = <fl_wultb>-matnr
+        emeng      = <fl_wultb>-emeng
+      ) INTO TABLE me->gt_comp_material.
+
+      me->buscar_material_utilizacao(
+        EXPORTING
+          iv_componente_pai = iv_componente_pai
+          iv_werks          = iv_werks
+          iv_matnr          = <fl_wultb>-matnr
+      ).
+
+    ENDLOOP.
+
+  ENDMETHOD. " BUSCAR_MATERIAL_UTILIZACAO
+
+  METHOD buscar_material_util_submit.
+
+    DATA:
+      lv_emeng_c       TYPE qfltp-sollwert,
+      lw_comp_material LIKE LINE OF me->gt_comp_material.
+
+    me->gv_rfc_cs15_conc = abap_false.
+
+    FREE me->gt_stpov_alv.
+    CALL FUNCTION 'ZSDF_LISTAR_MAT_CS15'
+      STARTING NEW TASK 'ZLISTAR_MAT_CS15'
+      CALLING me->result_rfc_cs15 ON END OF TASK
+      EXPORTING
+        iv_componente = iv_componente_pai
+        iv_werks      = iv_werks.
+
+    WAIT UNTIL me->gv_rfc_cs15_conc = abap_true.
+
+    DELETE me->gt_stpov_alv WHERE level = 0.
+
+    LOOP AT me->gt_stpov_alv ASSIGNING FIELD-SYMBOL(<fl_stpov_alv>).
+      CLEAR: lw_comp_material, lv_emeng_c.
+
+      CHECK <fl_stpov_alv>-matnr IN me->gr_matnrv.
+
+      lw_comp_material = VALUE #(
+        componente = iv_componente_pai
+        werks      = iv_werks
+        matnr      = <fl_stpov_alv>-matnr
+      ).
+
+      lv_emeng_c = <fl_stpov_alv>-dimng.
+
+      CALL FUNCTION 'QSS0_CHAR_FLTP_CONVERSION'
+        EXPORTING
+*         I_CHAR_FIELD_NAME  = ' '
+          i_character_string = lv_emeng_c
+          i_number_of_digits = 3
+        IMPORTING
+          e_fltp_value       = lw_comp_material-emeng.
+
+      INSERT lw_comp_material INTO TABLE me->gt_comp_material.
+
+    ENDLOOP.
+
+  ENDMETHOD. " BUSCAR_MATERIAL_UTIL_SUBMIT
+
+  METHOD result_rfc_cs15.
+
+    me->gv_rfc_cs15_conc = abap_true.
+
+    RECEIVE RESULTS FROM FUNCTION 'ZSDF_LISTAR_MAT_CS15'
+      IMPORTING
+        et_stpov_alv  = me->gt_stpov_alv
+      EXCEPTIONS
+        nodata    = 1.
+
+  ENDMETHOD . " RESULT_RFC_CS15
+
+  METHOD buscar_dados_vk13.
+
+    LOOP AT me->gt_comp_material ASSIGNING FIELD-SYMBOL(<fl_comp_material>).
+
+      me->check_a930( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a932( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a933( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a949( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a954( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a955( iv_matnr = <fl_comp_material>-matnr ).
+      me->check_a972( iv_matnr = <fl_comp_material>-matnr ).
+
+    ENDLOOP.
+
+  ENDMETHOD . " BUSCAR_DADOS_VK13
+
+  METHOD check_a930.
+
+    SELECT SINGLE matnr, a930~kunnr
+      FROM a930
+      INNER JOIN konp ON konp~knumh = a930~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND a930~kunnr IN @me->gr_kunnr
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum
+    INTO @DATA(ls_a930).
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr kunnr = ls_a930-kunnr ) INTO TABLE me->gt_a930.
+
+  ENDMETHOD . " CHECK_A930
+
+  METHOD check_a932.
+
+    SELECT COUNT( * )
+      FROM a932
+      INNER JOIN konp ON konp~knumh = a932~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a932.
+
+  ENDMETHOD . " CHECK_A932
+
+  METHOD check_a933.
+
+    SELECT COUNT( * )
+      FROM a933
+      INNER JOIN konp ON konp~knumh = a933~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a933.
+
+  ENDMETHOD . " CHECK_A933
+
+  METHOD check_a949.
+
+    SELECT COUNT( * )
+      FROM a949
+      INNER JOIN konp ON konp~knumh = a949~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a949.
+
+  ENDMETHOD . " CHECK_A949
+
+  METHOD check_a954.
+
+    SELECT COUNT( * )
+      FROM a954
+      INNER JOIN konp ON konp~knumh = a954~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a954.
+
+  ENDMETHOD . " CHECK_A954
+
+  METHOD check_a955.
+
+    SELECT COUNT( * )
+      FROM a955
+      INNER JOIN konp ON konp~knumh = a955~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a955.
+
+  ENDMETHOD . " CHECK_A955
+
+  METHOD check_a972.
+
+    SELECT COUNT( * )
+      FROM a972
+      INNER JOIN konp ON konp~knumh = a972~knumh AND loevm_ko = @space
+      WHERE vkorg IN @me->gr_vkorg
+        AND matnr = @iv_matnr
+        AND datbi GE @sy-datum .
+
+    CHECK sy-subrc = 0.
+
+    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a972.
+
+  ENDMETHOD . " CHECK_A972
+
+  METHOD buscar_dados_adicionais.
+    TYPES:
+      ltt_materiais TYPE STANDARD TABLE OF mara-matnr WITH EMPTY KEY,
+      ltt_kunnr     TYPE STANDARD TABLE OF kna1-kunnr WITH EMPTY KEY.
+
+    DATA:
+      lt_materiais_componentes TYPE ltt_materiais.
+
+*   " Armazena os compontentes .
+    DATA(lt_componentes) = VALUE ltt_materiais( FOR lw_comp_for IN me->gt_comp_material ( lw_comp_for-componente ) ).
+    APPEND LINES OF lt_componentes TO lt_materiais_componentes.
+
+*   " Armazena os materiais de venda selecionados .
+    DATA(lt_materiais) = VALUE ltt_materiais( FOR lw_comp_for IN me->gt_comp_material ( lw_comp_for-matnr ) ).
+    APPEND LINES OF lt_materiais TO lt_materiais_componentes.
+
+    SORT lt_materiais_componentes BY table_line.
+    DELETE ADJACENT DUPLICATES FROM lt_materiais_componentes COMPARING ALL FIELDS.
+
+*   " Busca a descrição dos materiais encontrados .
+    IF lt_materiais_componentes[] IS NOT INITIAL.
+
+      FREE gt_makt.
+      SELECT matnr, spras, maktx
+        FROM makt
+        FOR ALL ENTRIES IN @lt_materiais_componentes
+        WHERE matnr = @lt_materiais_componentes-table_line
+          AND spras = @sy-langu
+      ORDER BY PRIMARY KEY
+      INTO TABLE @me->gt_makt.
+
+    ENDIF.
+
+*   " Busca os dados dos Clientes encontrados .
+    IF me->gt_a930[] IS NOT INITIAL.
+
+      DATA(lt_kunnr) = VALUE ltt_kunnr( FOR lw_a930_for IN me->gt_a930 ( lw_a930_for-kunnr ) ).
+      SORT lt_kunnr BY table_line.
+      DELETE ADJACENT DUPLICATES FROM lt_kunnr COMPARING ALL FIELDS.
+      DELETE lt_kunnr WHERE table_line IS INITIAL.
+
+      SELECT kunnr, name1, name2
+        FROM kna1
+        FOR ALL ENTRIES IN @lt_kunnr
+        WHERE kunnr = @lt_kunnr-table_line
+      ORDER BY PRIMARY KEY
+      INTO TABLE @me->gt_kna1.
+
+      IF me->gv_spart_requerido = abap_true.
+
+        SELECT kunnr, vkorg, vtweg, spart
+          FROM knvv
+          FOR ALL ENTRIES IN @lt_kunnr
+          WHERE kunnr = @lt_kunnr-table_line
+            AND vkorg IN @me->gr_vkorg
+            AND vtweg IN @me->gr_vtweg
+            AND spart IN @me->gr_spart
+        ORDER BY PRIMARY KEY
+        INTO TABLE @me->gt_knvv.
+
+      ENDIF.
+
+    ENDIF.
+
+    IF me->gv_vtweg_requerido = abap_true AND lt_materiais[] IS NOT INITIAL.
+
+      SELECT matnr, vkorg, vtweg
+        FROM mvke
+        FOR ALL ENTRIES IN @lt_materiais
+        WHERE matnr = @lt_materiais-table_line
+          AND vkorg IN @me->gr_vkorg
+          AND vtweg IN @me->gr_vtweg
+      ORDER BY PRIMARY KEY
+      INTO TABLE @me->gt_mvke.
+
+    ENDIF.
+
+  ENDMETHOD. " BUSCAR_DADOS_ADICIONAIS
+
+  METHOD montar_alv.
+    DATA:
+      lw_alv     LIKE LINE OF me->gt_alv,
+      lv_emeng_c TYPE cha_class_view-sollwert,
+      lv_emeng_f TYPE cha_class_data-sollwert.
+
+    LOOP AT me->gt_comp_material ASSIGNING FIELD-SYMBOL(<fl_comp>).
+
+*     " Verifica se o Canal de distribuição foi preenchido no filtro. Se sim, deve filtrar por ele neste momento.
+      IF me->gv_vtweg_requerido = abap_true.
+        READ TABLE me->gt_mvke WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH.
+        CHECK sy-subrc = 0.
+      ENDIF.
+
+      lw_alv = VALUE #(
+        componente      = <fl_comp>-componente
+        desc_componente = COND #(
+          WHEN line_exists( me->gt_makt[ matnr = <fl_comp>-componente ] )
+          THEN me->gt_makt[ matnr = <fl_comp>-componente ]-maktx
+          ELSE space )
+        matnr           = <fl_comp>-matnr
+        maktx           = COND #(
+          WHEN line_exists( me->gt_makt[ matnr = <fl_comp>-matnr ] )
+          THEN me->gt_makt[ matnr = <fl_comp>-matnr ]-maktx
+          ELSE space )
+        werks           = <fl_comp>-werks
+      ).
+
+      lv_emeng_f = <fl_comp>-emeng.
+      CALL FUNCTION 'QSS0_FLTP_TO_CHAR_CONVERSION'
+        EXPORTING
+          i_number_of_digits = 3
+          i_fltp_value       = lv_emeng_f
+        IMPORTING
+          e_char_field       = lv_emeng_c.
+
+      lw_alv-emeng = replace( val = lv_emeng_c regex = '\,' with = '.' occ = 0 ).
+
+      READ TABLE gt_a930 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a930) BINARY SEARCH .
+      IF sy-subrc = 0.
+
+*       " Verifica se o Setor de Atividade foi preenchido no filtro. Se sim, só irá carregar os clientes vinculados .
+        IF me->gv_spart_requerido = abap_true .
+          READ TABLE me->gt_knvv WITH KEY kunnr = lw_a930-kunnr TRANSPORTING NO FIELDS BINARY SEARCH.
+          CHECK sy-subrc = 0.
+        ENDIF.
+
+        READ TABLE me->gt_kna1 INTO DATA(lw_kna1) WITH KEY kunnr = lw_a930-kunnr BINARY SEARCH.
+        lw_alv-kunnr = lw_a930-kunnr.
+        lw_alv-nome = |{ lw_kna1-name1 } { lw_kna1-name2 }|.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/Cliente/Material'.
+        APPEND lw_alv TO me->gt_alv .
+
+        CLEAR: lw_a930, lw_kna1.
+      ELSE.
+*       " Caso o Setor de Atividade não tenha sido preenchido no filtro .
+        CHECK me->gv_spart_requerido = abap_false .
+      ENDIF.
+
+      CLEAR: lw_alv-kunnr, lw_alv-nome.
+
+      READ TABLE gt_a932 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/País/Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+      READ TABLE gt_a933 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+      READ TABLE gt_a949 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./Eq.vendas/País/Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+      READ TABLE gt_a954 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+      READ TABLE gt_a955 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./País/Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+      READ TABLE gt_a972 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      IF sy-subrc = 0.
+        lw_alv-chaves = 'Org.vendas/TpDocVend./Material'.
+        APPEND lw_alv TO me->gt_alv .
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD . " MONTAR_ALV
+
+  METHOD display_alv .
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = me->gt_alv ).
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = me->gt_alv io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_list_header( sy-title ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD . " DISPLAY_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      CASE <fl_fcat>-fieldname.
+        WHEN 'COMPONENTE'.
+          dfcat_texto <fl_fcat> 'Mat/Comp.' 'Materia-Prima/Componente' 'Materia-Prima/Componente' 18.
+        WHEN 'DESC_COMPONENTE'.
+          dfcat_texto <fl_fcat> 'DcMat/Comp' 'Desc. Materia-Prima/Comp' 'Descrição da Materia-Prima/Componente' 40.
+        WHEN 'MATNR'.
+          dfcat_texto <fl_fcat> 'MatVendáv.' 'Material Vendável' 'Material Vendável' 18.
+        WHEN 'MAKTX'.
+          dfcat_texto <fl_fcat> 'Desc.Mat.' 'Descrição do Material' 'Descrição do Material' 40.
+        WHEN 'EMENG'.
+          dfcat_texto <fl_fcat> 'Qtd.Req.' 'Qtd. Requerida' 'Qtd. Requerida' 22.
+        WHEN 'CHAVES'.
+          dfcat_texto <fl_fcat> 'ChavesVig' 'Chaves preço vigente' 'Combinação chaves lista de preço vigente' 40.
+        WHEN 'NOME'.
+          dfcat_texto <fl_fcat> 'Nome' 'Nome do Cliente' 'Nome do Cliente' 40.
+        WHEN OTHERS.
+          CONTINUE.
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+ENDCLASS .
