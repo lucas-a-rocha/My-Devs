@@ -1,0 +1,31 @@
+FUNCTION zsdf_listar_mat_cs15.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     VALUE(IV_COMPONENTE) TYPE  MARC-MATNR
+*"     VALUE(IV_WERKS) TYPE  MARC-WERKS
+*"  EXPORTING
+*"     VALUE(ET_STPOV_ALV) TYPE  ZSDT_STPOV_ALV
+*"----------------------------------------------------------------------
+
+  cl_salv_bs_runtime_info=>set( display  = abap_false
+                                metadata = abap_false
+                                data     = abap_true ).
+
+  SUBMIT rcs15001 WITH pm_idnrk = iv_componente
+                  WITH pm_werks = iv_werks
+                  WITH pm_mehrs = 'X' "Multilevel
+                  AND RETURN .
+  TRY.
+      cl_salv_bs_runtime_info=>get_data_ref( IMPORTING r_data = DATA(lobj_data) ).
+      ASSIGN lobj_data->* TO FIELD-SYMBOL(<lfs_data>).
+    CATCH cx_salv_bs_sc_runtime_info.
+  ENDTRY.
+
+  IF <lfs_data> IS ASSIGNED.
+*    DATA: lt_stpov_alv TYPE TABLE OF stpov_alv.
+    et_stpov_alv = CORRESPONDING #( <lfs_data> ).
+
+  ENDIF.
+
+ENDFUNCTION.
