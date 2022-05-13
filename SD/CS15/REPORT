@@ -29,28 +29,41 @@ SELECT-OPTIONS:
   s_spart  FOR knvv-spart ,
   s_kunnr  FOR kna1-kunnr .
 
+PARAMETERS: p_layout LIKE disvariant-variant.
+
 SELECTION-SCREEN END OF BLOCK b1.
+
+INITIALIZATION.
+  PERFORM get_default_layout CHANGING p_layout.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_layout.
+  PERFORM f4_layouts CHANGING p_layout.
 
 CLASS zcl_clientes_afetados DEFINITION.
   PUBLIC SECTION.
+    TYPES:
+      gvt_vkorg TYPE char100.
+
     TYPES:
       BEGIN OF gty_comp_material,
         componente TYPE marc-matnr,
         werks      TYPE marc-werks,
         matnr      TYPE mara-matnr,
-        emeng      TYPE stpov-emeng,
+        emeng      TYPE p LENGTH 16 DECIMALS 3, "stpov-emeng,
       END OF gty_comp_material,
       gtt_comp_material TYPE SORTED TABLE OF gty_comp_material WITH UNIQUE KEY componente werks matnr,
 *      gtt_comp_material TYPE STANDARD TABLE OF gty_comp_material,
 
       BEGIN OF gty_vinculo_tabelas,
-        matnr TYPE mara-matnr,
+        matnr      TYPE mara-matnr,
+        vkorg_list TYPE gvt_vkorg,
       END OF gty_vinculo_tabelas,
       gtt_vinculo_tabelas TYPE SORTED TABLE OF gty_vinculo_tabelas WITH UNIQUE KEY matnr,
 
       BEGIN OF gty_a930,
-        matnr TYPE mara-matnr,
-        kunnr TYPE a930-kunnr,
+        matnr      TYPE mara-matnr,
+        kunnr      TYPE a930-kunnr,
+        vkorg_list TYPE gvt_vkorg,
       END OF gty_a930,
       gtt_a930 TYPE SORTED TABLE OF gty_a930 WITH UNIQUE KEY matnr,
 
@@ -93,6 +106,7 @@ CLASS zcl_clientes_afetados DEFINITION.
         chaves          TYPE text60,
         kunnr           TYPE kna1-kunnr,
         nome            TYPE text100,
+        vkorg_list      TYPE gvt_vkorg,
       END OF gty_alv.
 
     TYPES:
@@ -114,6 +128,7 @@ CLASS zcl_clientes_afetados DEFINITION.
           !ir_vtweg  TYPE tr_vtweg  OPTIONAL
           !ir_spart  TYPE tr_spart  OPTIONAL
           !ir_kunnr  TYPE tr_kunnr  OPTIONAL
+          !iv_layout TYPE disvariant-variant OPTIONAL
         RAISING
           cx_idm_error ,
 
@@ -154,7 +169,8 @@ CLASS zcl_clientes_afetados DEFINITION.
     DATA:
       gv_vtweg_requerido TYPE flag VALUE abap_false,
       gv_spart_requerido TYPE flag VALUE abap_false,
-      gv_rfc_cs15_conc   TYPE flag.
+      gv_rfc_cs15_conc   TYPE flag,
+      gv_layout          TYPE disvariant-variant.
 
     METHODS:
       selecionar_dados
@@ -234,6 +250,7 @@ START-OF-SELECTION.
           ir_vtweg  = s_vtweg[]
           ir_spart  = s_spart[]
           ir_kunnr  = s_kunnr[]
+          iv_layout = p_layout
       ).
 
       go_clientes_afetados->processar( ).
@@ -258,6 +275,7 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
     me->gr_vtweg  = ir_vtweg  .
     me->gr_spart  = ir_spart  .
     me->gr_kunnr  = ir_kunnr  .
+    me->gv_layout = iv_layout  .
 
     IF me->gr_vtweg[] IS NOT INITIAL.
       me->gv_vtweg_requerido = abap_true.
@@ -390,7 +408,7 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
   METHOD buscar_material_util_submit.
 
     DATA:
-      lv_emeng_c       TYPE qfltp-sollwert,
+      lv_emeng_p       TYPE p LENGTH 16 DECIMALS 3,
       lw_comp_material LIKE LINE OF me->gt_comp_material.
 
     me->gv_rfc_cs15_conc = abap_false.
@@ -408,27 +426,30 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
     DELETE me->gt_stpov_alv WHERE level = 0.
 
     LOOP AT me->gt_stpov_alv ASSIGNING FIELD-SYMBOL(<fl_stpov_alv>).
-      CLEAR: lw_comp_material, lv_emeng_c.
+      CLEAR: lw_comp_material, lv_emeng_p.
 
       CHECK <fl_stpov_alv>-matnr IN me->gr_matnrv.
 
-      lw_comp_material = VALUE #(
-        componente = iv_componente_pai
-        werks      = iv_werks
-        matnr      = <fl_stpov_alv>-matnr
-      ).
+      lv_emeng_p =  replace(  val = <fl_stpov_alv>-dimng occ = 0 regex = '\,' with = '.' ).
 
-      lv_emeng_c = <fl_stpov_alv>-dimng.
+      READ TABLE me->gt_comp_material WITH KEY componente = iv_componente_pai werks = iv_werks matnr = <fl_stpov_alv>-matnr BINARY SEARCH
+        ASSIGNING FIELD-SYMBOL(<fl_comp_material>) .
+      IF sy-subrc = 0 AND <fl_comp_material> IS ASSIGNED .
 
-      CALL FUNCTION 'QSS0_CHAR_FLTP_CONVERSION'
-        EXPORTING
-*         I_CHAR_FIELD_NAME  = ' '
-          i_character_string = lv_emeng_c
-          i_number_of_digits = 3
-        IMPORTING
-          e_fltp_value       = lw_comp_material-emeng.
+        ADD lv_emeng_p TO <fl_comp_material>-emeng.
 
-      INSERT lw_comp_material INTO TABLE me->gt_comp_material.
+      ELSE.
+
+        lw_comp_material = VALUE #(
+          componente = iv_componente_pai
+          werks      = iv_werks
+          matnr      = <fl_stpov_alv>-matnr
+          emeng      = lv_emeng_p
+        ).
+
+        INSERT lw_comp_material INTO TABLE me->gt_comp_material.
+
+      ENDIF.
 
     ENDLOOP.
 
@@ -463,109 +484,206 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
   ENDMETHOD . " BUSCAR_DADOS_VK13
 
   METHOD check_a930.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT SINGLE matnr, a930~kunnr
+    SELECT matnr, a930~kunnr, vkorg
       FROM a930
       INNER JOIN konp ON konp~knumh = a930~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND a930~kunnr IN @me->gr_kunnr
         AND matnr = @iv_matnr
         AND datbi GE @sy-datum
-    INTO @DATA(ls_a930).
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr kunnr = ls_a930-kunnr ) INTO TABLE me->gt_a930.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr kunnr = lw_ayyy-kunnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a930.
 
   ENDMETHOD . " CHECK_A930
 
   METHOD check_a932.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a932
       INNER JOIN konp ON konp~knumh = a932~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a932.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a932.
 
   ENDMETHOD . " CHECK_A932
 
   METHOD check_a933.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a933
       INNER JOIN konp ON konp~knumh = a933~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a933.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a933.
 
   ENDMETHOD . " CHECK_A933
 
   METHOD check_a949.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a949
       INNER JOIN konp ON konp~knumh = a949~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a949.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a949.
 
   ENDMETHOD . " CHECK_A949
 
   METHOD check_a954.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a954
       INNER JOIN konp ON konp~knumh = a954~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a954.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a954.
 
   ENDMETHOD . " CHECK_A954
 
   METHOD check_a955.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a955
       INNER JOIN konp ON konp~knumh = a955~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a955.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a955.
 
   ENDMETHOD . " CHECK_A955
 
   METHOD check_a972.
+    DATA:
+      lv_vkorg TYPE gvt_vkorg.
 
-    SELECT COUNT( * )
+    SELECT matnr, vkorg
       FROM a972
       INNER JOIN konp ON konp~knumh = a972~knumh AND loevm_ko = @space
       WHERE vkorg IN @me->gr_vkorg
         AND matnr = @iv_matnr
-        AND datbi GE @sy-datum .
+        AND datbi GE @sy-datum
+    INTO TABLE @DATA(lt_ayyy).
 
     CHECK sy-subrc = 0.
 
-    INSERT VALUE #( matnr = iv_matnr ) INTO TABLE me->gt_a972.
+    SORT lt_ayyy BY vkorg.
+    DELETE ADJACENT DUPLICATES FROM lt_ayyy COMPARING vkorg.
+
+    LOOP AT lt_ayyy INTO DATA(lw_ayyy).
+      IF sy-tabix = 1.
+        lv_vkorg = lw_ayyy-vkorg.
+      ELSE.
+        lv_vkorg = |{ lv_vkorg } / { lw_ayyy-vkorg }|.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT VALUE #( matnr = iv_matnr vkorg_list = lv_vkorg ) INTO TABLE me->gt_a972.
 
   ENDMETHOD . " CHECK_A972
 
@@ -674,19 +792,10 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
           THEN me->gt_makt[ matnr = <fl_comp>-matnr ]-maktx
           ELSE space )
         werks           = <fl_comp>-werks
+        emeng           = <fl_comp>-emeng
       ).
 
-      lv_emeng_f = <fl_comp>-emeng.
-      CALL FUNCTION 'QSS0_FLTP_TO_CHAR_CONVERSION'
-        EXPORTING
-          i_number_of_digits = 3
-          i_fltp_value       = lv_emeng_f
-        IMPORTING
-          e_char_field       = lv_emeng_c.
-
-      lw_alv-emeng = replace( val = lv_emeng_c regex = '\,' with = '.' occ = 0 ).
-
-      READ TABLE gt_a930 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a930) BINARY SEARCH .
+      READ TABLE me->gt_a930 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a930) BINARY SEARCH .
       IF sy-subrc = 0.
 
 *       " Verifica se o Setor de Atividade foi preenchido no filtro. Se sim, só irá carregar os clientes vinculados .
@@ -699,6 +808,7 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
         lw_alv-kunnr = lw_a930-kunnr.
         lw_alv-nome = |{ lw_kna1-name1 } { lw_kna1-name2 }|.
         lw_alv-chaves = 'Org.vendas/Grp.preço/Cliente/Material'.
+        lw_alv-vkorg_list = lw_a930-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
 
         CLEAR: lw_a930, lw_kna1.
@@ -709,41 +819,49 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
 
       CLEAR: lw_alv-kunnr, lw_alv-nome.
 
-      READ TABLE gt_a932 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a932 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a932) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/Grp.preço/País/Material'.
+        lw_alv-vkorg_list = lw_a932-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
 
-      READ TABLE gt_a933 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a933 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a933) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/Grp.preço/Material'.
+        lw_alv-vkorg_list = lw_a933-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
 
-      READ TABLE gt_a949 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a949 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a949) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./Eq.vendas/País/Material'.
+        lw_alv-vkorg_list = lw_a949-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
 
-      READ TABLE gt_a954 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a954 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a954) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./Material'.
+        lw_alv-vkorg_list = lw_a954-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
 
-      READ TABLE gt_a955 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a955 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a955) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/Grp.preço/Rm. Atvd./País/Material'.
+        lw_alv-vkorg_list = lw_a955-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
 
-      READ TABLE gt_a972 WITH KEY matnr = <fl_comp>-matnr TRANSPORTING NO FIELDS BINARY SEARCH .
+      READ TABLE me->gt_a972 WITH KEY matnr = <fl_comp>-matnr INTO DATA(lw_a972) BINARY SEARCH .
       IF sy-subrc = 0.
         lw_alv-chaves = 'Org.vendas/TpDocVend./Material'.
+        lw_alv-vkorg_list = lw_a972-vkorg_list.
         APPEND lw_alv TO me->gt_alv .
       ENDIF.
+
+      CLEAR: lw_a932, lw_a933, lw_a949, lw_a954, lw_a955, lw_a972.
 
     ENDLOOP.
 
@@ -774,6 +892,16 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
         CATCH cx_salv_not_found .
         CATCH cx_salv_data_error .
       ENDTRY.
+
+*     " Ajusta o LAYOUT de acordo com o selecionado.
+      DATA lw_key TYPE salv_s_layout_key.
+      DATA(lo_layout) = lo_salv_table->get_layout( ).
+      lw_key-report = sy-repid.
+
+      lo_layout->set_key( lw_key ).
+      lo_layout->set_initial_layout( me->gv_layout ).
+      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+      lo_layout->set_default( if_salv_c_bool_sap=>true ).
 
       DATA(lo_events) = lo_salv_table->get_event( ).
 
@@ -853,6 +981,9 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
           dfcat_texto <fl_fcat> 'ChavesVig' 'Chaves preço vigente' 'Combinação chaves lista de preço vigente' 40.
         WHEN 'NOME'.
           dfcat_texto <fl_fcat> 'Nome' 'Nome do Cliente' 'Nome do Cliente' 40.
+        WHEN 'VKORG_LIST'.
+          dfcat_texto <fl_fcat> 'Org.vendas' 'Organização vendas' 'Organização vendas' 40.
+
         WHEN OTHERS.
           CONTINUE.
       ENDCASE.
@@ -862,3 +993,39 @@ CLASS zcl_clientes_afetados IMPLEMENTATION.
   ENDMETHOD. " GENERATE_FIELDCAT
 
 ENDCLASS .
+
+*&---------------------------------------------------------------------*
+*&      Form  f4_layouts
+*&---------------------------------------------------------------------*
+FORM f4_layouts CHANGING c_layout TYPE disvariant-variant.
+
+  DATA: ls_layout TYPE salv_s_layout_info,
+        ls_key    TYPE salv_s_layout_key.
+
+  ls_key-report = sy-repid.
+
+  ls_layout = cl_salv_layout_service=>f4_layouts(
+    s_key    = ls_key
+    restrict = if_salv_c_layout=>restrict_user_dependant ).
+
+  c_layout = ls_layout-layout.
+
+ENDFORM.                    " f4_layouts
+
+*&---------------------------------------------------------------------*
+*&      Form  get_default_layout
+*&---------------------------------------------------------------------*
+FORM get_default_layout CHANGING c_layout TYPE disvariant-variant.
+
+  DATA: ls_layout TYPE salv_s_layout_info,
+        ls_key    TYPE salv_s_layout_key.
+
+  ls_key-report = sy-repid.
+
+  ls_layout = cl_salv_layout_service=>get_default_layout(
+    s_key    = ls_key
+    restrict = if_salv_c_layout=>restrict_user_dependant ).
+
+  c_layout = ls_layout-layout.
+
+ENDFORM.                    " get_default_layout
