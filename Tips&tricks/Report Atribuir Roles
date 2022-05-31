@@ -1,0 +1,40 @@
+PARAMETERS: p_uname TYPE sy-uname OBLIGATORY,
+            p_role  TYPE bapiagr-agr_name DEFAULT 'FI_ALL'.
+
+DATA: ld_uname      TYPE sy-uname,
+      it_return     TYPE STANDARD TABLE OF bapiret2,
+      wa_return     LIKE LINE OF it_return,
+      it_ag         TYPE STANDARD TABLE OF bapiagr,
+      wa_ag         LIKE LINE OF it_ag,
+      wa_logondata  TYPE bapilogond,
+      wa_logondatax TYPE bapilogonx.
+
+START-OF-SELECTION.
+
+*Get current list of roles assigned to user
+  CALL FUNCTION 'BAPI_USER_GET_DETAIL'
+    EXPORTING
+      username       = p_uname
+    IMPORTING
+      logondata      = wa_logondata
+    TABLES
+      activitygroups = it_ag
+      return         = it_return.
+
+* Add role to it_ag table
+  wa_ag-agr_name = p_role.
+  wa_ag-from_dat = sy-datum.
+  wa_ag-to_dat   = sy-datum.
+  APPEND wa_ag TO it_ag.
+
+* Write list of roles back to user, including new one
+  CALL FUNCTION 'BAPI_USER_ACTGROUPS_ASSIGN'
+    EXPORTING
+      username       = p_uname
+    TABLES
+      activitygroups = it_ag
+      return         = it_return.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
