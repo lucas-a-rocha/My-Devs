@@ -66,6 +66,8 @@
         lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
         lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
         lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
       ENDIF.
 
     ENDLOOP.
@@ -103,7 +105,11 @@
         ct_fieldcat = rt_fieldcat.
 
     LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
       CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' .
+          DELETE rt_fieldcat INDEX lv_tabix.
         WHEN 'FDGRV_OLD'.
           dfcat_texto <fl_fcat> 'OldPlanGrp' 'Old Planning Group' 'Old Planning Group' 10.
         WHEN 'FDGRV_NEW'.
