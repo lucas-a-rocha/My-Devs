@@ -1,0 +1,78 @@
+
+FORM check_and_resize_tablecontrol.
+* " Evento Hora 19
+  CALL FUNCTION 'ZF_RESIZE_TABLE_CTRL'
+    EXPORTING
+      iv_table     = 'ZVBPP_LD_CARACCP'
+      iv_maint_fg  = 'ZVBPP_LD_CARACCP'
+      iv_dynpro_no = '9001'
+      iv_width     = 180.
+
+ENDFORM.
+
+FUNCTION zf_resize_table_ctrl.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(IV_TABLE) TYPE  STRING
+*"     REFERENCE(IV_MAINT_FG) TYPE  STRING
+*"     REFERENCE(IV_DYNPRO_NO) TYPE  STRING
+*"     REFERENCE(IV_WIDTH) TYPE  I
+*"----------------------------------------------------------------------
+
+  CHECK iv_width <= 255.
+
+  DATA:
+    BEGIN OF gs_dynpro_descr,
+      prog   TYPE progname,
+      dynpro TYPE char4,
+    END OF gs_dynpro_descr.
+
+  DATA:
+    lv_fnam TYPE d021s-fnam,
+    h       TYPE d020s,
+    ls_f    TYPE d021s,
+    f       TYPE d021s OCCURS 0 WITH HEADER LINE,
+    e       TYPE d022s OCCURS 0 WITH HEADER LINE,
+    m       TYPE d023s OCCURS 0 WITH HEADER LINE.
+
+  DATA:
+    m1 TYPE string,
+    l1 TYPE string,
+    w1 TYPE string.
+
+  CONCATENATE 'SAPL' iv_maint_fg INTO gs_dynpro_descr-prog.
+  gs_dynpro_descr-dynpro = iv_dynpro_no.
+  CONCATENATE 'TCTRL_' iv_table INTO lv_fnam.
+
+  IMPORT DYNPRO h f e m ID gs_dynpro_descr.
+
+  READ TABLE f INTO ls_f WITH KEY fnam = lv_fnam.
+  CHECK sy-subrc = 0.
+
+  CHECK h-noco < iv_width.
+
+  h-noco = iv_width.
+
+* convert to hexa
+  DATA: lv_crmt_ei_kb_id TYPE crmt_ei_kb_id.
+
+  lv_crmt_ei_kb_id = iv_width - 2.
+  CALL FUNCTION 'CRM_EI_KB_CONV_DEC_TO_HEX'
+    EXPORTING
+      iv_decimal = lv_crmt_ei_kb_id
+    IMPORTING
+      ev_hex     = lv_crmt_ei_kb_id.
+
+  CHECK NOT lv_crmt_ei_kb_id+30(2) IS INITIAL.
+
+  ls_f-leng = lv_crmt_ei_kb_id+30(2). " '9B'. " 155 em hexa
+
+  MODIFY f FROM ls_f INDEX sy-tabix TRANSPORTING leng.
+  CHECK sy-subrc = 0.
+
+  EXPORT DYNPRO h f e m ID gs_dynpro_descr.
+
+  GENERATE DYNPRO h f e m ID gs_dynpro_descr MESSAGE m1 LINE l1 WORD w1.
+
+ENDFUNCTION.
