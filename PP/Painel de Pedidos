@@ -35,9 +35,15 @@ SELECT-OPTIONS: s_proj   FOR prps-psphi,                          " Projeto
                 s_dtfeng FOR zkwtpp001-z_dt_fim_eng NO-EXTENSION, " Data Fim Configurável PED
                 s_stped  FOR zkwtpp002-z_status_ped NO-EXTENSION, " Status PED
                 s_codseq FOR zkwtps011-zzcodseq MATCHCODE OBJECT zzseq NO-EXTENSION, " Código Sequência
-                s_werbro FOR marc-werks.                          "Centro BRO
+                s_werbro FOR marc-werks.                          " Centro BRO
 
 SELECTION-SCREEN END OF BLOCK bl1.
+
+SELECTION-SCREEN BEGIN OF BLOCK bl4 WITH FRAME TITLE TEXT-t04.
+PARAMETERS :
+  p_layout TYPE disvariant-variant,
+  p_laybro TYPE disvariant-variant.
+SELECTION-SCREEN END OF BLOCK bl4.
 
 SELECTION-SCREEN BEGIN OF BLOCK bl2 WITH FRAME TITLE TEXT-t02.
 PARAMETERS :
@@ -51,6 +57,16 @@ PARAMETERS:
   p_refsh TYPE numc4.
 
 SELECTION-SCREEN END OF BLOCK bl3.
+
+INITIALIZATION.
+  PERFORM get_default_layout USING cl_salv_layout=>restrict_none 'TOP' CHANGING p_layout.
+  PERFORM get_default_layout USING cl_salv_layout=>restrict_none 'BOT' CHANGING p_laybro.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_layout.
+  PERFORM f4_layouts USING cl_salv_layout=>restrict_none 'TOP' CHANGING p_layout.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_laybro.
+  PERFORM f4_layouts USING cl_salv_layout=>restrict_none 'BOT' CHANGING p_laybro.
 
 **********************************************************************
 * Definição da Classe
@@ -127,6 +143,13 @@ CLASS lcl_relatorio DEFINITION .
         pspel TYPE aufk-pspel,
       END OF gty_aufk,
 
+      BEGIN OF gty_vbfa,
+        vbelv   TYPE vbfa-vbelv,
+        vbeln   TYPE vbfa-vbeln,
+        vbtyp_n TYPE vbfa-vbtyp_n,
+        vbtyp_v TYPE vbfa-vbtyp_v,
+      END OF gty_vbfa,
+
       BEGIN OF gty_prte,
          posnr TYPE prte-posnr,
          pstrt TYPE prte-pstrt,
@@ -194,19 +217,23 @@ CLASS lcl_relatorio DEFINITION .
         ntgew        TYPE vbap-ntgew,
         audat        TYPE vbak-audat,
         maktx        TYPE makt-maktx,
+        vbeln_cot    TYPE vbap-vbeln,
       END OF gty_alv_sintetico,
 
       gtt_alv_sintetico TYPE STANDARD TABLE OF gty_alv_sintetico WITH EMPTY KEY,
 
       BEGIN OF gty_alv_bro,
-        matnr_bro   TYPE mara-matnr,
-        werks_bro   TYPE /hks/bt_aw_wfcth-werks,
-        maktx_bro   TYPE makt-maktx,
-        status_bro  TYPE /hks/bt_aw_wfcth-status,
-        wflow_start TYPE /hks/bt_aw_wfcth-wflow_start,
-        matkl_bro   TYPE mara-matkl,
-        busarea_bro TYPE /hks/bt_aw_wfcti-busarea,
-        ktext_bro   TYPE /hks/bt_aw_bsart-ktext,
+        matnr_bro      TYPE mara-matnr,
+        werks_bro      TYPE /hks/bt_aw_wfcth-werks,
+        maktx_bro      TYPE makt-maktx,
+        status_bro     TYPE /hks/bt_aw_wfcth-status,
+        wflow_start    TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflowi_start   TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflowi_end     TYPE string, " /hks/bt_aw_wfcth-wflow_end,
+        wflowi_end_sla TYPE string, " /hks/bt_aw_wfcth-wflow_end_sla,
+        matkl_bro      TYPE mara-matkl,
+        busarea_bro    TYPE /hks/bt_aw_wfcti-busarea,
+        ktext_bro      TYPE /hks/bt_aw_bsart-ktext,
       END OF gty_alv_bro,
 
       gtt_alv_bro TYPE STANDARD TABLE OF gty_alv_bro WITH EMPTY KEY,
@@ -235,23 +262,28 @@ CLASS lcl_relatorio DEFINITION .
       gtr_codseq  TYPE RANGE OF zkwtps011-zzcodseq,
       gtr_bstkd   TYPE RANGE OF vbkd-bstkd,
       gtr_vtweg   TYPE RANGE OF vbpk-vtweg,
-      gtv_refresh TYPE numc4.
+      gtr_werks   TYPE RANGE OF marc-werks,
+      gtv_refresh TYPE numc4,
+      gtv_layout  TYPE disvariant-variant.
 
     METHODS:
       constructor
         IMPORTING
-          !iv_tipo    TYPE char1
-          !iv_refresh TYPE gtv_refresh
-          !ir_proj    TYPE gtr_psphi
-          !ir_zcot    TYPE gtr_vbeln
-          !ir_ovzv    TYPE gtr_vbeln
-          !ir_bstkd   TYPE gtr_bstkd
-          !ir_ovzr    TYPE gtr_vbeln
-          !ir_vtweg   TYPE gtr_vtweg
-          !ir_dtfesp  TYPE gtr_dats
-          !ir_dtfeng  TYPE gtr_dats
-          !ir_stped   TYPE gtr_stped
-          !ir_codseq  TYPE gtr_codseq
+          !iv_tipo      TYPE char1
+          !iv_refresh   TYPE gtv_refresh
+          !iv_layout    TYPE gtv_layout
+          !iv_laybro    TYPE gtv_layout
+          !ir_proj      TYPE gtr_psphi
+          !ir_zcot      TYPE gtr_vbeln
+          !ir_ovzv      TYPE gtr_vbeln
+          !ir_bstkd     TYPE gtr_bstkd
+          !ir_ovzr      TYPE gtr_vbeln
+          !ir_vtweg     TYPE gtr_vtweg
+          !ir_dtfesp    TYPE gtr_dats
+          !ir_dtfeng    TYPE gtr_dats
+          !ir_stped     TYPE gtr_stped
+          !ir_codseq    TYPE gtr_codseq
+          !ir_werks_bro TYPE gtr_werks
         RAISING
           cx_idm_error,
 
@@ -277,16 +309,17 @@ CLASS lcl_relatorio DEFINITION .
 
   PRIVATE SECTION.
     DATA:
-      gr_proj   TYPE gtr_psphi,
-      gr_zcot   TYPE gtr_vbeln,
-      gr_ovzv   TYPE gtr_vbeln,
-      gr_bstkd  TYPE gtr_bstkd,
-      gr_ovzr   TYPE gtr_vbeln,
-      gr_vtweg  TYPE gtr_vtweg,
-      gr_dtfesp TYPE gtr_dats,
-      gr_dtfeng TYPE gtr_dats,
-      gr_stped  TYPE gtr_stped,
-      gr_codseq TYPE gtr_codseq.
+      gr_proj      TYPE gtr_psphi,
+      gr_zcot      TYPE gtr_vbeln,
+      gr_ovzv      TYPE gtr_vbeln,
+      gr_bstkd     TYPE gtr_bstkd,
+      gr_ovzr      TYPE gtr_vbeln,
+      gr_vtweg     TYPE gtr_vtweg,
+      gr_dtfesp    TYPE gtr_dats,
+      gr_dtfeng    TYPE gtr_dats,
+      gr_stped     TYPE gtr_stped,
+      gr_codseq    TYPE gtr_codseq,
+      gr_werks_bro TYPE gtr_werks.
 
     DATA:
       gt_alv_sintetico TYPE gtt_alv_sintetico,
@@ -296,6 +329,7 @@ CLASS lcl_relatorio DEFINITION .
       gt_vbap          TYPE STANDARD TABLE OF gty_vbap,
       gt_aufk          TYPE STANDARD TABLE OF gty_aufk,
       gt_prte          TYPE STANDARD TABLE OF gty_prte,
+      gt_vbfa_cot      TYPE STANDARD TABLE OF gty_vbfa,
       gt_vbap_comp     TYPE STANDARD TABLE OF gty_vbap_comp,
       gt_zkwtpp001     TYPE STANDARD TABLE OF gty_zkwtpp001,
       gt_zkwtpp002     TYPE STANDARD TABLE OF gty_zkwtpp002,
@@ -304,7 +338,11 @@ CLASS lcl_relatorio DEFINITION .
 
     DATA:
       gv_tipo_rel     TYPE char1,
-      gv_refresh_time TYPE gtv_refresh.
+      gv_refresh_time TYPE gtv_refresh,
+      gv_vbeln_bro    TYPE ztbpp_ld_log_ped-vbeln,
+      gv_posnr_bro    TYPE ztbpp_ld_log_ped-posnr,
+      gv_layout       TYPE gtv_layout,
+      gv_laybro       TYPE gtv_layout.
 
     DATA:
       go_container TYPE REF TO cl_gui_container,
@@ -336,6 +374,12 @@ CLASS lcl_relatorio DEFINITION .
       gerar_dados_alv_analitico
         RAISING
           cx_idm_error,
+
+      converter_data_bro
+        IMPORTING
+          !iv_data_n            TYPE /hks/bt_aw_wfcth-wflow_end
+        RETURNING
+          VALUE(rv_data_string) TYPE string,
 
       exibir_popup_log_ped
         IMPORTING
@@ -394,7 +438,7 @@ CLASS lcl_relatorio DEFINITION .
 
       criar_temporizador,
 
-      atualizar_alv_top.
+      atualizar_alv_top .
 
 ENDCLASS.
 
@@ -403,18 +447,21 @@ START-OF-SELECTION.
   TRY.
 
       DATA(go_relatorio) = NEW lcl_relatorio(
-        iv_tipo     = COND #( WHEN p_sintet = abap_true THEN lcl_relatorio=>gc_sintetico ELSE lcl_relatorio=>gc_analitico )
-        iv_refresh  = p_refsh
-        ir_proj     = s_proj[]
-        ir_zcot     = s_zcot[]
-        ir_ovzv     = s_ovzv[]
-        ir_bstkd    = s_bstkd[]
-        ir_ovzr     = s_ovzr[]
-        ir_vtweg    = s_vtweg[]
-        ir_dtfesp   = s_dtfesp[]
-        ir_dtfeng   = s_dtfeng[]
-        ir_stped    = s_stped[]
-        ir_codseq   = s_codseq[]
+        iv_tipo       = COND #( WHEN p_sintet = abap_true THEN lcl_relatorio=>gc_sintetico ELSE lcl_relatorio=>gc_analitico )
+        iv_refresh    = p_refsh
+        iv_layout     = p_layout
+        iv_laybro     = p_laybro
+        ir_proj       = s_proj[]
+        ir_zcot       = s_zcot[]
+        ir_ovzv       = s_ovzv[]
+        ir_bstkd      = s_bstkd[]
+        ir_ovzr       = s_ovzr[]
+        ir_vtweg      = s_vtweg[]
+        ir_dtfesp     = s_dtfesp[]
+        ir_dtfeng     = s_dtfeng[]
+        ir_stped      = s_stped[]
+        ir_codseq     = s_codseq[]
+        ir_werks_bro  = s_werbro[]
       ) .
 
       go_relatorio->processar_report( ).
@@ -435,6 +482,8 @@ CLASS lcl_relatorio IMPLEMENTATION.
   METHOD constructor.
     me->gv_tipo_rel     = iv_tipo .
     me->gv_refresh_time = iv_refresh .
+    me->gv_layout       = iv_layout .
+    me->gv_laybro       = iv_laybro .
     me->gr_proj         = ir_proj  .
     me->gr_zcot         = ir_zcot  .
     me->gr_ovzv         = ir_ovzv  .
@@ -445,6 +494,7 @@ CLASS lcl_relatorio IMPLEMENTATION.
     me->gr_dtfeng       = ir_dtfeng.
     me->gr_stped        = ir_stped .
     me->gr_codseq       = ir_codseq.
+    me->gr_werks_bro    = ir_werks_bro.
   ENDMETHOD. " CONSTRUCTOR
 
   METHOD processar_report.
@@ -593,6 +643,8 @@ CLASS lcl_relatorio IMPLEMENTATION.
        me->gr_ovzv[]    IS INITIAL AND
        me->gr_ovzr[]    IS INITIAL AND
        me->gr_zcot[]    IS INITIAL AND
+       me->gr_bstkd[]   IS INITIAL AND
+       me->gr_vtweg[]   IS INITIAL AND
        me->gr_dtfeng[]  IS INITIAL AND
        me->gr_dtfesp[]  IS INITIAL.
 
@@ -671,11 +723,11 @@ CLASS lcl_relatorio IMPLEMENTATION.
              vbak~vkbur, tvkbt~bezei, vbak~bstnk, kna1~name1, vbap~zzmodelo, vbap~ntgew,
              vbak~audat, vbak~auart, makt~maktx, vbap~cuobj, vbap~werks
         FROM vbap
-        INNER JOIN vbak   ON vbap~vbeln = vbak~vbeln
-        INNER JOIN makt   ON makt~matnr = vbap~matnr
-        INNER JOIN kna1   ON vbak~kunnr = kna1~kunnr
-        INNER JOIN tvtwt  ON vbak~vtweg = tvtwt~vtweg
-        INNER JOIN tvkbt  ON vbak~vkbur = tvkbt~vkbur
+        INNER JOIN vbak  ON vbap~vbeln = vbak~vbeln
+        INNER JOIN makt  ON makt~matnr = vbap~matnr
+        INNER JOIN kna1  ON vbak~kunnr = kna1~kunnr
+        INNER JOIN tvtwt ON vbak~vtweg = tvtwt~vtweg
+        INNER JOIN tvkbt ON vbak~vkbur = tvkbt~vkbur
         FOR ALL ENTRIES IN @lt_vbeln_key
         WHERE vbap~vbeln  = @lt_vbeln_key-table_line
           AND vbap~zieme  = 'KE'
@@ -725,6 +777,21 @@ CLASS lcl_relatorio IMPLEMENTATION.
         WHERE vbeln = @me->gt_vbap-vbeln
           AND posnr = @me->gt_vbap-posnr
       INTO TABLE @me->gt_ld_log_ped.
+    ENDIF.
+
+    IF me->gt_prps[] IS NOT INITIAL.
+      FREE lt_vbeln_key.
+      lt_vbeln_key = VALUE #( FOR lw_prps_for IN me->gt_prps ( CONV #( lw_prps_for-usr00 ) ) ).
+
+      SORT lt_vbeln_key.
+      DELETE ADJACENT DUPLICATES FROM lt_vbeln_key COMPARING ALL FIELDS.
+
+      SELECT vbelv, vbeln, vbtyp_n, vbtyp_v
+        FROM vbfa
+        FOR ALL ENTRIES IN @lt_vbeln_key
+        WHERE vbeln = @lt_vbeln_key-table_line
+          AND vbtyp_v = 'B'
+      INTO TABLE @me->gt_vbfa_cot.
     ENDIF.
 
   ENDMETHOD. " SELECIONAR_DADOS_VENDAS
@@ -860,6 +927,11 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
       ENDIF.
 
+      READ TABLE me->gt_vbfa_cot WITH KEY vbeln = lw_prps-usr00 INTO DATA(lw_vbfa_cot).
+      IF sy-subrc = 0.
+        lw_alv-vbeln_cot  = lw_vbfa_cot-vbelv.
+      ENDIF.
+
       CALL FUNCTION 'CONVERSION_EXIT_ABPSP_INPUT'
         EXPORTING
           input  = lw_prps-posid
@@ -931,7 +1003,7 @@ CLASS lcl_relatorio IMPLEMENTATION.
         CLEAR lw_zkwtps005_aux.
       ENDLOOP.
 
-      CLEAR: lw_vbap, lw_zkwtpp002, lw_zkwtpp001, lw_aufk, lw_prte.
+      CLEAR: lw_vbap, lw_zkwtpp002, lw_zkwtpp001, lw_aufk, lw_prte, lw_vbfa_cot.
 
     ENDLOOP.
 
@@ -967,13 +1039,16 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
       IF lt_dados_bro IS NOT INITIAL.
         LOOP AT lt_dados_bro INTO DATA(lw_dados_bro).
-          lw_alv-matnr_bro   = lw_dados_bro-matnr_bro  .
-          lw_alv-maktx_bro   = lw_dados_bro-maktx_bro  .
-          lw_alv-status_bro  = lw_dados_bro-status_bro .
-          lw_alv-wflow_start = lw_dados_bro-wflow_start.
-          lw_alv-matkl_bro   = lw_dados_bro-matkl_bro  .
-          lw_alv-busarea_bro = lw_dados_bro-busarea_bro.
-          lw_alv-ktext_bro   = lw_dados_bro-ktext_bro  .
+          lw_alv-matnr_bro      = lw_dados_bro-matnr_bro  .
+          lw_alv-maktx_bro      = lw_dados_bro-maktx_bro  .
+          lw_alv-status_bro     = lw_dados_bro-status_bro .
+          lw_alv-wflow_start    = lw_dados_bro-wflow_start.
+          lw_alv-wflowi_start   = lw_dados_bro-wflowi_start.
+          lw_alv-wflowi_end     = lw_dados_bro-wflowi_end.
+          lw_alv-wflowi_end_sla = lw_dados_bro-wflowi_end_sla.
+          lw_alv-matkl_bro      = lw_dados_bro-matkl_bro  .
+          lw_alv-busarea_bro    = lw_dados_bro-busarea_bro.
+          lw_alv-ktext_bro      = lw_dados_bro-ktext_bro  .
 
           APPEND lw_alv TO me->gt_alv_analitico.
         ENDLOOP.
@@ -986,6 +1061,14 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
     FREE me->gt_alv_sintetico.
   ENDMETHOD. " GERAR_DADOS_ALV_ANALITICO
+
+  METHOD converter_data_bro.
+    CHECK iv_data_n IS NOT INITIAL.
+
+    rv_data_string = |{ iv_data_n+6(2) }.{ iv_data_n+4(2) }.{ iv_data_n(4) }| &&
+                     | { iv_data_n+8(2) }:{ iv_data_n+10(2) }|.
+
+  ENDMETHOD. " CONVERTER_DATA_BRO.
 
   METHOD gerar_alv_relatorio.
 
@@ -1106,10 +1189,11 @@ CLASS lcl_relatorio IMPLEMENTATION.
         handle = 'TOP'
       ).
 
-*      DATA(lo_layout) = me->go_alv_top->get_layout( ).
-*      lo_layout->set_key( value = ls_layout_key ).
-*      lo_layout->set_initial_layout( value = me->gv_layout_top ).
-*      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+      DATA(lo_layout) = me->go_alv_top->get_layout( ).
+      lo_layout->set_key( value = ls_layout_key ).
+      lo_layout->set_initial_layout( value = me->gv_layout ).
+      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_none ).
+      lo_layout->set_default( abap_true ).
 
       me->go_alv_top->display( ).
 
@@ -1134,9 +1218,19 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
     IF me->go_alv_bot IS BOUND.
 
+      TRY .
 *     " Insere todos as funcionalidades existentes no ALV OO.
-      DATA(lo_function) = me->go_alv_bot->get_functions( ).
-      lo_function->set_all( abap_true ).
+          DATA(lo_function) = me->go_alv_bot->get_functions( ).
+          lo_function->set_all( abap_true ).
+
+          lo_function->add_function(
+            name     = '&ZATUBRO'
+            icon     = CONV #( icon_refresh )
+            text     = 'Atualizar'
+            tooltip  = 'Atualizar'
+            position = if_salv_c_function_position=>right_of_salv_functions ).
+        CATCH: cx_salv_existing, cx_salv_wrong_call.
+      ENDTRY.
 
 *     " Ajusta os dados das colunas
       DATA(lo_columns) = me->go_alv_bot->get_columns( ).
@@ -1150,21 +1244,23 @@ CLASS lcl_relatorio IMPLEMENTATION.
         CATCH cx_salv_data_error .
       ENDTRY.
 
-*      DATA(lo_events) = me->go_alv_bot->get_event( ).
+      DATA(lo_events) = me->go_alv_bot->get_event( ).
+      SET HANDLER me->on_user_command FOR lo_events.
 *      SET HANDLER me->on_link_click_bot FOR lo_events.
 
       DATA(lo_display) = me->go_alv_bot->get_display_settings( ).
 *      lo_display->set_list_header( |Registros com Erros| ).
 
-**     " Configurações de layout.
-*      DATA(ls_layout_key) = VALUE salv_s_layout_key(
-*        report = sy-repid
-*        handle = 'BOT'
-*      ).
-*      DATA(lo_layout) = me->go_alv_bot->get_layout( ).
-*      lo_layout->set_key( value = ls_layout_key ).
-*      lo_layout->set_initial_layout( value = me->gv_layout_bot ).
-*      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+*     " Configurações de layout.
+      DATA(ls_layout_key) = VALUE salv_s_layout_key(
+        report = sy-repid
+        handle = 'BOT'
+      ).
+      DATA(lo_layout) = me->go_alv_bot->get_layout( ).
+      lo_layout->set_key( value = ls_layout_key ).
+      lo_layout->set_initial_layout( value = me->gv_laybro ).
+      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_none ).
+      lo_layout->set_default( abap_true ).
 
       me->go_alv_bot->display( ).
 
@@ -1302,13 +1398,21 @@ CLASS lcl_relatorio IMPLEMENTATION.
         WHEN 'STATUS_BRO'.
           dfcat_texto <fl_fcat> 'StMatBRO' 'Status Material BRO' 'Status do Material BRO' <fl_fcat>-outputlen.
         WHEN 'WFLOW_START'.
-          dfcat_texto <fl_fcat> 'DtMatBRO' 'Data Criação Mat BRO' 'Data de Criação do Material BRO' <fl_fcat>-outputlen.
+          dfcat_texto <fl_fcat> 'DtIniSol' 'Data Inicio Solic.' 'Data Inicio Solicitação' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_START'.
+          dfcat_texto <fl_fcat> 'DtIEtBRO' 'Data Inicio Et.BRO' 'Data Inicio da Etapa BRO' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_END'.
+          dfcat_texto <fl_fcat> 'DtFEtBRO' 'Data Final Et. BRO' 'Data Final da Etapa BRO' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_END_SLA'.
+          dfcat_texto <fl_fcat> 'DtSLABRO' 'Data Fim SLA Et.BRO' 'Data Fim SLA Etapa BRO' <fl_fcat>-outputlen.
         WHEN 'MATKL_BRO'.
           dfcat_texto <fl_fcat> 'GrpM.BRO' 'Grupo de Mercadorias BRO' 'Grupo de Mercadorias BRO' <fl_fcat>-outputlen.
         WHEN 'BUSAREA_BRO'.
           dfcat_texto <fl_fcat> 'ÁreaBRO' 'Área Pend. Fluxo BRO' 'Área Pendente no Fluxo do BRO' <fl_fcat>-outputlen.
         WHEN 'KTEXT_BRO'.
           dfcat_texto <fl_fcat> 'DscÁreaBRO' 'Desc.Área Pend.BRO' 'Desc. Área Pendente no Fluxo do BRO' <fl_fcat>-outputlen.
+        WHEN 'VBELN_COT'.
+          dfcat_texto <fl_fcat> 'Cotação' 'Cotação' 'Cotação' <fl_fcat>-outputlen.
         WHEN OTHERS.
           CONTINUE.
       ENDCASE.
@@ -1342,12 +1446,17 @@ CLASS lcl_relatorio IMPLEMENTATION.
   ENDMETHOD. " EXIBIR_POPUP_LOG_PED
 
   METHOD gerar_dados_alv_bro.
+    FREE me->gt_alv_bro.
 
-    me->gt_alv_bro = me->selecionar_dados_bro(
-      EXPORTING
-        iv_vbeln = iv_vbeln
-        iv_posnr = iv_posnr
-    ).
+    IF iv_vbeln IS NOT INITIAL AND iv_posnr IS NOT INITIAL.
+
+      me->gt_alv_bro = me->selecionar_dados_bro(
+        EXPORTING
+          iv_vbeln = iv_vbeln
+          iv_posnr = iv_posnr
+      ).
+
+    ENDIF.
 
     IF me->go_alv_bot IS BOUND.
       me->go_alv_bot->refresh( refresh_mode = if_salv_c_refresh=>full ).
@@ -1381,16 +1490,16 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
     lt_aw_wfcth_key = VALUE #( FOR lw_mara_for IN lt_mara ( objek = lw_mara_for-matnr ) ).
 
-    SELECT wflownmb, objek, status, wflow_start, werks
+    SELECT wflownmb, objek, status, wflow_start, werks, wflow_end, wflow_end_sla
       FROM /hks/bt_aw_wfcth
       FOR ALL ENTRIES IN @lt_aw_wfcth_key
       WHERE objek = @lt_aw_wfcth_key-objek
-        AND werks IN @s_werbro
+        AND werks IN @me->gr_werks_bro
     INTO TABLE @DATA(lt_bt_aw_wfcth).
 
     CHECK lt_bt_aw_wfcth IS NOT INITIAL.
 
-    SELECT wflownmb, sequence, wfcti~objtype, wfcti~busarea, ktext
+    SELECT wflownmb, sequence, wfcti~objtype, wfcti~busarea, ktext, wflow_start, wflow_end, wflow_end_sla
       FROM /hks/bt_aw_wfcti AS wfcti
       INNER JOIN /hks/bt_aw_bsart AS bsart ON bsart~objtype = wfcti~objtype
                                           AND bsart~busarea = wfcti~busarea
@@ -1417,34 +1526,69 @@ CLASS lcl_relatorio IMPLEMENTATION.
       READ TABLE lt_mara WITH KEY matnr = lw_wfcth-objek INTO DATA(lw_mara).
       CHECK sy-subrc = 0.
 
+      READ TABLE lt_bt_aw_wfcti WITH KEY wflownmb = lw_wfcth-wflownmb INTO DATA(lw_wfcti).
+      CHECK sy-subrc = 0.
+
       IF lw_mara-mstae = '02' OR lw_mara-mstae = '03' OR lw_mara-mstae = '04'  OR lw_mara-mstae = '05'.
         APPEND VALUE #(
-          matnr_bro     = lw_mara-matnr
-          werks_bro     = lw_wfcth-werks
-          maktx_bro     = lw_mara-maktx
-          status_bro    = lw_wfcth-status
-          wflow_start   = lw_wfcth-wflow_start
-          matkl_bro     = lw_mara-matkl
-          busarea_bro   = 'OBSOL'
-          ktext_bro     = 'OBSOLETO'
+          matnr_bro       = lw_mara-matnr
+          werks_bro       = lw_wfcth-werks
+          maktx_bro       = lw_mara-maktx
+          status_bro      = lw_wfcth-status
+          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+          wflowi_start    = me->converter_data_bro( iv_data_n = lw_wfcti-wflow_start )
+          wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
+          wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+          matkl_bro       = lw_mara-matkl
+          busarea_bro     = 'OBSOL'
+          ktext_bro       = 'OBSOLETO'
+        ) TO rt_alv_bro.
+      ELSEIF lw_wfcth-status = '009'.
+        APPEND VALUE #(
+          matnr_bro       = lw_mara-matnr
+          werks_bro       = lw_wfcth-werks
+          maktx_bro       = lw_mara-maktx
+          status_bro      = lw_wfcth-status
+          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+          wflowi_start     = me->converter_data_bro( lw_wfcti-wflow_start )
+          wflowi_end       = me->converter_data_bro( lw_wfcti-wflow_end )
+          wflowi_end_sla   = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+          matkl_bro       = lw_mara-matkl
+          busarea_bro     = 'BUFFER'
+          ktext_bro       = 'BUFFER'
         ) TO rt_alv_bro.
       ELSE.
-        READ TABLE lt_bt_aw_wfcti WITH KEY wflownmb = lw_wfcth-wflownmb INTO DATA(lw_wfcti).
-        CHECK sy-subrc = 0.
-
         APPEND VALUE #(
-          matnr_bro     = lw_mara-matnr
-          werks_bro     = lw_wfcth-werks
-          maktx_bro     = lw_mara-maktx
-          status_bro    = lw_wfcth-status
-          wflow_start   = lw_wfcth-wflow_start
-          matkl_bro     = lw_mara-matkl
-          busarea_bro   = lw_wfcti-busarea
-          ktext_bro     = lw_wfcti-ktext
+          matnr_bro       = lw_mara-matnr
+          werks_bro       = lw_wfcth-werks
+          maktx_bro       = lw_mara-maktx
+          status_bro      = lw_wfcth-status
+          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+          wflowi_start    = me->converter_data_bro( lw_wfcti-wflow_start )
+          wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
+          wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+          matkl_bro       = lw_mara-matkl
+          busarea_bro     = lw_wfcti-busarea
+          ktext_bro       = lw_wfcti-ktext
         ) TO rt_alv_bro.
       ENDIF.
 
       CLEAR: lw_mara, lw_wfcth, lw_wfcti.
+    ENDLOOP.
+
+*   " Deve apresentar os materiais que ainda nao foram listados no BRO.
+    LOOP AT lt_mara INTO lw_mara.
+      READ TABLE rt_alv_bro WITH KEY matnr_bro = lw_mara-matnr TRANSPORTING NO FIELDS.
+      CHECK sy-subrc <> 0.
+
+      APPEND VALUE #(
+         matnr_bro     = lw_mara-matnr
+         maktx_bro     = lw_mara-maktx
+         matkl_bro     = lw_mara-matkl
+         busarea_bro   = 'OBSOL'
+         ktext_bro     = 'OBSOLETO'
+      ) TO rt_alv_bro.
+
     ENDLOOP.
 
   ENDMETHOD. " CARREGAR_FLUXO_BRO
@@ -1514,17 +1658,14 @@ CLASS lcl_relatorio IMPLEMENTATION.
   ENDMETHOD. " BUSCAR_MATERIAIS_BOM_EXPL
 
   METHOD on_link_click.
-    DATA:
-      lv_vbeln TYPE ztbpp_ld_log_ped-vbeln,
-      lv_posnr TYPE ztbpp_ld_log_ped-posnr.
 
     CASE me->gv_tipo_rel.
       WHEN gc_analitico.
         READ TABLE me->gt_alv_analitico ASSIGNING FIELD-SYMBOL(<lfs_alv_analitico>) INDEX row.
         CHECK <lfs_alv_analitico> IS ASSIGNED.
 
-        lv_vbeln = <lfs_alv_analitico>-vbeln.
-        lv_posnr = <lfs_alv_analitico>-posnr.
+        DATA(lv_vbeln) = <lfs_alv_analitico>-vbeln.
+        DATA(lv_posnr) = <lfs_alv_analitico>-posnr.
 
       WHEN gc_sintetico.
         READ TABLE me->gt_alv_sintetico ASSIGNING FIELD-SYMBOL(<lfs_alv_sintetico>) INDEX row.
@@ -1558,6 +1699,23 @@ CLASS lcl_relatorio IMPLEMENTATION.
     CASE e_salv_function.
       WHEN '&ZATU'.
         me->atualizar_alv_top( ).
+
+        IF me->go_alv_bot IS BOUND.
+          FREE me->gt_alv_bro.
+          me->go_alv_bot->refresh( EXPORTING refresh_mode = if_salv_c_refresh=>full ).
+
+          WRITE space. " Forçar o aparecimento do ALV.
+          cl_gui_cfw=>flush( ).
+        ENDIF.
+
+      WHEN '&ZATUBRO'.
+
+        me->gerar_dados_alv_bro(
+          EXPORTING
+            iv_vbeln = me->gv_vbeln_bro
+            iv_posnr = me->gv_posnr_bro
+        ).
+
     ENDCASE.
 
   ENDMETHOD. " ON_USER_COMMAND
@@ -1567,10 +1725,13 @@ CLASS lcl_relatorio IMPLEMENTATION.
     READ TABLE me->gt_alv_sintetico ASSIGNING FIELD-SYMBOL(<lfs_alv_sintetico>) INDEX row.
     CHECK <lfs_alv_sintetico> IS ASSIGNED.
 
+    me->gv_vbeln_bro = <lfs_alv_sintetico>-vbeln.
+    me->gv_posnr_bro = <lfs_alv_sintetico>-posnr.
+
     me->gerar_dados_alv_bro(
       EXPORTING
-        iv_vbeln = <lfs_alv_sintetico>-vbeln
-        iv_posnr = <lfs_alv_sintetico>-posnr
+        iv_vbeln = me->gv_vbeln_bro
+        iv_posnr = me->gv_posnr_bro
     ).
 
   ENDMETHOD. " ON_LINK_CLICK
@@ -1672,3 +1833,41 @@ MODULE status_9001 OUTPUT.
   SET TITLEBAR 'T9001'.
   SET PF-STATUS 'S9001'.
 ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*&      Form  F4_LAYOUTS
+*&---------------------------------------------------------------------*
+FORM f4_layouts USING iv_restrict TYPE salv_de_layout_restriction
+                      iv_handle   TYPE salv_s_layout_key-handle
+             CHANGING cs_layout TYPE disvariant-variant.
+
+  DATA(ls_key) = VALUE salv_s_layout_key(
+    report = sy-repid
+    handle = iv_handle
+  ).
+
+  DATA(ls_layout) = cl_salv_layout_service=>f4_layouts( s_key = ls_key restrict = iv_restrict ).
+
+  cs_layout = ls_layout-layout.
+
+ENDFORM.                    " F4_LAYOUTS
+
+*&---------------------------------------------------------------------*
+*&      Form  get_default_layout
+*&---------------------------------------------------------------------*
+FORM get_default_layout USING iv_restrict TYPE salv_de_layout_restriction
+                              iv_handle   TYPE salv_s_layout_key-handle
+                     CHANGING cs_layout TYPE disvariant-variant.
+
+  DATA(ls_key) = VALUE salv_s_layout_key(
+    report = sy-repid
+    handle = iv_handle
+  ).
+
+  DATA(ls_layout) = cl_salv_layout_service=>get_default_layout(
+    s_key    = ls_key
+    restrict = iv_restrict ).
+
+  cs_layout = ls_layout-layout.
+
+ENDFORM.                    " get_default_layout
