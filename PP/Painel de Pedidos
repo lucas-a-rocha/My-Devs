@@ -223,17 +223,25 @@ CLASS lcl_relatorio DEFINITION .
       gtt_alv_sintetico TYPE STANDARD TABLE OF gty_alv_sintetico WITH EMPTY KEY,
 
       BEGIN OF gty_alv_bro,
-        matnr_bro      TYPE mara-matnr,
-        werks_bro      TYPE /hks/bt_aw_wfcth-werks,
-        maktx_bro      TYPE makt-maktx,
-        status_bro     TYPE /hks/bt_aw_wfcth-status,
-        wflow_start    TYPE string, " /hks/bt_aw_wfcth-wflow_start,
-        wflowi_start   TYPE string, " /hks/bt_aw_wfcth-wflow_start,
-        wflowi_end     TYPE string, " /hks/bt_aw_wfcth-wflow_end,
-        wflowi_end_sla TYPE string, " /hks/bt_aw_wfcth-wflow_end_sla,
-        matkl_bro      TYPE mara-matkl,
-        busarea_bro    TYPE /hks/bt_aw_wfcti-busarea,
-        ktext_bro      TYPE /hks/bt_aw_bsart-ktext,
+        matnr_bro       TYPE mara-matnr,
+        werks_bro       TYPE /hks/bt_aw_wfcth-werks,
+        maktx_bro       TYPE makt-maktx,
+        status_bro      TYPE /hks/bt_aw_wfcth-status,
+        status_bro_text TYPE val_text,
+        wflow_start     TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflow_starth    TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflowi_start    TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflowi_starth   TYPE string, " /hks/bt_aw_wfcth-wflow_start,
+        wflowi_end      TYPE string, " /hks/bt_aw_wfcth-wflow_end,
+        wflowi_endh     TYPE string, " /hks/bt_aw_wfcth-wflow_end,
+        wflowi_end_sla  TYPE string, " /hks/bt_aw_wfcth-wflow_end_sla,
+        wflowi_end_slah TYPE string, " /hks/bt_aw_wfcth-wflow_end_sla,
+        matkl_bro       TYPE mara-matkl,
+        busarea_bro     TYPE /hks/bt_aw_wfcti-busarea,
+        ktext_bro       TYPE /hks/bt_aw_bsart-ktext,
+        initiator       TYPE /hks/bt_aw_wfcth-initiator,
+        wflow_type      TYPE /hks/bt_aw_wfcth-wflow_type,
+        wflow_type_text TYPE /hks/bt_aw_wftt-ktext,
       END OF gty_alv_bro,
 
       gtt_alv_bro TYPE STANDARD TABLE OF gty_alv_bro WITH EMPTY KEY,
@@ -380,6 +388,12 @@ CLASS lcl_relatorio DEFINITION .
           !iv_data_n            TYPE /hks/bt_aw_wfcth-wflow_end
         RETURNING
           VALUE(rv_data_string) TYPE string,
+
+      converter_hora_bro
+        IMPORTING
+          !iv_data_n            TYPE /hks/bt_aw_wfcth-wflow_end
+        RETURNING
+          VALUE(rv_hora_string) TYPE string,
 
       exibir_popup_log_ped
         IMPORTING
@@ -1039,16 +1053,25 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
       IF lt_dados_bro IS NOT INITIAL.
         LOOP AT lt_dados_bro INTO DATA(lw_dados_bro).
-          lw_alv-matnr_bro      = lw_dados_bro-matnr_bro  .
-          lw_alv-maktx_bro      = lw_dados_bro-maktx_bro  .
-          lw_alv-status_bro     = lw_dados_bro-status_bro .
-          lw_alv-wflow_start    = lw_dados_bro-wflow_start.
-          lw_alv-wflowi_start   = lw_dados_bro-wflowi_start.
-          lw_alv-wflowi_end     = lw_dados_bro-wflowi_end.
-          lw_alv-wflowi_end_sla = lw_dados_bro-wflowi_end_sla.
-          lw_alv-matkl_bro      = lw_dados_bro-matkl_bro  .
-          lw_alv-busarea_bro    = lw_dados_bro-busarea_bro.
-          lw_alv-ktext_bro      = lw_dados_bro-ktext_bro  .
+          lw_alv-matnr_bro       = lw_dados_bro-matnr_bro  .
+          lw_alv-maktx_bro       = lw_dados_bro-maktx_bro  .
+          lw_alv-status_bro      = lw_dados_bro-status_bro .
+          lw_alv-wflow_start     = lw_dados_bro-wflow_start.
+          lw_alv-wflowi_start    = lw_dados_bro-wflowi_start.
+          lw_alv-wflowi_end      = lw_dados_bro-wflowi_end.
+          lw_alv-wflowi_end_sla  = lw_dados_bro-wflowi_end_sla.
+          lw_alv-wflow_starth    = lw_dados_bro-wflow_starth.
+          lw_alv-wflowi_starth   = lw_dados_bro-wflowi_starth.
+          lw_alv-wflowi_endh     = lw_dados_bro-wflowi_endh.
+          lw_alv-wflowi_end_slah = lw_dados_bro-wflowi_end_slah.
+          lw_alv-matkl_bro       = lw_dados_bro-matkl_bro  .
+          lw_alv-busarea_bro     = lw_dados_bro-busarea_bro.
+          lw_alv-ktext_bro       = lw_dados_bro-ktext_bro  .
+
+          lw_alv-initiator       = lw_dados_bro-initiator.
+          lw_alv-wflow_type      = lw_dados_bro-wflow_type.
+          lw_alv-wflow_type_text = lw_dados_bro-wflow_type_text.
+          lw_alv-status_bro_text = lw_dados_bro-status_bro_text.
 
           APPEND lw_alv TO me->gt_alv_analitico.
         ENDLOOP.
@@ -1065,10 +1088,17 @@ CLASS lcl_relatorio IMPLEMENTATION.
   METHOD converter_data_bro.
     CHECK iv_data_n IS NOT INITIAL.
 
-    rv_data_string = |{ iv_data_n+6(2) }.{ iv_data_n+4(2) }.{ iv_data_n(4) }| &&
-                     | { iv_data_n+8(2) }:{ iv_data_n+10(2) }|.
+    rv_data_string = |{ iv_data_n+6(2) }.{ iv_data_n+4(2) }.{ iv_data_n(4) }|.
 
   ENDMETHOD. " CONVERTER_DATA_BRO.
+
+  METHOD converter_hora_bro.
+    CHECK iv_data_n IS NOT INITIAL.
+
+    rv_hora_string = | { iv_data_n+8(2) }:{ iv_data_n+10(2) }|.
+
+  ENDMETHOD. " CONVERTER_DATA_BRO.
+
 
   METHOD gerar_alv_relatorio.
 
@@ -1397,6 +1427,8 @@ CLASS lcl_relatorio IMPLEMENTATION.
           dfcat_texto <fl_fcat> 'Desc.Mat' 'Desc. Material BRO' 'Descrição do Material BRO' <fl_fcat>-outputlen.
         WHEN 'STATUS_BRO'.
           dfcat_texto <fl_fcat> 'StMatBRO' 'Status Material BRO' 'Status do Material BRO' <fl_fcat>-outputlen.
+        WHEN 'STATUS_BRO_TEXT'.
+          dfcat_texto <fl_fcat> 'DsStMBRO' 'Descr Stat Material BRO' 'Descrição Status do Material BRO' <fl_fcat>-outputlen.
         WHEN 'WFLOW_START'.
           dfcat_texto <fl_fcat> 'DtIniSol' 'Data Inicio Solic.' 'Data Inicio Solicitação' <fl_fcat>-outputlen.
         WHEN 'WFLOWI_START'.
@@ -1405,6 +1437,14 @@ CLASS lcl_relatorio IMPLEMENTATION.
           dfcat_texto <fl_fcat> 'DtFEtBRO' 'Data Final Et. BRO' 'Data Final da Etapa BRO' <fl_fcat>-outputlen.
         WHEN 'WFLOWI_END_SLA'.
           dfcat_texto <fl_fcat> 'DtSLABRO' 'Data Fim SLA Et.BRO' 'Data Fim SLA Etapa BRO' <fl_fcat>-outputlen.
+        WHEN 'WFLOW_STARTH'.
+          dfcat_texto <fl_fcat> 'HrIniSol' 'Hora Inicio Solic.' 'Hora Inicio Solicitação' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_STARTH'.
+          dfcat_texto <fl_fcat> 'HrIEtBRO' 'Hora Inicio Et.BRO' 'Hora Inicio da Etapa BRO' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_ENDH'.
+          dfcat_texto <fl_fcat> 'HrFEtBRO' 'Hora Final Et. BRO' 'Hora Final da Etapa BRO' <fl_fcat>-outputlen.
+        WHEN 'WFLOWI_END_SLAH'.
+          dfcat_texto <fl_fcat> 'HrSLABRO' 'Hora Fim SLA Et.BRO' 'Hora Fim SLA Etapa BRO' <fl_fcat>-outputlen.
         WHEN 'MATKL_BRO'.
           dfcat_texto <fl_fcat> 'GrpM.BRO' 'Grupo de Mercadorias BRO' 'Grupo de Mercadorias BRO' <fl_fcat>-outputlen.
         WHEN 'BUSAREA_BRO'.
@@ -1413,6 +1453,12 @@ CLASS lcl_relatorio IMPLEMENTATION.
           dfcat_texto <fl_fcat> 'DscÁreaBRO' 'Desc.Área Pend.BRO' 'Desc. Área Pendente no Fluxo do BRO' <fl_fcat>-outputlen.
         WHEN 'VBELN_COT'.
           dfcat_texto <fl_fcat> 'Cotação' 'Cotação' 'Cotação' <fl_fcat>-outputlen.
+        WHEN 'WFLO_TYPE'.
+          dfcat_texto <fl_fcat> 'Tp Proc' 'Tipo Processo' 'Tipo Processo' <fl_fcat>-outputlen.
+        WHEN 'WFLO_TYPE_TEXT'.
+          dfcat_texto <fl_fcat> 'DsTpProc' 'Descrição Tipo Processo' 'Descrição Tipo Processo' <fl_fcat>-outputlen.
+        WHEN 'INITIATOR'.
+          dfcat_texto <fl_fcat> 'Usu Sol' 'Usuário Solic.' 'Usuário Solicitador' <fl_fcat>-outputlen.
         WHEN OTHERS.
           CONTINUE.
       ENDCASE.
@@ -1478,7 +1524,16 @@ CLASS lcl_relatorio IMPLEMENTATION.
       END OF lty_aw_wfcth_key.
 
     DATA:
-      lt_aw_wfcth_key TYPE STANDARD TABLE OF lty_aw_wfcth_key.
+      lt_aw_wfcth_key TYPE STANDARD TABLE OF lty_aw_wfcth_key,
+      lt_status_desc  TYPE STANDARD TABLE OF dd07v,
+      lt_dummy_doma   TYPE STANDARD TABLE OF dd07v.
+
+    CALL FUNCTION 'DD_DOMA_GET'
+      EXPORTING
+        domain_name = '/HKS/B_WFLOW_STATUS'
+      TABLES
+        dd07v_tab_a = lt_status_desc
+        dd07v_tab_n = lt_dummy_doma.
 
     DATA(lt_mara) = me->buscar_materiais_bom_expl(
       EXPORTING
@@ -1490,91 +1545,126 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
     lt_aw_wfcth_key = VALUE #( FOR lw_mara_for IN lt_mara ( objek = lw_mara_for-matnr ) ).
 
-    SELECT wflownmb, objek, status, wflow_start, werks, wflow_end, wflow_end_sla
-      FROM /hks/bt_aw_wfcth
-      FOR ALL ENTRIES IN @lt_aw_wfcth_key
-      WHERE objek = @lt_aw_wfcth_key-objek
-        AND werks IN @me->gr_werks_bro
-    INTO TABLE @DATA(lt_bt_aw_wfcth).
+    SELECT h~wflownmb, h~objek, h~status, h~wflow_start, h~werks, h~wflow_end, h~wflow_end_sla, h~initiator,
+           h~wflow_type, wft~ktext
+      FROM /hks/bt_aw_wfcth AS h
+      LEFT JOIN /hks/bt_aw_wftt AS wft
+        ON wft~objtype    = h~objtype
+       AND wft~wflow_type = h~wflow_type
+       AND wft~spras      = @sy-langu
+       FOR ALL ENTRIES IN @lt_aw_wfcth_key
+     WHERE h~objek = @lt_aw_wfcth_key-objek
+       AND h~werks IN @me->gr_werks_bro
+      INTO TABLE @DATA(lt_bt_aw_wfcth).
 
-    CHECK lt_bt_aw_wfcth IS NOT INITIAL.
+*    CHECK lt_bt_aw_wfcth IS NOT INITIAL.
+    IF lt_bt_aw_wfcth IS NOT INITIAL.
 
-    SELECT wflownmb, sequence, wfcti~objtype, wfcti~busarea, ktext, wflow_start, wflow_end, wflow_end_sla
-      FROM /hks/bt_aw_wfcti AS wfcti
-      INNER JOIN /hks/bt_aw_bsart AS bsart ON bsart~objtype = wfcti~objtype
-                                          AND bsart~busarea = wfcti~busarea
-                                          AND spras = @sy-langu
-      FOR ALL ENTRIES IN @lt_bt_aw_wfcth
-      WHERE wflownmb = @lt_bt_aw_wfcth-wflownmb
-        AND status IN ( `003`, `004`, `006`, `009` )
-    INTO TABLE @DATA(lt_bt_aw_wfcti).
+      SELECT wflownmb, sequence, wfcti~objtype, wfcti~busarea, ktext, wflow_start, wflow_end, wflow_end_sla
+        FROM /hks/bt_aw_wfcti AS wfcti
+        INNER JOIN /hks/bt_aw_bsart AS bsart ON bsart~objtype = wfcti~objtype
+                                            AND bsart~busarea = wfcti~busarea
+                                            AND spras = @sy-langu
+        FOR ALL ENTRIES IN @lt_bt_aw_wfcth
+        WHERE wflownmb = @lt_bt_aw_wfcth-wflownmb
+          AND status IN ( `003`, `004`, `006`, `009` )
+      INTO TABLE @DATA(lt_bt_aw_wfcti).
 
-    CHECK lt_bt_aw_wfcti IS NOT INITIAL.
+*      CHECK lt_bt_aw_wfcti IS NOT INITIAL.
+      IF lt_bt_aw_wfcti IS NOT INITIAL.
 
-    SORT lt_bt_aw_wfcth BY objek werks ASCENDING wflow_start DESCENDING.
-    SORT lt_bt_aw_wfcti BY wflownmb sequence ASCENDING. " Deve selecionar a sequencia de menor valor.
+        SORT lt_bt_aw_wfcth BY objek werks ASCENDING wflow_start DESCENDING.
+        SORT lt_bt_aw_wfcti BY wflownmb sequence ASCENDING. " Deve selecionar a sequencia de menor valor.
 
-    LOOP AT lt_bt_aw_wfcth INTO DATA(lw_wfcth_grp)
-        GROUP BY ( objek = lw_wfcth_grp-objek
-                   werks = lw_wfcth_grp-werks ) ASSIGNING FIELD-SYMBOL(<lfs_wfcth_grp>).
+        LOOP AT lt_bt_aw_wfcth INTO DATA(lw_wfcth_grp)
+            GROUP BY ( objek = lw_wfcth_grp-objek
+                       werks = lw_wfcth_grp-werks ) ASSIGNING FIELD-SYMBOL(<lfs_wfcth_grp>).
 
-      LOOP AT GROUP <lfs_wfcth_grp> INTO DATA(lw_wfcth).
+          LOOP AT GROUP <lfs_wfcth_grp> INTO DATA(lw_wfcth).
 *       " Seleciona apenas o primeiro registro do agrupamento.
-        EXIT.
-      ENDLOOP.
+            EXIT.
+          ENDLOOP.
 
-      READ TABLE lt_mara WITH KEY matnr = lw_wfcth-objek INTO DATA(lw_mara).
-      CHECK sy-subrc = 0.
+          READ TABLE lt_mara WITH KEY matnr = lw_wfcth-objek INTO DATA(lw_mara).
+          CHECK sy-subrc = 0.
 
-      READ TABLE lt_bt_aw_wfcti WITH KEY wflownmb = lw_wfcth-wflownmb INTO DATA(lw_wfcti).
-      CHECK sy-subrc = 0.
+          READ TABLE lt_bt_aw_wfcti WITH KEY wflownmb = lw_wfcth-wflownmb INTO DATA(lw_wfcti).
+          CHECK sy-subrc = 0.
 
-      IF lw_mara-mstae = '02' OR lw_mara-mstae = '03' OR lw_mara-mstae = '04'  OR lw_mara-mstae = '05'.
-        APPEND VALUE #(
-          matnr_bro       = lw_mara-matnr
-          werks_bro       = lw_wfcth-werks
-          maktx_bro       = lw_mara-maktx
-          status_bro      = lw_wfcth-status
-          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
-          wflowi_start    = me->converter_data_bro( iv_data_n = lw_wfcti-wflow_start )
-          wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
-          wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
-          matkl_bro       = lw_mara-matkl
-          busarea_bro     = 'OBSOL'
-          ktext_bro       = 'OBSOLETO'
-        ) TO rt_alv_bro.
-      ELSEIF lw_wfcth-status = '009'.
-        APPEND VALUE #(
-          matnr_bro       = lw_mara-matnr
-          werks_bro       = lw_wfcth-werks
-          maktx_bro       = lw_mara-maktx
-          status_bro      = lw_wfcth-status
-          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
-          wflowi_start     = me->converter_data_bro( lw_wfcti-wflow_start )
-          wflowi_end       = me->converter_data_bro( lw_wfcti-wflow_end )
-          wflowi_end_sla   = me->converter_data_bro( lw_wfcti-wflow_end_sla )
-          matkl_bro       = lw_mara-matkl
-          busarea_bro     = 'BUFFER'
-          ktext_bro       = 'BUFFER'
-        ) TO rt_alv_bro.
-      ELSE.
-        APPEND VALUE #(
-          matnr_bro       = lw_mara-matnr
-          werks_bro       = lw_wfcth-werks
-          maktx_bro       = lw_mara-maktx
-          status_bro      = lw_wfcth-status
-          wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
-          wflowi_start    = me->converter_data_bro( lw_wfcti-wflow_start )
-          wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
-          wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
-          matkl_bro       = lw_mara-matkl
-          busarea_bro     = lw_wfcti-busarea
-          ktext_bro       = lw_wfcti-ktext
-        ) TO rt_alv_bro.
+          READ TABLE lt_status_desc INTO DATA(lw_status_desc) WITH KEY domvalue_l = lw_wfcth-status.
+
+          IF lw_mara-mstae = '02' OR lw_mara-mstae = '03' OR lw_mara-mstae = '04'  OR lw_mara-mstae = '05'.
+            APPEND VALUE #(
+              matnr_bro       = lw_mara-matnr
+              werks_bro       = lw_wfcth-werks
+              maktx_bro       = lw_mara-maktx
+              status_bro      = lw_wfcth-status
+              wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+              wflowi_start    = me->converter_data_bro( iv_data_n = lw_wfcti-wflow_start )
+              wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
+              wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+              wflow_starth    = me->converter_hora_bro( lw_wfcth-wflow_start )
+              wflowi_starth   = me->converter_hora_bro( iv_data_n = lw_wfcti-wflow_start )
+              wflowi_endh     = me->converter_hora_bro( lw_wfcti-wflow_end )
+              wflowi_end_slah = me->converter_hora_bro( lw_wfcti-wflow_end_sla )
+              matkl_bro       = lw_mara-matkl
+              busarea_bro     = 'OBSOL'
+              ktext_bro       = 'OBSOLETO'
+              initiator       = lw_wfcth-initiator
+              wflow_type      = lw_wfcth-wflow_type
+              wflow_type_text = lw_wfcth-ktext
+              status_bro_text = lw_status_desc-ddtext
+           ) TO rt_alv_bro.
+          ELSEIF lw_wfcth-status = '009'.
+            APPEND VALUE #(
+              matnr_bro       = lw_mara-matnr
+              werks_bro       = lw_wfcth-werks
+              maktx_bro       = lw_mara-maktx
+              status_bro      = lw_wfcth-status
+              wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+              wflowi_start    = me->converter_data_bro( lw_wfcti-wflow_start )
+              wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
+              wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+              wflow_starth    = me->converter_hora_bro( lw_wfcth-wflow_start )
+              wflowi_starth   = me->converter_hora_bro( iv_data_n = lw_wfcti-wflow_start )
+              wflowi_endh     = me->converter_hora_bro( lw_wfcti-wflow_end )
+              wflowi_end_slah = me->converter_hora_bro( lw_wfcti-wflow_end_sla )
+              matkl_bro       = lw_mara-matkl
+              busarea_bro     = 'BUFFER'
+              ktext_bro       = 'BUFFER'
+              initiator       = lw_wfcth-initiator
+              wflow_type      = lw_wfcth-wflow_type
+              wflow_type_text = lw_wfcth-ktext
+              status_bro_text = lw_status_desc-ddtext
+            ) TO rt_alv_bro.
+          ELSE.
+            APPEND VALUE #(
+              matnr_bro       = lw_mara-matnr
+              werks_bro       = lw_wfcth-werks
+              maktx_bro       = lw_mara-maktx
+              status_bro      = lw_wfcth-status
+              wflow_start     = me->converter_data_bro( lw_wfcth-wflow_start )
+              wflowi_start    = me->converter_data_bro( lw_wfcti-wflow_start )
+              wflowi_end      = me->converter_data_bro( lw_wfcti-wflow_end )
+              wflowi_end_sla  = me->converter_data_bro( lw_wfcti-wflow_end_sla )
+              wflow_starth    = me->converter_hora_bro( lw_wfcth-wflow_start )
+              wflowi_starth   = me->converter_hora_bro( iv_data_n = lw_wfcti-wflow_start )
+              wflowi_endh     = me->converter_hora_bro( lw_wfcti-wflow_end )
+              wflowi_end_slah = me->converter_hora_bro( lw_wfcti-wflow_end_sla )
+              matkl_bro       = lw_mara-matkl
+              busarea_bro     = lw_wfcti-busarea
+              ktext_bro       = lw_wfcti-ktext
+              initiator       = lw_wfcth-initiator
+              wflow_type      = lw_wfcth-wflow_type
+              wflow_type_text = lw_wfcth-ktext
+              status_bro_text = lw_status_desc-ddtext
+            ) TO rt_alv_bro.
+          ENDIF.
+
+          CLEAR: lw_mara, lw_wfcth, lw_wfcti.
+        ENDLOOP.
       ENDIF.
-
-      CLEAR: lw_mara, lw_wfcth, lw_wfcti.
-    ENDLOOP.
+    ENDIF.
 
 *   " Deve apresentar os materiais que ainda nao foram listados no BRO.
     LOOP AT lt_mara INTO lw_mara.
@@ -1638,8 +1728,8 @@ CLASS lcl_relatorio IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    DELETE lt_stb WHERE mstae IS INITIAL.
-    DELETE lt_stb WHERE mstae EQ 'DP'.
+*    DELETE lt_stb WHERE mstae IS INITIAL.
+*    DELETE lt_stb WHERE mstae EQ 'DP'.
 
     lt_matnr = VALUE #( FOR lw_stb IN lt_stb ( lw_stb-idnrk ) ).
 
@@ -1653,6 +1743,7 @@ CLASS lcl_relatorio IMPLEMENTATION.
       INNER JOIN makt ON makt~matnr = mara~matnr AND spras = @sy-langu
       FOR ALL ENTRIES IN @lt_matnr
       WHERE mara~matnr = @lt_matnr-table_line
+        AND mstae NOT IN ( '' , 'DP' )
     INTO TABLE @rt_mara.
 
   ENDMETHOD. " BUSCAR_MATERIAIS_BOM_EXPL
