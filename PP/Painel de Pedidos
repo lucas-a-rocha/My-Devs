@@ -354,6 +354,7 @@ CLASS lcl_relatorio DEFINITION .
 
     DATA:
       go_container TYPE REF TO cl_gui_container,
+      go_docking   TYPE REF TO cl_gui_docking_container,
       go_alv_top   TYPE REF TO cl_salv_table,
       go_alv_bot   TYPE REF TO cl_salv_table,
       go_timer     TYPE REF TO cl_gui_timer.
@@ -1099,7 +1100,6 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
   ENDMETHOD. " CONVERTER_DATA_BRO.
 
-
   METHOD gerar_alv_relatorio.
 
     CHECK me->go_alv_top IS NOT BOUND .
@@ -1136,16 +1136,23 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
     cl_gui_cfw=>flush( ).
 
-    me->go_container = NEW cl_gui_custom_container( container_name = c_container ).
+*   " Create docking container
+    me->go_docking = NEW cl_gui_docking_container(
+                      parent = cl_gui_container=>DEFAULT_SCREEN" screen0
+                      ratio  = 90 ).
+
+    me->go_docking->set_extension( 99999 ).
+
+*    me->go_container = NEW cl_gui_custom_container( container_name = c_container ).
 
     IF me->gv_tipo_rel = me->gc_analitico.
 
-      eo_container_top = me->go_container.
+      eo_container_top = me->go_docking.
 
     ELSE.
       DATA(lo_split) = NEW cl_gui_splitter_container(
-        parent = me->go_container
-        no_autodef_progid_dynnr = abap_true
+        parent = me->go_docking
+*        no_autodef_progid_dynnr = abap_true
         rows    = 2
         columns = 1
       ).
@@ -1157,6 +1164,12 @@ CLASS lcl_relatorio IMPLEMENTATION.
       eo_container_bot->set_height( height = 30 ).
 
     ENDIF.
+
+*    me->go_docking->link(
+*      EXPORTING
+*        repid = syst-repid
+*        dynnr = '9001' ).
+
   ENDMETHOD. " GERAR_CONTAINER_SPLIT
 
   METHOD criar_alv_top.
@@ -1897,32 +1910,33 @@ MODULE iniciar_processamento OUTPUT.
 ENDMODULE. " INICIAR_PROCESSAMENTO
 
 *&---------------------------------------------------------------------*
+*&      Module  STATUS_9001  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE status_9001 OUTPUT.
+  SET TITLEBAR 'T9001'.
+  SET PF-STATUS 'S9001'.
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
 *&      Module  USER_COMMAND_9001  INPUT
 *&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
 MODULE user_command_9001 INPUT.
-  gv_okcode = sy-ucomm.
+*  gv_okcode = sy-ucomm.
 
   CASE gv_okcode.
 
     WHEN 'EXIT' OR 'CANCEL' OR 'BACK'.
       go_relatorio->cancelar_temporizador( ).
-
-      LEAVE TO SCREEN 0.
+**      CALL TRANSACTION 'ZKWPS020'.
+      SET SCREEN 0. " Sempre dispara o programa SAPMSSY0 0120
+      LEAVE SCREEN.
+*      LEAVE TO SCREEN 0.
 
     WHEN OTHERS.
   ENDCASE.
 
-ENDMODULE.
-*&---------------------------------------------------------------------*
-*&      Module  STATUS_9001  OUTPUT
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-MODULE status_9001 OUTPUT.
-  SET TITLEBAR 'T9001'.
-  SET PF-STATUS 'S9001'.
+  CLEAR: gv_okcode.
+
 ENDMODULE.
 
 *&---------------------------------------------------------------------*
