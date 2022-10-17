@@ -1,5 +1,7 @@
   METHODS:
-        display_alv,
+      display_alv
+        CHANGING
+          ct_table TYPE ANY TABLE,
 
       columns_edit
         IMPORTING
@@ -16,11 +18,15 @@
   
   METHOD display_alv .
 
-    cl_salv_table=>factory(
-      IMPORTING
-        r_salv_table = DATA(lo_salv_table)
-      CHANGING
-        t_table      = me->gt_data_update ).
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = DATA(lo_salv_table)
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
 
     IF lo_salv_table IS BOUND.
 
@@ -34,7 +40,7 @@
 
       TRY .
 
-          me->columns_edit( it_table = me->gt_data_update io_columns = lo_columns ).
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
 
         CATCH cx_salv_not_found .
         CATCH cx_salv_data_error .
@@ -110,11 +116,8 @@
       CASE <fl_fcat>-fieldname.
         WHEN 'MANDT' .
           DELETE rt_fieldcat INDEX lv_tabix.
-        WHEN 'FDGRV_OLD'.
-          dfcat_texto <fl_fcat> 'OldPlanGrp' 'Old Planning Group' 'Old Planning Group' 10.
-        WHEN 'FDGRV_NEW'.
-          dfcat_texto <fl_fcat> 'NewPlanGrp' 'New Planning Group' 'New Planning Group' 10.
-        WHEN OTHERS.
+*        WHEN 'FDGRV_OLD'.
+*          dfcat_texto <fl_fcat> 'OldPlanGrp' 'Old Planning Group' 'Old Planning Group' 10.
 
       ENDCASE.
 
