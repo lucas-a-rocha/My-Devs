@@ -18,7 +18,7 @@
 *&---------------------------------------------------------------------*
 REPORT zkwrpp012.
 
-TABLES: marc, prps, vbak, vbkd, vbpk, zkwtpp001, zkwtpp002, zkwtps011.
+TABLES: marc, prps, vbak, vbkd, vbpk, zkwtpp001, zkwtpp002, zkwtps011, /hks/bt_aw_wfcth.
 
 DATA:
   gv_okcode TYPE sy-ucomm.
@@ -33,9 +33,12 @@ SELECT-OPTIONS: s_proj   FOR prps-psphi,                          " Projeto
                 s_vtweg  FOR vbpk-vtweg,                          " Canal de Distribuição
                 s_dtfesp FOR zkwtpp001-z_dt_esp_ped NO-EXTENSION, " Data Fim Especiais PED
                 s_dtfeng FOR zkwtpp001-z_dt_fim_eng NO-EXTENSION, " Data Fim Configurável PED
-                s_stped  FOR zkwtpp002-z_status_ped NO-EXTENSION, " Status PED
-                s_codseq FOR zkwtps011-zzcodseq MATCHCODE OBJECT zzseq NO-EXTENSION, " Código Sequência
-                s_werbro FOR marc-werks.                          " Centro BRO
+*                s_stped  FOR zkwtpp002-z_status_ped NO-EXTENSION, " Status PED
+*                s_codseq FOR zkwtps011-zzcodseq MATCHCODE OBJECT zzseq NO-EXTENSION, " Código Sequência
+                s_stped  FOR zkwtpp002-z_status_ped, " Status PED
+                s_codseq FOR zkwtps011-zzcodseq MATCHCODE OBJECT zzseq, " Código Sequência
+                s_werbro FOR marc-werks,                          " Centro BRO
+                s_bufgrp FOR /hks/bt_aw_wfcth-buffer_grp.       " Grupo Buffer
 
 SELECTION-SCREEN END OF BLOCK bl1.
 
@@ -143,11 +146,20 @@ CLASS lcl_relatorio DEFINITION .
         pspel TYPE aufk-pspel,
       END OF gty_aufk,
 
+*      BEGIN OF gty_vbfa,
+*        vbelv   TYPE vbfa-vbelv,
+*        vbeln   TYPE vbfa-vbeln,
+*        vbtyp_n TYPE vbfa-vbtyp_n,
+*        vbtyp_v TYPE vbfa-vbtyp_v,
+*      END OF gty_vbfa,
+
       BEGIN OF gty_vbfa,
-        vbelv   TYPE vbfa-vbelv,
-        vbeln   TYPE vbfa-vbeln,
-        vbtyp_n TYPE vbfa-vbtyp_n,
-        vbtyp_v TYPE vbfa-vbtyp_v,
+        vbeln_cot   TYPE vbfa-vbelv,
+        posnr_cot   TYPE vbfa-posnv,
+        vbeln_zv    TYPE vbfa-vbelv,
+        posnr_zv    TYPE vbfa-posnv,
+        vbeln_zr    TYPE vbfa-vbelv,
+        posnr_zr    TYPE vbfa-posnv,
       END OF gty_vbfa,
 
       BEGIN OF gty_prte,
@@ -173,51 +185,62 @@ CLASS lcl_relatorio DEFINITION .
       END OF gty_zkwtps005,
 
       BEGIN OF gty_alv_sintetico,
-        icon         TYPE icon_d,
-        erros_exec   TYPE i,
-        zzaufpl      TYPE zkwtps005-zzaufpl,
-        usr00        TYPE prps-usr00,
-        usr01        TYPE prps-usr01,
-        psphi        TYPE prps-psphi,
-        posid        TYPE prps-posid,
-        post1        TYPE prps-post1,
-        vbeln        TYPE vbap-vbeln,
-        posnr        TYPE vbap-posnr,
-        matnr        TYPE vbap-matnr,
-        netpr        TYPE vbap-netpr,
-        aufnr        TYPE aufk-aufnr,
-        auart        TYPE aufk-auart,
-        pstrt        TYPE prte-pstrt,
-        pende        TYPE prte-pende,
-        z_dt_fabrica TYPE zkwtpp002-z_dt_fabrica,
-        zzid         TYPE zkwtps005-zzid,
-        z_status_ped TYPE zkwtpp002-z_status_ped,
-        zzcodseq     TYPE zkwtps005-zzcodseq,
-        zzdescseq    TYPE zkwtps005-zzdescseq,
-        zzidusr      TYPE zkwtps005-zzidusr,
-        zznome       TYPE zkwtps005-zznome,
-        v_dat1       TYPE dats,
-        v_dat2       TYPE dats,
-        z_dt_lib_ped TYPE zkwtpp002-z_dt_lib_ped,
-        v_dur1       TYPE tims,
-        v_dur2       TYPE tims,
-        v_dur        TYPE tvro-fahztd,
-        v_durdia     TYPE vtbbewe-atage,
-        z_dt_ini_eng TYPE zkwtpp001-z_dt_ini_eng,
-        z_dt_fim_eng TYPE zkwtpp001-z_dt_fim_eng,
-        z_dt_esp_ped TYPE zkwtpp001-z_dt_esp_ped,
-        vtweg        TYPE vbak-vtweg,
-        vtext        TYPE tvtwt-vtext,
-        augru        TYPE vbak-augru,
-        vkbur        TYPE vbak-vkbur,
-        bezei        TYPE tvkbt-bezei,
-        bstnk        TYPE vbak-bstnk,
-        name1        TYPE kna1-name1,
-        zzmodelo     TYPE vbap-zzmodelo,
-        ntgew        TYPE vbap-ntgew,
-        audat        TYPE vbak-audat,
-        maktx        TYPE makt-maktx,
-        vbeln_cot    TYPE vbap-vbeln,
+        icon           TYPE icon_d,
+        erros_exec     TYPE i,
+        zzaufpl        TYPE zkwtps005-zzaufpl,
+        usr00          TYPE prps-usr00,
+        usr01          TYPE prps-usr01,
+        psphi          TYPE prps-psphi,
+        posid          TYPE prps-posid,
+        post1          TYPE prps-post1,
+        vbeln          TYPE vbap-vbeln,
+        posnr          TYPE vbap-posnr,
+        matnr          TYPE vbap-matnr,
+        netpr          TYPE vbap-netpr,
+        aufnr          TYPE aufk-aufnr,
+        auart          TYPE aufk-auart,
+        pstrt          TYPE prte-pstrt,
+        pende          TYPE prte-pende,
+        z_dt_fabrica   TYPE zkwtpp002-z_dt_fabrica,
+        zzid           TYPE zkwtps005-zzid,
+        z_status_ped   TYPE zkwtpp002-z_status_ped,
+        zzcodseq       TYPE zkwtps005-zzcodseq,
+        zzdescseq      TYPE zkwtps005-zzdescseq,
+        zzidusr        TYPE zkwtps005-zzidusr,
+        zznome         TYPE zkwtps005-zznome,
+        v_dat1         TYPE dats,
+        v_dat2         TYPE dats,
+        z_dt_lib_ped   TYPE zkwtpp002-z_dt_lib_ped,
+        v_dur1         TYPE tims,
+        v_dur2         TYPE tims,
+        v_dur          TYPE tvro-fahztd,
+        v_durdia       TYPE vtbbewe-atage,
+        z_dt_ini_eng   TYPE zkwtpp001-z_dt_ini_eng,
+        z_dt_fim_eng   TYPE zkwtpp001-z_dt_fim_eng,
+        z_dt_esp_ped   TYPE zkwtpp001-z_dt_esp_ped,
+        vtweg          TYPE vbak-vtweg,
+        vtext          TYPE tvtwt-vtext,
+        augru          TYPE vbak-augru,
+        vkbur          TYPE vbak-vkbur,
+        bezei          TYPE tvkbt-bezei,
+        bstnk          TYPE vbak-bstnk,
+        name1          TYPE kna1-name1,
+        zzmodelo       TYPE vbap-zzmodelo,
+        ntgew          TYPE vbap-ntgew,
+        audat          TYPE vbak-audat,
+        maktx          TYPE makt-maktx,
+        vbeln_cot      TYPE vbap-vbeln,
+        posnr_cot      TYPE vbap-posnr,
+        pre_ped_seq    TYPE zkwtps005-zzcodseq,
+        pre_ped_seq_ds TYPE zkwtps005-zzdescseq,
+        pre_ped_dt     TYPE dats,
+        pre_ped_hr     TYPE tims,
+        pre_ped_us     TYPE zkwtps005-zzidusr,
+        prz_aplic      TYPE i,
+        prz_produ      TYPE i,
+        tr_aplic       TYPE i,
+        tr_produ       TYPE i,
+        scol           TYPE lvc_t_scol,
       END OF gty_alv_sintetico,
 
       gtt_alv_sintetico TYPE STANDARD TABLE OF gty_alv_sintetico WITH EMPTY KEY,
@@ -271,6 +294,7 @@ CLASS lcl_relatorio DEFINITION .
       gtr_bstkd   TYPE RANGE OF vbkd-bstkd,
       gtr_vtweg   TYPE RANGE OF vbpk-vtweg,
       gtr_werks   TYPE RANGE OF marc-werks,
+      gtr_bufgrp  TYPE RANGE OF /hks/bt_aw_wfcth-buffer_grp,
       gtv_refresh TYPE numc4,
       gtv_layout  TYPE disvariant-variant.
 
@@ -292,6 +316,7 @@ CLASS lcl_relatorio DEFINITION .
           !ir_stped     TYPE gtr_stped
           !ir_codseq    TYPE gtr_codseq
           !ir_werks_bro TYPE gtr_werks
+          !ir_bufgrp    TYPE gtr_bufgrp
         RAISING
           cx_idm_error,
 
@@ -327,7 +352,8 @@ CLASS lcl_relatorio DEFINITION .
       gr_dtfeng    TYPE gtr_dats,
       gr_stped     TYPE gtr_stped,
       gr_codseq    TYPE gtr_codseq,
-      gr_werks_bro TYPE gtr_werks.
+      gr_werks_bro TYPE gtr_werks,
+      gr_bufgrp    TYPE gtr_bufgrp.
 
     DATA:
       gt_alv_sintetico TYPE gtt_alv_sintetico,
@@ -453,7 +479,11 @@ CLASS lcl_relatorio DEFINITION .
 
       criar_temporizador,
 
-      atualizar_alv_top .
+      atualizar_alv_top ,
+
+      display_va02_shdb,
+
+      display_cs62_shdb.
 
 ENDCLASS.
 
@@ -477,6 +507,7 @@ START-OF-SELECTION.
         ir_stped      = s_stped[]
         ir_codseq     = s_codseq[]
         ir_werks_bro  = s_werbro[]
+        ir_bufgrp     = s_bufgrp[]
       ) .
 
       go_relatorio->processar_report( ).
@@ -510,6 +541,14 @@ CLASS lcl_relatorio IMPLEMENTATION.
     me->gr_stped        = ir_stped .
     me->gr_codseq       = ir_codseq.
     me->gr_werks_bro    = ir_werks_bro.
+
+    me->gr_bufgrp       = VALUE #( FOR lw_bufgrp IN ir_bufgrp
+                          ( sign   = lw_bufgrp-sign
+                            option = lw_bufgrp-option
+                            low    = |{ lw_bufgrp-low ALPHA = IN }|
+                            high   = |{ lw_bufgrp-high ALPHA = IN }|
+                          ) ).
+
   ENDMETHOD. " CONSTRUCTOR
 
   METHOD processar_report.
@@ -678,12 +717,12 @@ CLASS lcl_relatorio IMPLEMENTATION.
       IF lt_ordens[] IS NOT INITIAL.
         FREE me->gt_prps.
 
-        SELECT pspnr, usr00, usr01, psphi, posid, post1
-          FROM prps
-          FOR ALL ENTRIES IN @lt_ordens
-          WHERE usr00 = @lt_ordens-usr00
-            AND stufe > 1
-        INTO TABLE @lt_prps_usr00.
+*        SELECT pspnr, usr00, usr01, psphi, posid, post1
+*          FROM prps
+*          FOR ALL ENTRIES IN @lt_ordens
+*          WHERE usr00 = @lt_ordens-usr00
+*            AND stufe > 1
+*        INTO TABLE @lt_prps_usr00.
 
         SELECT pspnr, usr00, usr01, psphi, posid, post1
           FROM prps
@@ -801,12 +840,28 @@ CLASS lcl_relatorio IMPLEMENTATION.
       SORT lt_vbeln_key.
       DELETE ADJACENT DUPLICATES FROM lt_vbeln_key COMPARING ALL FIELDS.
 
-      SELECT vbelv, vbeln, vbtyp_n, vbtyp_v
-        FROM vbfa
-        FOR ALL ENTRIES IN @lt_vbeln_key
-        WHERE vbeln = @lt_vbeln_key-table_line
-          AND vbtyp_v = 'B'
-      INTO TABLE @me->gt_vbfa_cot.
+*      SELECT vbelv, vbeln, vbtyp_n, vbtyp_v
+*        FROM vbfa
+*        FOR ALL ENTRIES IN @lt_vbeln_key
+*        WHERE vbeln = @lt_vbeln_key-table_line
+*          AND vbtyp_v = 'B'
+*      INTO TABLE @me->gt_vbfa_cot.
+
+      SELECT vbfa_zv~vbelv AS vbeln_cot, vbfa_zv~posnv AS posnr_cot,
+             vbfa_zv~vbeln AS vbeln_zv,  vbfa_zv~posnn AS posnr_zv,
+             vbfa_zr~vbeln AS vbeln_zr,  vbfa_zr~posnn AS posnr_zr
+        FROM vbfa AS vbfa_zv
+       INNER JOIN vbfa AS vbfa_zr
+          ON vbfa_zr~vbelv = vbfa_zv~vbeln
+         AND vbfa_zr~posnv = vbfa_zv~posnn
+         FOR ALL ENTRIES IN @lt_vbeln_key
+       WHERE vbfa_zv~vbeln = @lt_vbeln_key-table_line
+         AND vbfa_zv~vbtyp_v = 'B'
+         AND vbfa_zv~vbtyp_n = 'C'
+         AND vbfa_zr~vbtyp_v = 'C'
+         AND vbfa_zr~vbtyp_n = 'C'
+        INTO TABLE @me->gt_vbfa_cot.
+
     ENDIF.
 
   ENDMETHOD. " SELECIONAR_DADOS_VENDAS
@@ -881,11 +936,20 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
   METHOD gerar_dados_alv_sintetico.
     DATA:
-      lw_alv LIKE LINE OF me->gt_alv_sintetico.
+      lw_alv     LIKE LINE OF me->gt_alv_sintetico,
+      lw_col_rec TYPE lvc_s_scol.
 
     DATA:
-      lv_pspel TYPE aufk-pspel,
-      lv_tabix TYPE sy-tabix.
+      lv_pspel   TYPE aufk-pspel,
+      lv_tabix   TYPE sy-tabix,
+      lr_seq_ped TYPE RANGE OF ztbpp_ld_seq_job-codigo_seq.
+
+    SELECT codigo_seq
+      FROM ztbpp_ld_seq_job
+     WHERE status_ped = 60
+      INTO TABLE @DATA(lt_seq_ped).
+
+    lr_seq_ped = VALUE #( FOR lw_seq_ped IN lt_seq_ped ( sign   = 'I' option = 'EQ' low    = lw_seq_ped-codigo_seq ) ).
 
     LOOP AT me->gt_prps INTO DATA(lw_prps).
       CLEAR: lw_alv.
@@ -942,9 +1006,10 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
       ENDIF.
 
-      READ TABLE me->gt_vbfa_cot WITH KEY vbeln = lw_prps-usr00 INTO DATA(lw_vbfa_cot).
+      READ TABLE me->gt_vbfa_cot WITH KEY vbeln_zr = lw_vbap-vbeln posnr_zr = lw_vbap-posnr INTO DATA(lw_vbfa_cot).
       IF sy-subrc = 0.
-        lw_alv-vbeln_cot  = lw_vbfa_cot-vbelv.
+        lw_alv-vbeln_cot  = lw_vbfa_cot-vbeln_cot.
+        lw_alv-posnr_cot  = lw_vbfa_cot-posnr_cot.
       ENDIF.
 
       CALL FUNCTION 'CONVERSION_EXIT_ABPSP_INPUT'
@@ -968,55 +1033,111 @@ CLASS lcl_relatorio IMPLEMENTATION.
       ENDIF.
 
       READ TABLE me->gt_zkwtps005 WITH KEY zzaufpl = lw_aufk-aufnr+2(10) TRANSPORTING NO FIELDS.
-      LOOP AT me->gt_zkwtps005 INTO DATA(lw_zkwtps005) FROM sy-tabix.
-        lv_tabix = sy-tabix + 1.
+      IF sy-subrc IS INITIAL.
+        LOOP AT me->gt_zkwtps005 INTO DATA(lw_zkwtps005) FROM sy-tabix.
+          lv_tabix = sy-tabix + 1.
 
-        IF lw_zkwtps005-zzaufpl NE lw_aufk-aufnr+2(10).
-          EXIT.
-        ENDIF.
-
-        lw_alv-zzaufpl   = lw_zkwtps005-zzaufpl.
-        lw_alv-zzid      = lw_zkwtps005-zzid.
-        lw_alv-zzcodseq  = lw_zkwtps005-zzcodseq.
-        lw_alv-zzdescseq = lw_zkwtps005-zzdescseq.
-        lw_alv-zzidusr   = lw_zkwtps005-zzidusr.
-        lw_alv-zznome    = lw_zkwtps005-zznome.
-        lw_alv-v_dur1    = lw_zkwtps005-zzhora.
-        lw_alv-v_dat1    = lw_zkwtps005-zzdata.
-
-        READ TABLE me->gt_zkwtps005 INTO DATA(lw_zkwtps005_aux) INDEX lv_tabix.
-        IF sy-subrc = 0.
-
-          IF lw_zkwtps005_aux-zzaufpl EQ lw_zkwtps005-zzaufpl.
-            lw_alv-v_dur2    = lw_zkwtps005_aux-zzhora.
-            lw_alv-v_dat2    = lw_zkwtps005_aux-zzdata.
-
-*           " Datas em branco são ignoradas para evitar DUMP
-            IF lw_alv-v_dat1 IS INITIAL OR lw_alv-v_dat2 IS INITIAL.
-              CONTINUE.
-            ENDIF.
-
-            CALL FUNCTION 'SD_CALC_DURATION_FROM_DATETIME'
-              EXPORTING
-                i_date1 = lw_alv-v_dat1
-                i_time1 = lw_alv-v_dur1
-                i_date2 = lw_alv-v_dat2
-                i_time2 = lw_alv-v_dur2
-              IMPORTING
-                e_tdiff = lw_alv-v_dur.
-
-*           " Calculo duração em dias.
-            lw_alv-v_durdia = lw_alv-v_dat2 - lw_alv-v_dat1.
-          ELSE.
-            CLEAR: lw_alv-v_dat2, lw_alv-v_dur2.
+          IF lw_zkwtps005-zzaufpl NE lw_aufk-aufnr+2(10).
+            EXIT.
           ENDIF.
 
-        ENDIF.
+          IF lw_zkwtps005-zzcodseq IN lr_seq_ped.
+            lw_alv-pre_ped_seq = lw_zkwtps005-zzcodseq.
+            lw_alv-pre_ped_seq_ds = lw_zkwtps005-zzdescseq.
+            lw_alv-pre_ped_us = lw_zkwtps005-zzidusr.
+            lw_alv-pre_ped_hr = lw_zkwtps005-zzhora.
+            lw_alv-pre_ped_dt = lw_zkwtps005-zzdata.
+          ENDIF.
 
+          lw_alv-zzaufpl   = lw_zkwtps005-zzaufpl.
+          lw_alv-zzid      = lw_zkwtps005-zzid.
+          lw_alv-zzcodseq  = lw_zkwtps005-zzcodseq.
+          lw_alv-zzdescseq = lw_zkwtps005-zzdescseq.
+          lw_alv-zzidusr   = lw_zkwtps005-zzidusr.
+          lw_alv-zznome    = lw_zkwtps005-zznome.
+          lw_alv-v_dur1    = lw_zkwtps005-zzhora.
+          lw_alv-v_dat1    = lw_zkwtps005-zzdata.
+
+          READ TABLE me->gt_zkwtps005 INTO DATA(lw_zkwtps005_aux) INDEX lv_tabix.
+          IF sy-subrc = 0.
+
+            IF lw_zkwtps005_aux-zzaufpl EQ lw_zkwtps005-zzaufpl.
+              lw_alv-v_dur2    = lw_zkwtps005_aux-zzhora.
+              lw_alv-v_dat2    = lw_zkwtps005_aux-zzdata.
+
+*           " Datas em branco são ignoradas para evitar DUMP
+              IF lw_alv-v_dat1 IS INITIAL OR lw_alv-v_dat2 IS INITIAL.
+                CONTINUE.
+              ENDIF.
+
+              CALL FUNCTION 'SD_CALC_DURATION_FROM_DATETIME'
+                EXPORTING
+                  i_date1 = lw_alv-v_dat1
+                  i_time1 = lw_alv-v_dur1
+                  i_date2 = lw_alv-v_dat2
+                  i_time2 = lw_alv-v_dur2
+                IMPORTING
+                  e_tdiff = lw_alv-v_dur.
+
+*           " Calculo duração em dias.
+              lw_alv-v_durdia = lw_alv-v_dat2 - lw_alv-v_dat1.
+            ELSE.
+              CLEAR: lw_alv-v_dat2, lw_alv-v_dur2.
+            ENDIF.
+
+            IF lw_alv-z_dt_fim_eng IS NOT INITIAL.
+              IF lw_alv-pre_ped_dt IS NOT INITIAL.
+                lw_alv-prz_aplic  = lw_alv-z_dt_fim_eng - lw_alv-pre_ped_dt.
+              ELSE.
+                lw_alv-prz_aplic  = lw_alv-z_dt_fim_eng - sy-datum.
+              ENDIF.
+              lw_col_rec-fname = 'PRZ_APLIC'.
+              lw_col_rec-color-int = '0'.
+              IF lw_alv-prz_aplic < 0.
+                lw_col_rec-color-col = '6'.
+              ELSEIF lw_alv-prz_aplic > 0.
+                lw_col_rec-color-col = '5'.
+              ELSE.
+                lw_col_rec-color-col = '3'.
+              ENDIF.
+              APPEND lw_col_rec TO lw_alv-scol.
+
+              IF lw_alv-z_dt_fabrica IS NOT INITIAL.
+                lw_alv-tr_aplic = lw_alv-z_dt_fabrica - lw_alv-z_dt_fim_eng.
+              ENDIF.
+            ENDIF.
+
+            IF lw_alv-z_dt_esp_ped IS NOT INITIAL.
+              IF lw_alv-pre_ped_dt IS NOT INITIAL.
+                lw_alv-prz_produ  = lw_alv-z_dt_esp_ped - lw_alv-pre_ped_dt.
+              ELSE.
+                lw_alv-prz_produ  = lw_alv-z_dt_esp_ped - sy-datum.
+              ENDIF.
+              lw_col_rec-fname = 'PRZ_PRODU'.
+              lw_col_rec-color-int = '0'.
+              IF lw_alv-prz_produ < 0.
+                lw_col_rec-color-col = '6'.
+              ELSEIF lw_alv-prz_produ > 0.
+                lw_col_rec-color-col = '5'.
+              ELSE.
+                lw_col_rec-color-col = '3'.
+              ENDIF.
+              APPEND lw_col_rec TO lw_alv-scol.
+            ENDIF.
+
+            IF lw_alv-z_dt_fabrica IS NOT INITIAL.
+              lw_alv-tr_produ = lw_alv-z_dt_fabrica - lw_alv-z_dt_esp_ped.
+            ENDIF.
+
+          ENDIF.
+
+          APPEND lw_alv TO me->gt_alv_sintetico.
+
+          CLEAR lw_zkwtps005_aux.
+        ENDLOOP.
+      ELSE.
         APPEND lw_alv TO me->gt_alv_sintetico.
-
-        CLEAR lw_zkwtps005_aux.
-      ENDLOOP.
+      ENDIF.
 
       CLEAR: lw_vbap, lw_zkwtpp002, lw_zkwtpp001, lw_aufk, lw_prte, lw_vbfa_cot.
 
@@ -1138,7 +1259,7 @@ CLASS lcl_relatorio IMPLEMENTATION.
 
 *   " Create docking container
     me->go_docking = NEW cl_gui_docking_container(
-                      parent = cl_gui_container=>DEFAULT_SCREEN" screen0
+                      parent = cl_gui_container=>default_screen" screen0
                       ratio  = 90 ).
 
     me->go_docking->set_extension( 99999 ).
@@ -1200,14 +1321,30 @@ CLASS lcl_relatorio IMPLEMENTATION.
             text     = 'Atualizar'
             tooltip  = 'Atualizar'
             position = if_salv_c_function_position=>right_of_salv_functions ).
+
+          lo_function->add_function(
+            name     = '&ZCS62'
+            icon     = CONV #( icon_bom )
+            text     = 'CS62'
+            tooltip  = 'CS62'
+            position = if_salv_c_function_position=>right_of_salv_functions ).
+
+          lo_function->add_function(
+            name     = '&ZVA02'
+            icon     = CONV #( icon_adjust_configuration )
+            text     = 'VA02'
+            tooltip  = 'VA02'
+            position = if_salv_c_function_position=>right_of_salv_functions ).
+
         CATCH: cx_salv_existing, cx_salv_wrong_call.
       ENDTRY.
 
-*     " Ajusta os dados das colunas
-      DATA(lo_columns) = me->go_alv_top->get_columns( ).
-      lo_columns->set_optimize( abap_true ).
-
       TRY .
+*         " Ajusta os dados das colunas
+          DATA(lo_columns) = me->go_alv_top->get_columns( ).
+          lo_columns->set_optimize( abap_true ).
+
+          lo_columns->set_color_column( 'SCOL' ).
 
           me->columns_edit( it_table = ct_table io_columns = lo_columns ).
 
@@ -1466,12 +1603,32 @@ CLASS lcl_relatorio IMPLEMENTATION.
           dfcat_texto <fl_fcat> 'DscÁreaBRO' 'Desc.Área Pend.BRO' 'Desc. Área Pendente no Fluxo do BRO' <fl_fcat>-outputlen.
         WHEN 'VBELN_COT'.
           dfcat_texto <fl_fcat> 'Cotação' 'Cotação' 'Cotação' <fl_fcat>-outputlen.
+        WHEN 'POSNR_COT'.
+          dfcat_texto <fl_fcat> 'It.Cot.' 'Item Cotação' 'Item Cotação' <fl_fcat>-outputlen.
         WHEN 'WFLO_TYPE'.
           dfcat_texto <fl_fcat> 'Tp Proc' 'Tipo Processo' 'Tipo Processo' <fl_fcat>-outputlen.
         WHEN 'WFLO_TYPE_TEXT'.
           dfcat_texto <fl_fcat> 'DsTpProc' 'Descrição Tipo Processo' 'Descrição Tipo Processo' <fl_fcat>-outputlen.
         WHEN 'INITIATOR'.
           dfcat_texto <fl_fcat> 'Usu Sol' 'Usuário Solic.' 'Usuário Solicitador' <fl_fcat>-outputlen.
+        WHEN 'PRE_PED_SEQ'.
+          dfcat_texto <fl_fcat> 'Ult.Etp' 'Última Etapa' 'Última Etapa' <fl_fcat>-outputlen.
+        WHEN 'PRE_PED_SEQ_DS'.
+          dfcat_texto <fl_fcat> 'Ds.Ult.Etp' 'Desc. Última Etapa' 'Descrição Última Etapa' <fl_fcat>-outputlen.
+        WHEN 'PRE_PED_US'.
+          dfcat_texto <fl_fcat> 'Us.Ult.Etp' 'Usr. Última Etapa' 'Usuário Última Etapa' <fl_fcat>-outputlen.
+        WHEN 'PRE_PED_DT'.
+          dfcat_texto <fl_fcat> 'Dt.Ult.Etp' 'Data Última Etapa' 'Data Última Etapa' <fl_fcat>-outputlen.
+        WHEN 'PRE_PED_HR'.
+          dfcat_texto <fl_fcat> 'Hr.Ult.Etp' 'Hora Última Etapa' 'Hora Última Etapa' <fl_fcat>-outputlen.
+        WHEN 'PRZ_APLIC'.
+          dfcat_texto <fl_fcat> 'Prz.Apli' 'Prazo Aplicação' 'Prazo Aplicação' <fl_fcat>-outputlen.
+        WHEN 'PRZ_PRODU'.
+          dfcat_texto <fl_fcat> 'Prz.Prod' 'Prazo Produto' 'Prazo Produto' <fl_fcat>-outputlen.
+        WHEN 'TR_APLIC'.
+          dfcat_texto <fl_fcat> 'TR Apli' 'TR Aplicação' 'TR Aplicação' <fl_fcat>-outputlen.
+        WHEN 'TR_PRODU'.
+          dfcat_texto <fl_fcat> 'TR Prod' 'TR Produto' 'TR Produto' <fl_fcat>-outputlen.
         WHEN OTHERS.
           CONTINUE.
       ENDCASE.
@@ -1559,15 +1716,16 @@ CLASS lcl_relatorio IMPLEMENTATION.
     lt_aw_wfcth_key = VALUE #( FOR lw_mara_for IN lt_mara ( objek = lw_mara_for-matnr ) ).
 
     SELECT h~wflownmb, h~objek, h~status, h~wflow_start, h~werks, h~wflow_end, h~wflow_end_sla, h~initiator,
-           h~wflow_type, wft~ktext
+           h~wflow_type, wft~ktext, h~buffer_grp
       FROM /hks/bt_aw_wfcth AS h
       LEFT JOIN /hks/bt_aw_wftt AS wft
         ON wft~objtype    = h~objtype
        AND wft~wflow_type = h~wflow_type
        AND wft~spras      = @sy-langu
        FOR ALL ENTRIES IN @lt_aw_wfcth_key
-     WHERE h~objek = @lt_aw_wfcth_key-objek
-       AND h~werks IN @me->gr_werks_bro
+     WHERE h~objek       = @lt_aw_wfcth_key-objek
+       AND h~werks      IN @me->gr_werks_bro
+       AND h~buffer_grp IN @me->gr_bufgrp
       INTO TABLE @DATA(lt_bt_aw_wfcth).
 
 *    CHECK lt_bt_aw_wfcth IS NOT INITIAL.
@@ -1820,6 +1978,12 @@ CLASS lcl_relatorio IMPLEMENTATION.
             iv_posnr = me->gv_posnr_bro
         ).
 
+      WHEN '&ZCS62'.
+        me->display_cs62_shdb( ).
+
+      WHEN '&ZVA02'.
+        me->display_va02_shdb( ).
+
     ENDCASE.
 
   ENDMETHOD. " ON_USER_COMMAND
@@ -1895,6 +2059,56 @@ CLASS lcl_relatorio IMPLEMENTATION.
                DISPLAY LIKE lo_exc->message-type.
     ENDTRY.
   ENDMETHOD. " ATUALIZAR_ALV_TOP
+
+  METHOD display_va02_shdb.
+    DATA(lo_selections) = me->go_alv_top->get_selections( ).
+    DATA(lt_rows) = lo_selections->get_selected_rows( ).
+
+    IF lines( lt_rows ) = 0.
+      MESSAGE 'Selecione uma linha.' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    IF me->gv_tipo_rel = me->gc_sintetico.
+      DATA(lv_vbeln) = me->gt_alv_sintetico[ lt_rows[ 1 ] ]-vbeln.
+    ELSE.
+      lv_vbeln = me->gt_alv_analitico[ lt_rows[ 1 ] ]-vbeln.
+    ENDIF.
+
+    CHECK lv_vbeln IS NOT INITIAL.
+
+    SET PARAMETER ID 'AUN' FIELD lv_vbeln.
+    CALL TRANSACTION 'VA02' AND SKIP FIRST SCREEN.
+
+  ENDMETHOD. " DISPLAY_VA02_SHDB
+
+  METHOD display_cs62_shdb.
+
+    DATA(lo_selections) = me->go_alv_top->get_selections( ).
+    DATA(lt_rows) = lo_selections->get_selected_rows( ).
+
+    IF lines( lt_rows ) = 0.
+      MESSAGE 'Selecione uma linha.' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    IF me->gv_tipo_rel = me->gc_sintetico.
+      DATA(lw_alv) = me->gt_alv_sintetico[ lt_rows[ 1 ] ].
+    ELSE.
+      lw_alv = CORRESPONDING #( me->gt_alv_analitico[ lt_rows[ 1 ] ] ).
+    ENDIF.
+
+    CHECK lw_alv-vbeln IS NOT INITIAL.
+
+    SET PARAMETER ID:
+     'AUN' FIELD lw_alv-vbeln,
+     'APO' FIELD lw_alv-posnr,
+     'MAT' FIELD lw_alv-matnr,
+     'CSV' FIELD '1'.
+
+    CALL TRANSACTION 'CS62' AND SKIP FIRST SCREEN.
+
+  ENDMETHOD. " DISPLAY_CS62_SHDB
 
 ENDCLASS.
 
