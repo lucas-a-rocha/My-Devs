@@ -1094,11 +1094,11 @@ CLASS lcl_relatorio IMPLEMENTATION.
               lw_col_rec-fname = 'PRZ_APLIC'.
               lw_col_rec-color-int = '0'.
               IF lw_alv-prz_aplic < 0.
-                lw_col_rec-color-col = '6'.
+                lw_col_rec-color-col = '6'. " Vermelho
               ELSEIF lw_alv-prz_aplic > 0.
-                lw_col_rec-color-col = '5'.
+                lw_col_rec-color-col = '5'. " Verde
               ELSE.
-                lw_col_rec-color-col = '3'.
+                lw_col_rec-color-col = '3'. " Amarelo
               ENDIF.
               APPEND lw_col_rec TO lw_alv-scol.
 
@@ -1116,11 +1116,11 @@ CLASS lcl_relatorio IMPLEMENTATION.
               lw_col_rec-fname = 'PRZ_PRODU'.
               lw_col_rec-color-int = '0'.
               IF lw_alv-prz_produ < 0.
-                lw_col_rec-color-col = '6'.
+                lw_col_rec-color-col = '6'. " Vermelho
               ELSEIF lw_alv-prz_produ > 0.
-                lw_col_rec-color-col = '5'.
+                lw_col_rec-color-col = '5'. " Verde
               ELSE.
-                lw_col_rec-color-col = '3'.
+                lw_col_rec-color-col = '3'. " Amarelo
               ENDIF.
               APPEND lw_col_rec TO lw_alv-scol.
             ENDIF.
