@@ -1,0 +1,428 @@
+****************************************************************************************
+*                      &Paracel/&Castgroup                                             *
+****************************************************************************************
+* Autor    : Lucas Rocha                                                               *
+* Data     : 14.11.2022 09:43:47                                                       *
+****************************************************************************************
+* Descrição: 276719 pagto automatico CITIBANK                                          *
+****************************************************************************************
+* Alteração : <sigla>                                                                  *
+* Autor     : <autor da alteração>                                                     *
+* Data      : <data da alteração>                                                      *
+* Descrição : <descrição da alteração>                                                 *
+****************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZFIR_007
+*&---------------------------------------------------------------------*
+REPORT zfir_007.
+
+TABLES: reguh.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+
+  SELECT-OPTIONS:
+    s_laufd FOR reguh-laufd NO-EXTENSION NO INTERVALS OBLIGATORY,
+    s_laufi FOR reguh-laufi NO-EXTENSION NO INTERVALS OBLIGATORY,
+    s_hktid FOR reguh-hktid NO-EXTENSION NO INTERVALS OBLIGATORY,
+    s_hbkid FOR reguh-hbkid NO-EXTENSION NO INTERVALS OBLIGATORY.
+
+  PARAMETERS: p_dir TYPE text1000 OBLIGATORY.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+INITIALIZATION.
+  PERFORM initialization.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dir.
+  PERFORM select_directory_al11 CHANGING p_dir.
+
+**********************************************************************
+* Definição da Classe
+**********************************************************************
+CLASS lcl_report DEFINITION .
+
+  PUBLIC SECTION.
+    TYPES:
+      gtr_laufd TYPE RANGE OF reguh-laufd,
+      gtr_laufi TYPE RANGE OF reguh-laufi,
+      gtr_hktid TYPE RANGE OF reguh-hktid,
+      gtr_hbkid TYPE RANGE OF reguh-hbkid,
+
+      BEGIN OF gty_reguh,
+        laufd      TYPE reguh-laufd,
+        laufi      TYPE reguh-laufi,
+        xvorl      TYPE reguh-xvorl,
+        zbukr      TYPE reguh-zbukr,
+        lifnr      TYPE reguh-lifnr,
+        kunnr      TYPE reguh-kunnr,
+        empfg      TYPE reguh-empfg,
+        vblnr      TYPE reguh-vblnr,
+        ubknt      TYPE reguh-ubknt,
+        ubknt_long TYPE reguh-ubknt_long,
+        ubnkl      TYPE reguh-ubnkl,
+        valut      TYPE reguh-valut,
+        zbnkn      TYPE reguh-zbnkn,
+        zbnkl      TYPE reguh-zbnkl,
+        waers      TYPE reguh-waers,
+        rwbtr      TYPE reguh-rwbtr,
+        name1      TYPE reguh-name1,
+        zstra      TYPE reguh-zstra,
+        ort01      TYPE reguh-ort01,
+        ztelf      TYPE reguh-ztelf,
+      END OF gty_reguh,
+
+      BEGIN OF gty_address,
+        lifnr     TYPE lfa1-lifnr,
+        stcd3     TYPE lfa1-stcd3,
+        smtp_addr TYPE adr6-smtp_addr,
+      END OF gty_address,
+
+      BEGIN OF gty_but0bk,
+        partner TYPE but0bk-partner,
+        bkref   TYPE but0bk-bkref,
+      END OF gty_but0bk,
+
+      BEGIN OF gty_key_arquivo,
+        laufd TYPE reguh-laufd,
+        laufi TYPE reguh-laufi,
+        xvorl TYPE reguh-xvorl,
+        zbukr TYPE reguh-zbukr,
+        lifnr TYPE reguh-lifnr,
+        kunnr TYPE reguh-kunnr,
+        empfg TYPE reguh-empfg,
+      END OF gty_key_arquivo,
+
+      BEGIN OF gty_detail,
+        type             TYPE c LENGTH 3,
+        ccountry_code    TYPE c LENGTH 3,
+        cacc_number      TYPE c LENGTH 10,
+        transaction_date TYPE c LENGTH 6,
+        transaction_code TYPE c LENGTH 3,
+        transaction_refe TYPE c LENGTH 15,
+        transaction_numb TYPE n LENGTH 8,
+        tp_tax_id        TYPE c LENGTH 20,
+        ca_currency      TYPE c LENGTH 3,
+        tp_code          TYPE c LENGTH 20,
+        transaction_amt  TYPE c LENGTH 15,
+        blanks_1         TYPE c LENGTH 146,
+        lcl_tran_code    TYPE c LENGTH 2,
+        ca_type          TYPE c LENGTH 2,
+        tp_name          TYPE c LENGTH 80,
+        tp_address_1     TYPE c LENGTH 70,
+        tp_address_2     TYPE c LENGTH 15,
+        tp_state         TYPE c LENGTH 2,
+        tp_address_3     TYPE c LENGTH 12,
+        tp_phone         TYPE c LENGTH 16,
+        tp_bank          TYPE n LENGTH 3,
+        tp_agency        TYPE n LENGTH 8,
+        tp_acc_number    TYPE c LENGTH 35,
+        tp_acc_type      TYPE n LENGTH 2,
+        tp_bank_address  TYPE n LENGTH 30,
+        tp_bank_entity   TYPE c LENGTH 2,
+        tp_bank_pl_numb  TYPE n LENGTH 3,
+        tp_bank_pl_name  TYPE c LENGTH 14,
+        tp_bank_brn_num  TYPE n LENGTH 3,
+        blanks_2         TYPE c LENGTH 70,
+        tp_citi_acc_num  TYPE n LENGTH 10,
+        acc_type_cr      TYPE n LENGTH 2,
+        trans_delivery   TYPE n LENGTH 3,
+        blanks_3         TYPE c LENGTH 55,
+        tp_email         TYPE c LENGTH 50,
+        max_paymnt_amt   TYPE n LENGTH 15,
+        blanks_4         TYPE c LENGTH 39,
+        motive           TYPE n LENGTH 2,
+        blanks_5         TYPE c LENGTH 226,
+        crlf             TYPE c LENGTH 1,
+      END OF gty_detail,
+
+      BEGIN OF gty_trailer,
+        type            TYPE c LENGTH 3,
+        num_transaction TYPE n LENGTH 15,
+        tot_transaction TYPE c LENGTH 15,
+        num_tp_rec      TYPE n LENGTH 15,
+        num_tp_rec_sent TYPE n LENGTH 15,
+        blanks_1        TYPE c LENGTH 37,
+        crlf            TYPE c LENGTH 1,
+      END OF gty_trailer.
+
+    METHODS constructor
+      IMPORTING
+        !ir_laufd TYPE gtr_laufd
+        !ir_laufi TYPE gtr_laufi
+        !ir_hktid TYPE gtr_hktid
+        !ir_hbkid TYPE gtr_hbkid
+        !iv_dir   TYPE string
+      RAISING
+        cx_idm_error .
+
+    METHODS processar
+      RAISING
+        cx_idm_error .
+
+  PRIVATE SECTION.
+    DATA:
+      gr_laufd          TYPE gtr_laufd,
+      gr_laufi          TYPE gtr_laufi,
+      gr_hktid          TYPE gtr_hktid,
+      gr_hbkid          TYPE gtr_hbkid,
+      gv_directorio     TYPE string,
+      gv_nombre_archivo TYPE string,
+      gt_reguh          TYPE STANDARD TABLE OF gty_reguh,
+      gt_address        TYPE STANDARD TABLE OF gty_address,
+      gt_but0bk         TYPE STANDARD TABLE OF gty_but0bk,
+      gt_detail         TYPE STANDARD TABLE OF gty_detail,
+      gt_trailer        TYPE STANDARD TABLE OF gty_trailer.
+
+    METHODS:
+      select_detail_data
+        RAISING
+          cx_idm_error,
+
+      fill_general_data,
+
+      escribir_archivo
+        RAISING
+          cx_idm_error.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY .
+      DATA(go_report) = NEW lcl_report(
+        ir_laufd = s_laufd[]
+        ir_laufi = s_laufi[]
+        ir_hktid = s_hktid[]
+        ir_hbkid = s_hbkid[]
+        iv_dir   = CONV #( p_dir )
+      ).
+
+      go_report->processar( ).
+
+      MESSAGE 'Archivo generado correctamente.'(002) TYPE 'S'.
+
+    CATCH cx_idm_error INTO DATA(lo_exc).
+      MESSAGE ID lo_exc->message-id TYPE 'S'
+         NUMBER lo_exc->message-number
+           WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+             DISPLAY LIKE lo_exc->message-type.
+  ENDTRY.
+
+**********************************************************************
+* Implementação da Classe
+**********************************************************************
+CLASS lcl_report IMPLEMENTATION.
+  METHOD constructor.
+
+    me->gr_laufd = ir_laufd.
+    me->gr_laufi = ir_laufi.
+    me->gr_hktid = ir_hktid.
+    me->gr_hbkid = ir_hbkid.
+
+    me->gv_directorio = iv_dir.
+
+    DATA(lv_len) = strlen( me->gv_directorio ) - 1.
+    DATA(lv_last_char) = me->gv_directorio+lv_len(1).
+    IF lv_last_char <> '/'.
+      me->gv_directorio = |{ me->gv_directorio }/|.
+    ENDIF.
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD processar.
+
+    me->select_detail_data( ).
+
+    me->fill_general_data( ).
+
+    me->escribir_archivo( ).
+
+  ENDMETHOD. " PROCESSAR
+
+  METHOD select_detail_data.
+
+    SELECT laufd, laufi, xvorl, zbukr, lifnr, kunnr, empfg, vblnr,
+           ubknt, ubknt_long, ubnkl, valut, zbnkn, zbnkl, waers,
+           rwbtr, name1, zstra, ort01, ztelf
+      FROM reguh
+      WHERE laufd IN @me->gr_laufd
+        AND laufi IN @me->gr_laufi
+        AND hktid IN @me->gr_hktid
+        AND hbkid IN @me->gr_hbkid
+        AND xvorl = @space
+    INTO TABLE @me->gt_reguh.
+
+    IF me->gt_reguh IS INITIAL.
+      IF 1 = 2. MESSAGE i005(zfi). ENDIF. " No se encontraron los datos de selección notificados.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 005 ).
+    ENDIF.
+
+    SELECT lifnr, stcd3, smtp_addr
+      FROM lfa1
+      INNER JOIN adr6 ON adr6~addrnumber = lfa1~adrnr
+      FOR ALL ENTRIES IN @me->gt_reguh
+      WHERE lifnr = @me->gt_reguh-lifnr
+    INTO TABLE @me->gt_address.
+
+    SORT me->gt_address BY lifnr.
+
+    SELECT partner, bkref
+      FROM but0bk
+      FOR ALL ENTRIES IN @me->gt_reguh
+      WHERE partner = @me->gt_reguh-lifnr
+    INTO TABLE @me->gt_but0bk.
+
+    SORT me->gt_but0bk BY partner.
+
+  ENDMETHOD. " SELECT_DETAIL_DATA
+
+  METHOD fill_general_data.
+    DATA:
+      lv_soma_total  TYPE reguh-rwbtr,
+      lv_posicao     TYPE i,
+      lw_key_arquivo TYPE gty_key_arquivo,
+      lw_detail      LIKE LINE OF me->gt_detail,
+      lw_trailer     LIKE LINE OF me->gt_trailer.
+
+    me->gv_nombre_archivo = |{ sy-datum(4) }{ sy-datum+4(2) }{ sy-datum+7(1) }{ sy-uzeit(2) }{ sy-uzeit+2(2) }{ sy-uzeit+4(2) }CITI|.
+
+    LOOP AT me->gt_reguh INTO DATA(lw_reguh).
+      ADD 1 TO lv_posicao.
+
+      READ TABLE me->gt_address WITH KEY lifnr = lw_key_arquivo-lifnr INTO DATA(lw_address) .
+      READ TABLE me->gt_but0bk WITH KEY partner = lw_key_arquivo-lifnr INTO DATA(lw_but0bk).
+
+      IF lw_reguh-rwbtr < 0 .
+        lw_reguh-rwbtr = lw_reguh-rwbtr * -1.
+      ENDIF.
+
+      lv_soma_total = lv_soma_total + lw_reguh-rwbtr.
+
+      lw_detail = VALUE #(
+        type             = 'PAY'
+        ccountry_code    = '600'
+        cacc_number      = COND #( WHEN lw_reguh-ubknt IS INITIAL THEN lw_reguh-ubknt_long ELSE lw_reguh-ubknt )
+        transaction_date = lw_reguh-valut
+        transaction_code = COND #( WHEN lw_reguh-zbnkl <> lw_reguh-ubnkl THEN '071' ELSE '072' )
+        transaction_refe = lw_reguh-vblnr
+        transaction_numb = lv_posicao
+        tp_tax_id        = COND #( WHEN lw_reguh-zbnkl <> lw_reguh-ubnkl THEN lw_address-stcd3 ELSE space )
+        ca_currency      = lw_reguh-waers
+        tp_code          = lw_reguh-lifnr
+        transaction_amt  = lw_reguh-rwbtr
+        blanks_1         = space
+        lcl_tran_code    = '01'
+        ca_type          = COND #( WHEN lw_but0bk-bkref = '20' THEN '01' WHEN lw_but0bk-bkref = '21' THEN '02' ELSE space )
+        tp_name          = lw_reguh-name1
+        tp_address_1     = lw_reguh-zstra
+        tp_address_2     = lw_reguh-ort01
+        tp_state         = space
+        tp_address_3     = space
+        tp_phone         = lw_reguh-ztelf
+        tp_bank          = lw_reguh-zbnkl
+        tp_agency        = 0
+        tp_acc_number    = COND #( WHEN lw_reguh-ubknt IS INITIAL THEN lw_reguh-ubknt_long ELSE lw_reguh-ubknt )
+        tp_acc_type      = COND #( WHEN lw_but0bk-bkref = '20' THEN '01' WHEN lw_but0bk-bkref = '21' THEN '02' ELSE space )
+        tp_bank_address  = 0
+        tp_bank_entity   = '01'
+        tp_bank_pl_numb  = '01'
+        tp_bank_pl_name  = space
+        tp_bank_brn_num  = '001'
+        blanks_2         = space
+        tp_citi_acc_num  = lw_reguh-ubknt
+        acc_type_cr      = COND #( WHEN lw_but0bk-bkref = '20' THEN '01' WHEN lw_but0bk-bkref = '21' THEN '02' ELSE space )
+        trans_delivery   = '000'
+        blanks_3         = space
+        tp_email         = lw_address-smtp_addr
+        max_paymnt_amt   = '999999999999999'
+        blanks_4         = space
+        motive           = '20'
+        blanks_5         = space
+        crlf             = cl_abap_char_utilities=>cr_lf
+      ).
+
+      APPEND lw_detail TO me->gt_detail.
+
+      CLEAR: lw_address, lw_but0bk.
+    ENDLOOP.
+
+    APPEND VALUE #(
+      type            = 'TRL'
+      num_transaction = lv_posicao
+      tot_transaction = lv_soma_total
+      num_tp_rec      = 0
+      num_tp_rec_sent = lv_posicao
+      blanks_1        = space
+      crlf            = cl_abap_char_utilities=>cr_lf
+    ) TO me->gt_trailer.
+
+*    SORT me->gt_header BY laufd laufi xvorl zbukr lifnr kunnr empfg.
+*    SORT me->gt_item BY laufd laufi xvorl zbukr lifnr kunnr empfg num_factura.
+
+  ENDMETHOD. " FILL_GENERAL_DATA
+
+  METHOD escribir_archivo.
+    DATA:
+      lv_directorio TYPE dirname_al11,
+      lv_string     TYPE string.
+
+    lv_directorio = |{ me->gv_directorio }{ me->gv_nombre_archivo }.txt|.
+
+    OPEN DATASET lv_directorio FOR OUTPUT IN TEXT MODE ENCODING NON-UNICODE IGNORING CONVERSION ERRORS REPLACEMENT CHARACTER ''.
+*    OPEN DATASET lv_directorio IN TEXT MODE FOR OUTPUT ENCODING DEFAULT IGNORING CONVERSION ERRORS.
+*    OPEN DATASET lv_directorio FOR OUTPUT IN TEXT MODE ENCODING DEFAULT.
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE i006(zfi).ENDIF. " Error de escritura de archivo.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZFI' number = 006 ).
+
+    ENDIF.
+
+    LOOP AT me->gt_detail INTO DATA(lw_detail).
+      CLEAR lv_string.
+      CONCATENATE lv_string lw_detail INTO lv_string RESPECTING BLANKS.
+      TRANSFER lv_string TO lv_directorio.
+    ENDLOOP.
+
+    READ TABLE me->gt_trailer INTO DATA(lw_trailer) INDEX 1.
+    CLEAR lv_string.
+    CONCATENATE lv_string lw_trailer INTO lv_string RESPECTING BLANKS.
+    TRANSFER lv_string TO lv_directorio.
+
+    CLOSE DATASET lv_directorio.
+
+  ENDMETHOD. " ESCRIBIR_ARCHIVO
+
+ENDCLASS.
+
+FORM select_directory_al11 CHANGING cv_directory TYPE text1000.
+
+  DATA:
+    lv_directory TYPE string.
+
+  CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
+    EXPORTING
+      directory        = '/usr/sap/'
+      filemask         = ''
+    IMPORTING
+      serverfile       = lv_directory
+    EXCEPTIONS
+      canceled_by_user = 1
+      OTHERS           = 2.
+
+  IF lv_directory IS NOT INITIAL.
+    cv_directory = lv_directory.
+  ENDIF.
+
+ENDFORM. " SELECT_DIRECTORY_AL11.
+
+FORM initialization.
+
+  SELECT SINGLE low
+    FROM tvarvc
+    WHERE name = 'ZFI_DIRECTORIO_CITIBANK'
+  INTO @p_dir.
+
+ENDFORM. " INITIALIZATION
