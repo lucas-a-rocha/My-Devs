@@ -1,0 +1,140 @@
+FUNCTION zfpm_atualizar_origem_material.
+*********************************************************************************************
+*                      &Stara/&Castgroup                                                    *
+*********************************************************************************************
+* Autor    : Lucas Rocha                                                                    *
+* Data     : 09.02.2023 16:10:04                                                            *
+*********************************************************************************************
+* Descrição: Chamado 237263, PM: ordem manutenção                                           *
+*********************************************************************************************
+* Alteração :                                                                               *
+* Autor     :                                                                               *
+* Data      :                                                                               *
+* Descrição :                                                                               *
+*********************************************************************************************
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     VALUE(IT_EBAN) TYPE  MEREQ_T_EBAN
+*"----------------------------------------------------------------------
+  DATA:
+    lv_houve_modificacao TYPE flag,
+    lr_tipo_doc_eban     TYPE RANGE OF eban-bsart.
+
+  DATA:
+    ls_prheader     TYPE bapimereqheader,
+    lt_ext_brasil   TYPE STANDARD TABLE OF j_1bmatext,
+    lw_ext_brasil   LIKE LINE OF lt_ext_brasil,
+    lt_return       TYPE STANDARD TABLE OF bapiret2,
+    lt_pritem       TYPE STANDARD TABLE OF bapimereqitem,
+    lt_pritem_i     TYPE STANDARD TABLE OF bapimereqitemimp,
+    lt_extensionout TYPE STANDARD TABLE OF bapiparex,
+    lt_extentionin  TYPE STANDARD TABLE OF bapiparex.
+
+  CHECK it_eban IS NOT INITIAL.
+
+  WAIT UP TO 5 SECONDS.
+
+  SELECT sign, opti AS option, low, high
+    FROM tvarvc
+    WHERE name = 'ZMM_ORIGEM_MAT'
+  INTO CORRESPONDING FIELDS OF TABLE @lr_tipo_doc_eban.
+
+  SELECT matnr, bwkey, bwtar, mtorg
+    FROM mbew
+    FOR ALL ENTRIES IN @it_eban
+    WHERE matnr = @it_eban-matnr
+      AND bwkey = @it_eban-werks
+  INTO TABLE @DATA(lt_mbew).
+
+  LOOP AT it_eban INTO DATA(lw_eban_grp)
+    GROUP BY ( banfn = lw_eban_grp-banfn )
+    ASSIGNING FIELD-SYMBOL(<fs_eban_grp>).
+
+    CLEAR: ls_prheader, lv_houve_modificacao.
+    FREE: lt_return, lt_pritem, lt_pritem_i, lt_extensionout, lt_extentionin.
+
+    CALL FUNCTION 'BAPI_PR_GETDETAIL'
+      EXPORTING
+        number       = <fs_eban_grp>-banfn
+      IMPORTING
+        prheader     = ls_prheader
+      TABLES
+        return       = lt_return
+        pritem       = lt_pritem
+        extensionout = lt_extensionout.
+
+    READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+    CHECK sy-subrc <> 0.
+
+    CHECK ls_prheader-pr_type IN lr_tipo_doc_eban.
+
+*   " Faz o preenchimento dos dados da extension.
+    LOOP AT lt_extensionout INTO DATA(lw_extension).
+
+      IF lw_extension-structure = 'J_1BMATEXT'.
+        CLEAR lw_ext_brasil.
+        MOVE lw_extension-valuepart1 TO lw_ext_brasil.
+        APPEND lw_ext_brasil TO lt_ext_brasil.
+
+        CONTINUE.
+      ENDIF.
+
+    ENDLOOP.
+
+*   " A BAPI só permite alterar UM dado referente ao Brasil por vez. Ela não consegue identificar o ITEM correto
+*   " Local da checagem/identificação: CL_J_1B_ME_BAPI_PR->IF_EX_ME_BAPI_PR_CREATE_01~EXTENSIONIN
+    LOOP AT lt_pritem INTO DATA(lw_pritem).
+      DATA(lv_tabix) = sy-tabix.
+
+      CLEAR: lw_ext_brasil.
+      FREE: lt_extentionin, lt_pritem_i.
+
+*     " Só deverá modificar os itens que foram modificados em TELA. Os demais deverão permanecer como antes.
+      READ TABLE it_eban WITH KEY banfn = <fs_eban_grp>-banfn
+                                  bnfpo = lw_pritem-preq_item INTO DATA(lw_eban).
+      CHECK sy-subrc = 0.
+
+      READ TABLE lt_mbew WITH KEY matnr = lw_eban-matnr
+                                  bwkey = lw_eban-werks INTO DATA(lw_mbew).
+      CHECK sy-subrc = 0.
+
+      READ TABLE lt_ext_brasil INDEX lv_tabix INTO lw_ext_brasil.
+      CHECK lw_ext_brasil-j_1bmatorg IS INITIAL. " Irá modificar APENAS quando estiver vazia.
+
+      lw_ext_brasil-j_1bmatorg = lw_mbew-mtorg.
+
+      lw_extension-structure = 'J_1BMATEXT'.
+      MOVE lw_ext_brasil TO lw_extension-valuepart1.
+      APPEND lw_extension TO lt_extentionin.
+      APPEND CORRESPONDING #( lw_pritem ) TO lt_pritem_i.
+
+      lv_houve_modificacao = abap_true.
+
+      FREE lt_return.
+      CALL FUNCTION 'BAPI_PR_CHANGE'
+        EXPORTING
+          number      = <fs_eban_grp>-banfn
+        TABLES
+          return      = lt_return
+          pritem      = lt_pritem_i
+          extensionin = lt_extentionin.
+      READ TABLE lt_return WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        CLEAR lv_houve_modificacao.
+        EXIT.
+      ENDIF.
+
+      CLEAR: lw_eban, lw_mbew.
+    ENDLOOP.
+
+    IF lv_houve_modificacao IS INITIAL.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+ENDFUNCTION.
