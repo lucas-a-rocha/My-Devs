@@ -1,0 +1,51 @@
+01	Z_DADOS_LOG
+05	Z_DADOS_LOG_05
+
+*----------------------------------------------------------------------*
+***INCLUDE LZKWVLES002F01.
+*----------------------------------------------------------------------*
+FORM z_dados_log.
+
+  LOOP AT total[] ASSIGNING FIELD-SYMBOL(<fs_total>).
+
+    ASSIGN COMPONENT 'ACTION' OF STRUCTURE <fs_total> TO FIELD-SYMBOL(<fs_action>).
+    CHECK <fs_action> IS ASSIGNED.
+
+    IF <fs_action> = 'U'.
+
+      ASSIGN COMPONENT 'CHANGED_BY' OF STRUCTURE <fs_total> TO FIELD-SYMBOL(<fs_changed_by>).
+      ASSIGN COMPONENT 'CHANGED_ON' OF STRUCTURE <fs_total> TO FIELD-SYMBOL(<fs_changed_on>).
+
+      IF <fs_changed_by> IS ASSIGNED AND <fs_changed_on> IS ASSIGNED.
+
+        <fs_changed_by> = sy-uname.
+        <fs_changed_on> = sy-datlo.
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM.
+
+FORM z_dados_log_05.
+
+  IF zkwvles002-dirmovmerc = 1. " Entrada
+
+    IF zkwvles002-tp_faturamento IS NOT INITIAL.
+      MESSAGE text-e01 TYPE 'E'.
+    ENDIF.
+
+  ELSEIF zkwvles002-dirmovmerc = 2. " Saída
+
+    IF zkwvles002-mtuse IS NOT INITIAL.
+      MESSAGE text-e02 TYPE 'E'.
+    ENDIF.
+
+  ENDIF.
+
+  zkwvles002-created_by = sy-uname.
+  zkwvles002-created_on = sy-datlo.
+
+ENDFORM.
