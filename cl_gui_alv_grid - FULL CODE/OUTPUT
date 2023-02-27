@@ -1,0 +1,75 @@
+*&---------------------------------------------------------------------*
+*&      Module  INICIAR  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE iniciar OUTPUT.
+
+  PERFORM iniciar.
+
+ENDMODULE. " INICIAR
+
+*&---------------------------------------------------------------------*
+*&      Form  INICIAR
+*&---------------------------------------------------------------------*
+FORM iniciar .
+
+  IF go_alv_0102 IS BOUND.
+
+    IF gv_read_only = abap_true.
+      go_alv_0102->set_ready_for_input( i_ready_for_input = 0 ).
+    ELSE.
+      go_alv_0102->set_ready_for_input( i_ready_for_input = 1 ).
+    ENDIF.
+
+    go_alv_0102->refresh_table_display(
+      EXPORTING
+        i_soft_refresh = abap_true
+    ).
+
+  ELSE.
+    go_solicitacao->criar_alv_0102(
+      CHANGING
+        co_container = go_container_0102
+        co_alv       = go_alv_0102
+    ).
+  ENDIF.
+
+ENDFORM. " INICIAR
+
+*&---------------------------------------------------------------------*
+*&      Form  ELIMINAR_ALVS
+*&---------------------------------------------------------------------*
+FORM eliminar_alvs .
+
+  IF go_solicitacao IS BOUND.
+    go_solicitacao->free_9002( ).
+  ENDIF.
+
+  IF go_alv_0102 IS BOUND.
+    go_alv_0102->free( ).
+  ENDIF.
+
+  IF go_container_0102 IS BOUND.
+    go_container_0102->free( ).
+  ENDIF.
+
+  IF go_alv_0103 IS BOUND.
+    go_alv_0103->free( ).
+  ENDIF.
+
+  IF go_container_0103 IS BOUND.
+    go_container_0103->free( ).
+  ENDIF.
+
+  IF go_alv_0105 IS BOUND.
+    go_alv_0105->free( ).
+  ENDIF.
+
+  IF go_container_0105 IS BOUND.
+    go_container_0105->free( ).
+  ENDIF.
+
+  FREE: go_container_0102, go_alv_0102,
+        go_container_0103, go_alv_0103,
+        go_container_0105, go_alv_0105.
+
+ENDFORM. " ELIMINAR_ALVS
