@@ -1,0 +1,28 @@
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9003  INPUT
+*&---------------------------------------------------------------------*
+MODULE user_command_9003 INPUT.
+  CASE gv_okcode_9003.
+    WHEN 'BACK' OR 'RETURN' OR 'CANCEL'.
+      LEAVE TO SCREEN 0.
+
+    WHEN 'BTCONS'.
+      TRY.
+          go_solicitacao->executar_selecao_geral(
+            EXPORTING
+              ir_numsol    = s_numsol[]
+              ir_lifnr     = s_lifnr[]
+              ir_lifnrf    = s_lifnrf[]
+              ir_docref    = s_docref[]
+          ).
+        CATCH cx_idm_error INTO ol_exc.
+          MESSAGE ID ol_exc->message-id TYPE 'S'
+             NUMBER ol_exc->message-number
+               WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+                 DISPLAY LIKE ol_exc->message-type.
+
+      ENDTRY.
+
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE. " USER_COMMAND_9003
