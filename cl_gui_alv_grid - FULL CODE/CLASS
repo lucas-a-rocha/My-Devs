@@ -1,0 +1,255 @@
+  METHODS:
+      criar_alv
+        CHANGING
+          !co_container TYPE REF TO cl_gui_container
+          !co_alv       TYPE REF TO cl_gui_alv_grid,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+          
+      handle_data_changed
+            FOR EVENT data_changed OF cl_gui_alv_grid
+        IMPORTING
+            !er_data_changed
+            !e_ucomm
+            !e_onf4
+            !e_onf4_before
+            !e_onf4_after,
+            
+      handle_button_click
+            FOR EVENT button_click OF cl_gui_alv_grid
+        IMPORTING
+            !es_col_id
+            !es_row_no.
+  
+  METHOD criar_alv.
+
+    CONSTANTS:
+      c_container TYPE scrfname VALUE 'CC_0102'.
+
+    cl_gui_cfw=>flush( ).
+
+    co_container  = NEW cl_gui_custom_container( container_name = c_container ).
+    co_alv        = NEW cl_gui_alv_grid( i_parent = co_container ).
+
+    SET HANDLER me->handle_data_changed_0102 FOR co_alv.
+
+    DATA(lt_fieldcat) = me->montar_fieldcat_report( iv_estrutura = 'ZSMM_016' ).
+    DATA(lt_excl_fn)  = me->excluir_funcionalidades( ).
+
+    DATA(ls_layout) = VALUE lvc_s_layo(
+      zebra       = abap_true
+*      box_fname   = 'MARK'
+    ).
+
+    co_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
+
+    co_alv->set_table_for_first_display(
+      EXPORTING
+        is_variant            = VALUE #( report    = sy-cprog
+                                         username  = sy-uname ) "variant   = me->gv_layout )
+        i_save                = 'A' "'U'
+        it_toolbar_excluding  = lt_excl_fn
+        is_layout             = ls_layout
+      CHANGING
+        it_fieldcatalog       = lt_fieldcat
+        it_outtab             = gt_ztbmm_016_0102[] ).
+
+    co_alv->set_toolbar_interactive( ).
+
+    IF gv_read_only = abap_true.
+      co_alv->set_ready_for_input( i_ready_for_input = 0 ).
+    ELSE.
+      co_alv->set_ready_for_input( i_ready_for_input = 1 ).
+    ENDIF.
+
+  ENDMETHOD. " CRIAR_ALV
+  
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' OR 'STATUS' .
+          DELETE rt_fieldcat INDEX lv_tabix.
+*        WHEN 'FDGRV_OLD'.
+*          dfcat_texto <fl_fcat> 'OldPlanGrp' 'Old Planning Group' 'Old Planning Group' 10.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+  
+  METHOD handle_data_changed.
+
+*" Tratamento para linhas INSERIDAS
+    DATA:
+      lv_ebelp TYPE ztbmm_016-ebelp.
+
+    FIELD-SYMBOLS <ft_data> TYPE gtt_zsmm_016.
+    ASSIGN er_data_changed->mp_mod_rows->* TO <ft_data>.
+
+    IF gt_ztbmm_016_0102 IS NOT INITIAL.
+*     " Pega o valor da ultima linha
+      lv_ebelp = gt_ztbmm_016_0102[ lines( gt_ztbmm_016_0102 ) ]-ebelp.
+    ENDIF.
+
+    LOOP AT er_data_changed->mt_inserted_rows ASSIGNING FIELD-SYMBOL(<inserted_rows>).
+
+      READ TABLE <ft_data> ASSIGNING FIELD-SYMBOL(<fs_inserted>) INDEX sy-tabix.
+      IF <fs_inserted> IS ASSIGNED.
+        ADD 10 TO lv_ebelp.
+        <fs_inserted>-ebelp = lv_ebelp.
+      ENDIF.
+      UNASSIGN <fs_inserted>.
+
+    ENDLOOP.
+
+*" Tratamento para linhas MODIFICADAS.
+    FIELD-SYMBOLS: <campo>   TYPE any.
+
+**********************************************************************
+*   " Ajusta os campos na tabela global do relatório.
+**********************************************************************
+    LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<good_cells>).
+
+      READ TABLE gt_ztbmm_016_0102 ASSIGNING FIELD-SYMBOL(<fs_modified>) INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        ASSIGN COMPONENT <good_cells>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+        IF <campo> IS ASSIGNED.
+          <campo> = <good_cells>-value.
+        ENDIF.
+      ENDIF.
+
+      UNASSIGN: <fs_modified>, <campo>.
+    ENDLOOP.
+
+**********************************************************************
+*   " Ajusta as colunas que não são editáveis
+**********************************************************************
+    LOOP AT er_data_changed->mt_good_cells ASSIGNING <good_cells>.
+
+      READ TABLE gt_ztbmm_016_0102 ASSIGNING <fs_modified> INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        SELECT SINGLE mara~matnr, meins, matkl, maktx
+          FROM mara
+          INNER JOIN makt ON makt~matnr = mara~matnr
+          WHERE mara~matnr = @<fs_modified>-matnr
+        INTO @DATA(ls_mara).
+
+        IF sy-subrc = 0.
+          <fs_modified>-maktx = ls_mara-maktx.
+          <fs_modified>-meins = ls_mara-meins.
+          <fs_modified>-matkl = ls_mara-matkl.
+        ENDIF.
+
+        LOOP AT er_data_changed->mt_fieldcatalog ASSIGNING FIELD-SYMBOL(<fieldcat>).
+*         " Modifica apenas os campos que não foram modificados automaticamente. Normalmente serão os campos não editáveis
+          READ TABLE er_data_changed->mt_good_cells WITH KEY row_id = <good_cells>-row_id fieldname = <fieldcat>-fieldname TRANSPORTING NO FIELDS.
+          IF sy-subrc NE 0.
+            ASSIGN COMPONENT <fieldcat>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+            IF <campo> IS ASSIGNED.
+              er_data_changed->modify_cell(
+                EXPORTING i_row_id    = <good_cells>-row_id
+                          i_fieldname = <fieldcat>-fieldname
+                          i_value     = <campo> ).
+            ENDIF.
+            UNASSIGN <campo>.
+
+          ENDIF.
+        ENDLOOP.
+
+      ENDIF.
+
+      UNASSIGN: <fs_modified>, <campo>.
+    ENDLOOP.
+
+  ENDMETHOD. "  HANDLE_DATA_CHANGED
+  
+  METHOD handle_button_click.
+
+    READ TABLE gt_ztbmm_019_0103 INTO DATA(lw_t019) INDEX es_row_no-row_id.
+
+    CASE es_col_id-fieldname.
+      WHEN 'ANEXAR'.
+        TRY.
+
+            me->anexar_documentos( iv_tipo = '03' iv_sub_tipo = lw_t019-ident iv_read_only = gv_read_only ). " Dados Fiscais
+
+          CATCH cx_idm_error INTO DATA(ol_exc).
+            MESSAGE ID ol_exc->message-id TYPE 'S'
+               NUMBER ol_exc->message-number
+                 WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+                   DISPLAY LIKE ol_exc->message-type.
+        ENDTRY.
+
+      WHEN OTHERS.
+        RETURN.
+    ENDCASE.
+
+  ENDMETHOD. " HANDLE_BUTTON_CLICK
+  
