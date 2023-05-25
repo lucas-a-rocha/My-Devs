@@ -1,0 +1,1869 @@
+*********************************************************************************************
+*                      &Randon/&Castgroup                                                   *
+*********************************************************************************************
+* Autor    : Lucas Rocha                                                                    *
+* Data     : 27.01.2023 13:09:11                                                            *
+*********************************************************************************************
+* Descrição: Chamado 301899-[Melhoria]Extrema estorno de crédito                            *
+*********************************************************************************************
+* Alteração :                                                                               *
+* Autor     :                                                                               *
+* Data      :                                                                               *
+* Descrição :                                                                               *
+*********************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report  ZMMR046
+*&---------------------------------------------------------------------*
+REPORT zmmr046.
+
+TABLES: j_1bnfdoc, j_1bnflin, bkpf.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+
+PARAMETERS:
+  s_bukrs  TYPE j_1bnfdoc-bukrs   OBLIGATORY,
+  s_branch TYPE j_1bnfdoc-branch  OBLIGATORY.
+
+SELECT-OPTIONS:
+*  s_bukrs  FOR j_1bnfdoc-bukrs   NO-EXTENSION NO INTERVALS OBLIGATORY,
+*  s_branch FOR j_1bnfdoc-branch  NO-EXTENSION NO INTERVALS OBLIGATORY,
+  s_gjahr  FOR j_1bnfdoc-gjahr   NO-EXTENSION NO INTERVALS OBLIGATORY, " MATCHCODE OBJECT rscalyear,
+  s_monat  FOR bkpf-monat        NO-EXTENSION NO INTERVALS OBLIGATORY,
+  s_pstdat FOR j_1bnfdoc-pstdat  NO-EXTENSION,
+  s_nbm    FOR j_1bnflin-nbm,
+  s_docnum FOR j_1bnflin-docnum  NO-DISPLAY.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_gjahr-low.
+  PERFORM search_help_year CHANGING s_gjahr-low.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_monat-low.
+  PERFORM search_help_month CHANGING s_monat-low.
+
+CLASS lcl_relatorio DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_rel_analitico,
+        xblnr            TYPE rbkp-xblnr,
+        docnum           TYPE j_1bnfdoc-docnum,
+        itmnum           TYPE j_1bnflin-itmnum,
+        budat            TYPE rbkp-budat,
+        matnr_sup        TYPE j_1bnflin-matnr,
+        matnr            TYPE j_1bnflin-matnr,
+        nbm              TYPE j_1bnflin-nbm,
+        werks            TYPE j_1bnflin-werks,
+        menge            TYPE j_1bnflin-menge,
+        meins            TYPE j_1bnflin-meins,
+        mngko            TYPE stpox-mngko,
+        vl_unit_ult_comp TYPE j_1bnflin-netpr, " VALOR UNITÁRIO ÚLTIMA COMPRA
+        vl_tt_merc_trans TYPE j_1bnflin-netpr, " VALOR TOTAL DA MERCADORIA TRANSFERIDA
+        icms_ult_comp    TYPE j_1bnfstx-rate,  " ALÍQUOTA ICMS ÚLTIMA COMPRA
+        icms_estornar    TYPE j_1bnflin-netpr, " ICMS A SER ESTORNADO
+        docnum_sup       TYPE j_1bnfdoc-docnum,
+        itmnum_sup       TYPE j_1bnflin-itmnum,
+      END OF gty_rel_analitico,
+      gtt_rel_analitico TYPE STANDARD TABLE OF gty_rel_analitico WITH EMPTY KEY,
+
+      BEGIN OF gty_rel_sintetico,
+        nfenum           TYPE j_1bnfdoc-nfenum,
+        docnum           TYPE j_1bnfdoc-docnum,
+        itmnum           TYPE j_1bnflin-itmnum,
+        pstdat           TYPE j_1bnfdoc-pstdat,
+        matnr            TYPE j_1bnflin-matnr,
+        nbm              TYPE j_1bnflin-nbm,
+        werks            TYPE j_1bnflin-werks,
+        umwrk            TYPE mseg-umwrk,
+        menge            TYPE j_1bnflin-menge,
+        meins            TYPE j_1bnflin-meins,
+        vl_mercadoria    TYPE j_1bnflin-netpr, " VALOR DA MERCADORIA (ÚLTIMA ENTRADA)
+        icms_tt_estornar TYPE j_1bnflin-netpr, " TOTAL ICMS A SER ESTORNADO
+        bukrs_contab     TYPE zmmt117-bukrs,
+        belnr_contab     TYPE zmmt117-belnr,
+        gjahr_contab     TYPE zmmt117-gjahr,
+      END OF gty_rel_sintetico,
+
+      gtt_rel_sintetico TYPE STANDARD TABLE OF gty_rel_sintetico,
+
+      BEGIN OF gty_doc,
+        docnum TYPE j_1bnfdoc-docnum,
+        itmnum TYPE j_1bnflin-itmnum,
+        nfenum TYPE j_1bnfdoc-nfenum,
+        pstdat TYPE j_1bnfdoc-pstdat,
+        doctyp TYPE j_1bnfdoc-doctyp,
+        docref TYPE j_1bnfdoc-docref,
+        matnr  TYPE j_1bnflin-matnr,
+        nbm    TYPE j_1bnflin-nbm,
+        menge  TYPE j_1bnflin-menge,
+        meins  TYPE j_1bnflin-meins,
+        werks  TYPE j_1bnflin-werks,
+        refkey TYPE j_1bnflin-refkey,
+        bwkey  TYPE j_1bnflin-bwkey,
+      END OF gty_doc,
+      gtt_doc TYPE SORTED TABLE OF gty_doc WITH UNIQUE KEY docnum itmnum,
+
+      BEGIN OF gty_mseg,
+        mblnr TYPE mseg-mblnr,
+        mjahr TYPE mseg-mjahr,
+        zeile TYPE mseg-zeile,
+        werks TYPE mseg-werks,
+        umwrk TYPE mseg-umwrk,
+      END OF gty_mseg,
+
+      BEGIN OF gty_mbew,
+        matnr  TYPE mbew-matnr,
+        bwkey  TYPE mbew-bwkey,
+        bwtar  TYPE mbew-bwtar,
+        pstdat TYPE j_1bnfdoc-pstdat,
+      END OF gty_mbew,
+
+      BEGIN OF gty_componentes,
+        matnr_sup TYPE mbew-matnr,
+        bwkey_sup TYPE mbew-bwkey,
+        matnr     TYPE mbew-matnr,
+        werks     TYPE j_1bnflin-werks,
+        mngko     TYPE stpox-mngko,
+        meins     TYPE stpox-meins,
+        pstdat    TYPE j_1bnfdoc-pstdat,
+      END OF gty_componentes,
+      gtt_componentes TYPE STANDARD TABLE OF gty_componentes WITH EMPTY KEY,
+
+      BEGIN OF gty_rseg,
+        belnr TYPE rbkp-belnr,
+        gjahr TYPE rbkp-gjahr,
+        buzei TYPE rseg-buzei,
+        budat TYPE rbkp-budat,
+        xblnr TYPE rbkp-xblnr,
+        matnr TYPE rseg-matnr,
+        bwkey TYPE rseg-bwkey,
+      END OF gty_rseg,
+      gtt_rseg TYPE STANDARD TABLE OF gty_rseg WITH EMPTY KEY,
+
+      BEGIN OF gty_lin_stx,
+        docnum TYPE j_1bnflin-docnum,
+        itmnum TYPE j_1bnflin-itmnum,
+        netpr  TYPE j_1bnflin-netpr,
+        meins  TYPE j_1bnflin-meins,
+        nbm    TYPE j_1bnflin-nbm,
+        werks  TYPE j_1bnflin-werks,
+        rate   TYPE j_1bnfstx-rate,
+        taxtyp TYPE j_1bnfstx-taxtyp,
+        refkey TYPE j_1bnflin-refkey,
+        refitm TYPE j_1bnflin-refitm,
+        matnr  TYPE j_1bnflin-matnr,
+        nfenum TYPE j_1bnfdoc-nfenum,
+        series TYPE j_1bnfdoc-series,
+      END OF gty_lin_stx,
+      gtt_lin_stx TYPE STANDARD TABLE OF gty_lin_stx WITH EMPTY KEY,
+
+      BEGIN OF gty_mseg_comp,
+        mblnr      TYPE mseg-mblnr,
+        mjahr      TYPE mseg-mjahr,
+        zeile      TYPE mseg-zeile,
+        matnr      TYPE mseg-matnr,
+        werks      TYPE mseg-werks,
+        budat_mkpf TYPE mseg-budat_mkpf,
+        lifnr      TYPE mseg-lifnr,
+        regio      TYPE lfa1-regio,
+      END OF gty_mseg_comp,
+      gtt_mseg_comp TYPE STANDARD TABLE OF gty_mseg_comp,
+
+      BEGIN OF gty_tnfk,
+        docnum TYPE /xeit/tnfk-docnum,
+        itmnum TYPE /xeit/tnfp-itmnum,
+        sbeln  TYPE /xeit/tnfk-sbeln,
+        matnr  TYPE /xeit/tnfp-matnr,
+        werks  TYPE /xeit/tnfp-werks,
+        pstdat TYPE /xeit/tnfk-pstdat,
+      END OF gty_tnfk,
+      gtt_tnfk    TYPE STANDARD TABLE OF gty_tnfk WITH EMPTY KEY,
+
+      gtr_bukrs   TYPE RANGE OF j_1bnfdoc-bukrs,
+      gtr_branch  TYPE RANGE OF j_1bnfdoc-branch,
+      gtr_gjahr   TYPE RANGE OF j_1bnfdoc-gjahr,
+      gtr_monat   TYPE RANGE OF bkpf-monat,
+      gtr_pstdat  TYPE RANGE OF j_1bnfdoc-pstdat,
+      gtr_nbm     TYPE RANGE OF j_1bnflin-nbm,
+      gtr_docnum  TYPE RANGE OF j_1bnflin-docnum,
+      gtv_percent TYPE p LENGTH 5 DECIMALS 2,
+      gtt_zmmt117 TYPE STANDARD TABLE OF zmmt117 WITH EMPTY KEY.
+
+    METHODS:
+      constructor
+        IMPORTING
+          !ir_bukrs  TYPE gtr_bukrs
+          !ir_branch TYPE gtr_branch
+          !ir_gjahr  TYPE gtr_gjahr
+          !ir_monat  TYPE gtr_monat
+          !ir_pstdat TYPE gtr_pstdat
+          !ir_nbm    TYPE gtr_nbm
+          !ir_docnum TYPE gtr_docnum
+        RAISING
+          cx_idm_error ,
+
+      processar
+        RAISING
+          cx_idm_error.
+
+  PRIVATE SECTION .
+    DATA:
+      go_alv_sintetico TYPE REF TO cl_salv_table.
+
+    DATA:
+      gr_bukrs              TYPE gtr_bukrs,
+      gr_branch             TYPE gtr_branch,
+      gr_gjahr              TYPE gtr_gjahr,
+      gr_monat              TYPE gtr_monat,
+      gr_pstdat             TYPE gtr_pstdat,
+      gr_nbm                TYPE gtr_nbm,
+      gr_docnum             TYPE gtr_docnum,
+      gr_parid              TYPE RANGE OF j_1bnfdoc-parid,
+      gr_ultimo_ano         TYPE gtr_pstdat,
+      gv_ultimo_dia_periodo TYPE dats.
+
+    DATA:
+      gt_doc                TYPE gtt_doc,
+      gt_mseg               TYPE STANDARD TABLE OF gty_mseg,
+      gt_mat_prod_int       TYPE STANDARD TABLE OF gty_mbew,
+      gt_mat_comprado       TYPE STANDARD TABLE OF gty_mbew,
+      gt_componentes        TYPE gtt_componentes,
+      gt_rseg               TYPE gtt_rseg,
+      gt_tnfk               TYPE gtt_tnfk,
+      gt_ultima_compra      TYPE gtt_lin_stx,
+      gt_rel_sintetico      TYPE gtt_rel_sintetico,
+      gt_rel_analitico      TYPE gtt_rel_analitico,
+      gt_rel_analitico_comp TYPE gtt_rel_analitico,
+      gt_zmmt117            TYPE gtt_zmmt117.
+
+    METHODS:
+
+      validar_periodo_execucao
+        IMPORTING
+          !iv_werks TYPE werks_d
+        RAISING
+          cx_idm_error,
+
+      selecionar_dados_execucao
+        RAISING
+          cx_idm_error,
+
+      remover_documentos_cancelados
+        RAISING
+          cx_idm_error,
+
+      buscar_componentes_material,
+
+      buscar_ultima_compra,
+
+      buscar_ultima_compra_nac
+        IMPORTING
+          !it_mseg_comp           TYPE gtt_mseg_comp
+        RETURNING
+          VALUE(rt_ultima_compra) TYPE gtt_lin_stx,
+
+      buscar_ultima_compra_ext
+        IMPORTING
+          !it_mseg_comp           TYPE gtt_mseg_comp
+        RETURNING
+          VALUE(rt_ultima_compra) TYPE gtt_lin_stx,
+
+      buscar_documentos_contab,
+
+      gerar_dados_alv_sintetico,
+
+      gerar_dados_alv_analitico
+        IMPORTING
+          !is_doc           TYPE gty_doc
+        CHANGING
+          !cs_alv_sintetico TYPE gty_rel_sintetico,
+
+      gerar_alv_sintetico
+        CHANGING
+          ct_table TYPE ANY TABLE,
+
+      gerar_alv_analitico
+        CHANGING
+          ct_table TYPE gtt_rel_analitico,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      progress_indicator
+        IMPORTING
+          !iv_text TYPE text200
+          !iv_perc TYPE p OPTIONAL,
+
+      calcular_percentual
+        IMPORTING
+          !iv_posicao          TYPE sy-tabix
+          !iv_quantidade       TYPE sy-tabix
+        RETURNING
+          VALUE(rv_percentual) TYPE gtv_percent,
+
+      executar_contabilizacao
+        RAISING
+          cx_idm_error,
+
+      contabilizar_documento
+        IMPORTING
+          !iv_icms_tt_estornar TYPE gty_rel_sintetico-icms_tt_estornar
+          !it_contabilizados   TYPE gtt_rel_sintetico
+        EXPORTING
+          !ev_bukrs            TYPE zmmt117-bukrs
+          !ev_belnr            TYPE zmmt117-belnr
+          !ev_gjahr            TYPE zmmt117-gjahr ,
+
+      display_j1b3n_shdb
+        IMPORTING
+          !iv_docnum TYPE j_1bnfdoc-docnum,
+
+      display_fb03_shdb
+        IMPORTING
+          !iv_bukrs TYPE zmmt117-bukrs
+          !iv_belnr TYPE zmmt117-belnr
+          !iv_gjahr TYPE zmmt117-gjahr,
+
+      convert_material_unit
+        IMPORTING
+          !iv_matnr       TYPE mara-matnr
+          !iv_in_meins    TYPE mara-meins
+          !iv_out_meins   TYPE mara-meins
+          !iv_menge       TYPE ekpo-menge
+        RETURNING
+          VALUE(rv_menge) TYPE f,
+
+      on_double_click FOR EVENT double_click OF cl_salv_events_table
+        IMPORTING row column,
+
+      on_link_click_si FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column,
+
+      on_link_click_an FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column,
+
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+  TRY .
+      DATA(go_relatorio) = NEW lcl_relatorio(
+          ir_bukrs     = VALUE #( sign = 'I' option = 'EQ' ( low = s_bukrs ) ) " s_bukrs[]
+          ir_branch    = VALUE #( sign = 'I' option = 'EQ' ( low = s_branch ) ) " s_branch[]
+          ir_gjahr     = s_gjahr[]
+          ir_monat     = s_monat[]
+          ir_pstdat    = s_pstdat[]
+          ir_nbm       = s_nbm[]
+          ir_docnum    = s_docnum[]
+      ).
+
+      go_relatorio->processar( ).
+
+    CATCH cx_idm_error INTO DATA(ol_exc).
+      MESSAGE ID ol_exc->message-id TYPE 'S'
+         NUMBER ol_exc->message-number
+           WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+             DISPLAY LIKE ol_exc->message-type.
+  ENDTRY.
+
+CLASS lcl_relatorio IMPLEMENTATION.
+
+  METHOD constructor.
+    DATA:
+      lr_pstdat TYPE gtr_pstdat.
+
+    me->gr_bukrs  = ir_bukrs  .
+    me->gr_branch = ir_branch .
+    me->gr_gjahr  = ir_gjahr  .
+    me->gr_monat  = ir_monat  .
+    me->gr_nbm    = ir_nbm.
+    me->gr_docnum = ir_docnum .
+
+    IF me->gr_gjahr IS NOT INITIAL AND me->gr_monat IS NOT INITIAL.
+
+      APPEND INITIAL LINE TO lr_pstdat ASSIGNING FIELD-SYMBOL(<fs_pstdat>).
+      <fs_pstdat>-sign = 'I'.
+      <fs_pstdat>-option = 'BT'.
+      <fs_pstdat>-low = |{ me->gr_gjahr[ 1 ]-low }{ me->gr_monat[ 1 ]-low }01|.
+
+      CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+        EXPORTING
+          day_in            = <fs_pstdat>-low
+        IMPORTING
+          last_day_of_month = <fs_pstdat>-high
+        EXCEPTIONS
+          OTHERS            = 2.
+      IF sy-subrc <> 0.
+      ENDIF.
+
+      APPEND INITIAL LINE TO me->gr_ultimo_ano ASSIGNING FIELD-SYMBOL(<fs_ultimo_ano>).
+      <fs_ultimo_ano>-sign = 'I'.
+      <fs_ultimo_ano>-option = 'BT'.
+      <fs_ultimo_ano>-high = |{ me->gr_gjahr[ 1 ]-low }{ me->gr_monat[ 1 ]-low }01|.
+
+      CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+        EXPORTING
+          date      = <fs_ultimo_ano>-high
+          days      = 0
+          months    = 12
+          signum    = '-'
+          years     = 0
+        IMPORTING
+          calc_date = <fs_ultimo_ano>-low.
+
+    ENDIF.
+
+    IF ir_pstdat IS NOT INITIAL.
+      READ TABLE ir_pstdat INTO DATA(lw_pstdat) INDEX 1.
+
+      IF lw_pstdat-low IN lr_pstdat AND lw_pstdat-high IN lr_pstdat.
+        me->gr_pstdat = ir_pstdat.
+      ELSE.
+
+        IF lw_pstdat-low IN lr_pstdat AND lw_pstdat-high IS INITIAL.
+          me->gr_pstdat = ir_pstdat.
+        ENDIF.
+
+        IF lw_pstdat-high IN lr_pstdat AND lw_pstdat-low IS INITIAL.
+          APPEND VALUE #( sign = 'I' option = 'EQ' low = lw_pstdat-high ) TO me->gr_pstdat.
+        ENDIF.
+
+      ENDIF.
+
+      IF me->gr_pstdat IS INITIAL.
+        IF 1 = 2. MESSAGE i008(zmm). ENDIF. " O intervalo de Data de Lançamento está fora do período informado.
+
+        RAISE EXCEPTION TYPE cx_idm_error
+          EXPORTING
+            message = VALUE #( type = 'E' id = 'ZMM' number = 008 ).
+      ENDIF.
+
+    ENDIF.
+
+    IF me->gr_pstdat IS INITIAL.
+      me->gr_pstdat = lr_pstdat.
+    ENDIF.
+
+    IF '2000' IN me->gr_bukrs AND '2000' IN me->gr_branch.
+      APPEND VALUE #( sign = 'I' option = 'CP' low = '*20002010' ) TO me->gr_parid.
+    ENDIF.
+
+    IF '2000' IN me->gr_bukrs AND '2040' IN me->gr_branch.
+      APPEND VALUE #( sign = 'I' option = 'CP' low = '*20002045' ) TO me->gr_parid.
+    ENDIF.
+
+    IF '2500' IN me->gr_bukrs AND '2500' IN me->gr_branch.
+      APPEND VALUE #( sign = 'I' option = 'CP' low = '*25002520' ) TO me->gr_parid.
+    ENDIF.
+
+    DATA(lv_month) = CONV dats( |{ me->gr_gjahr[ 1 ]-low }{ me->gr_monat[ 1 ]-low }01| ).
+    CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+      EXPORTING
+        day_in            = lv_month
+      IMPORTING
+        last_day_of_month = me->gv_ultimo_dia_periodo
+      EXCEPTIONS
+        day_in_no_date    = 1
+        OTHERS            = 2.
+    IF sy-subrc <> 0.
+      me->gv_ultimo_dia_periodo = sy-datum.
+    ENDIF.
+
+    IF me->gv_ultimo_dia_periodo GT sy-datum.
+      me->gv_ultimo_dia_periodo = sy-datum.
+    ENDIF.
+
+  ENDMETHOD. " CONSTRUCTOR
+
+  METHOD processar.
+
+    me->selecionar_dados_execucao( ) .
+
+    me->gerar_dados_alv_sintetico( ).
+
+    me->gerar_alv_sintetico(
+      CHANGING
+        ct_table = me->gt_rel_sintetico[]
+    ).
+
+  ENDMETHOD. " PROCESSAR
+
+  METHOD validar_periodo_execucao.
+    DATA:
+      lv_periodo_fechado TYPE flag.
+
+    SELECT SINGLE *
+      FROM zmmt255
+      WHERE bukrs     IN @me->gr_bukrs
+        AND werks     = @iv_werks " IN @me->gr_branch
+    INTO @DATA(ls_zmmt255).
+
+*   " Verifica se a execuçao está sendo realizada para dentro do periodo de fechamento.
+    IF ls_zmmt255-dt_inicio <= me->gv_ultimo_dia_periodo AND
+       ls_zmmt255-dt_final  >= me->gv_ultimo_dia_periodo.
+
+      lv_periodo_fechado = abap_true.
+
+    ENDIF.
+
+    IF lv_periodo_fechado = abap_true.
+
+*     " Verifica se há uma exceção para o usuário logado.
+      SELECT COUNT(*)
+        FROM zmmt256
+        WHERE bukrs   IN @me->gr_bukrs
+          AND werks   = @iv_werks " @me->gr_branch
+          AND usuario EQ @sy-uname.
+
+      IF sy-subrc = 0.
+        lv_periodo_fechado = abap_false.
+      ENDIF.
+
+    ENDIF.
+
+    IF lv_periodo_fechado = abap_true.
+      IF 1 = 2. MESSAGE i037(zmfi). ENDIF. " Período fechado: usuário & sem autorização para lançar na empresa &.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMFI' number = 037 message_v1 = sy-uname message_v2 = me->gr_bukrs[ 1 ]-low ).
+    ENDIF.
+
+
+*    SELECT SINGLE *
+*      FROM zmmt255
+*      WHERE bukrs     IN @me->gr_bukrs
+*        AND werks     IN @me->gr_branch
+*        AND dt_inicio <= @me->gv_ultimo_dia_periodo
+*        AND dt_final  >= @me->gv_ultimo_dia_periodo
+*    INTO @DATA(ls_zmmt255).
+*
+**   " Verifica se a data está dentro do período de fechamento.
+*    IF sy-subrc = 0.
+*
+***     " Verifica se a data/hora está dentro do período de fechamento.
+**      IF ( ls_zmmt255-dt_inicio <> sy-datum AND ls_zmmt255-dt_final <> sy-datum ) OR
+**         ( ls_zmmt255-dt_inicio = sy-datum AND ls_zmmt255-hr_inicio <= sy-timlo ) OR
+**         ( ls_zmmt255-dt_final  = sy-datum AND ls_zmmt255-hr_final  >= sy-timlo ) .
+**
+*        lv_periodo_fechado = abap_true.
+**
+**      ENDIF.
+*
+*    ENDIF.
+*
+*    IF lv_periodo_fechado = abap_true.
+*
+**     " Verifica se há uma exceçao para o usuário logado.
+*      SELECT COUNT(*)
+*        FROM zmmt256
+*        WHERE bukrs   IN @me->gr_bukrs
+*          AND werks   IN @me->gr_branch
+*          AND usuario EQ @sy-uname.
+*
+*      IF sy-subrc = 0.
+*        lv_periodo_fechado = abap_false.
+*      ENDIF.
+*
+*    ENDIF.
+*
+*    IF lv_periodo_fechado = abap_true.
+*      IF 1 = 2. MESSAGE i037(zmfi). ENDIF. " Período fechado: usuário & sem autorização para lançar na empresa &.
+*
+*      RAISE EXCEPTION TYPE cx_idm_error
+*        EXPORTING
+*          message = VALUE #( type = 'E' id = 'ZMFI' number = 037 message_v1 = sy-uname message_v2 = me->gr_bukrs[ 1 ]-low ).
+*    ENDIF.
+
+  ENDMETHOD. " VALIDAR_PERIODO_EXECUCAO
+
+  METHOD selecionar_dados_execucao.
+    TYPES:
+      BEGIN OF lty_mseg_key,
+        mblnr TYPE mseg-mblnr,
+        mjahr TYPE mseg-mjahr,
+      END OF lty_mseg_key.
+
+    DATA:
+      lt_mseg_key TYPE STANDARD TABLE OF lty_mseg_key.
+
+    me->progress_indicator( iv_text = 'Realizando seleções iniciais...' iv_perc = 50 ).
+
+    SELECT doc~docnum, itmnum, nfenum, pstdat, doc~doctyp, doc~docref,
+           matnr, nbm, menge, meins, werks, lin~refkey, bwkey
+      FROM j_1bnfdoc AS doc
+        INNER JOIN j_1bnflin AS lin ON lin~docnum = doc~docnum
+      WHERE bukrs       IN @me->gr_bukrs
+        AND branch      IN @me->gr_branch
+        AND pstdat      IN @me->gr_pstdat
+        AND nbm         IN @me->gr_nbm
+        AND doc~direct  = '2'
+        AND partyp      = 'B'
+        AND parid       IN @me->gr_parid
+        AND cancel      = @space
+        AND doc~docnum  IN @me->gr_docnum
+      ORDER BY doc~docnum, itmnum
+    INTO TABLE @me->gt_doc.
+
+    IF me->gt_doc IS INITIAL.
+      IF 1 = 2. MESSAGE i006(zmm). ENDIF. " Nenhum registro foi encontrado.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 006 ).
+    ENDIF.
+
+*   " Verifica se possui uma nota de cancelamento, e remove do fluxo.
+    me->remover_documentos_cancelados( ).
+
+    lt_mseg_key = VALUE #( FOR lw_doc_for IN me->gt_doc ( mblnr = lw_doc_for-refkey(10) mjahr = lw_doc_for-refkey+10(4) ) ).
+    SORT lt_mseg_key.
+    DELETE ADJACENT DUPLICATES FROM lt_mseg_key COMPARING ALL FIELDS.
+
+    SELECT mblnr, mjahr, zeile, werks, umwrk
+      FROM mseg
+      FOR ALL ENTRIES IN @lt_mseg_key
+      WHERE mblnr = @lt_mseg_key-mblnr
+        AND mjahr = @lt_mseg_key-mjahr
+        AND shkzg = 'H'
+      ORDER BY PRIMARY KEY
+    INTO TABLE @me->gt_mseg.
+
+*   " Recupera os materiais produzidos internamente.
+    SELECT matnr, bwkey, bwtar
+      FROM mbew
+      FOR ALL ENTRIES IN @me->gt_doc
+      WHERE matnr = @me->gt_doc-matnr
+        AND bwkey = @me->gt_doc-bwkey
+        AND ownpr = @abap_true
+      ORDER BY PRIMARY KEY
+    INTO TABLE @DATA(lt_mat_prod_int).
+*    INTO TABLE @me->gt_mat_prod_int.
+
+*   " A busca deve ser por componente na DATA da Transferencia.
+    me->gt_mat_prod_int = VALUE #(
+      FOR lw_prod_ind_for IN lt_mat_prod_int
+      FOR lw_doc_for IN me->gt_doc WHERE ( matnr = lw_prod_ind_for-matnr AND bwkey = lw_prod_ind_for-bwkey )
+      (
+        matnr  = lw_prod_ind_for-matnr
+        bwkey  = lw_prod_ind_for-bwkey
+        bwtar  = lw_prod_ind_for-bwtar
+        pstdat = lw_doc_for-pstdat
+       )
+    ).
+
+    SORT me->gt_mat_prod_int BY matnr bwkey bwtar pstdat.
+    DELETE ADJACENT DUPLICATES FROM me->gt_mat_prod_int COMPARING ALL FIELDS.
+
+*   " Recupera os componentes dos materiais produzidos internamente.
+    me->buscar_componentes_material( ).
+
+*   " Recupera os materiais comprados.
+    SELECT matnr, bwkey, bwtar
+      FROM mbew
+      FOR ALL ENTRIES IN @me->gt_doc
+      WHERE matnr = @me->gt_doc-matnr
+        AND bwkey = @me->gt_doc-bwkey
+        AND ownpr = @abap_false
+      ORDER BY PRIMARY KEY
+    INTO TABLE @me->gt_mat_comprado.
+
+*   " Executa o processo de identificaçao da ultima compra.
+    me->buscar_ultima_compra( ).
+
+    me->buscar_documentos_contab( ).
+
+  ENDMETHOD. " SELECIONAR_DADOS_EXECUCAO
+
+  METHOD remover_documentos_cancelados.
+    DATA:
+      lr_docs_cancelados TYPE RANGE OF j_1bnflin-docnum.
+
+    lr_docs_cancelados = VALUE #(
+      FOR lw_doc_for IN me->gt_doc WHERE ( doctyp = '5' ) ( sign = 'I' option = 'EQ' low = lw_doc_for-docref )
+    ).
+
+    CHECK lr_docs_cancelados IS NOT INITIAL.
+    DELETE me->gt_doc WHERE doctyp = '5'.
+    DELETE me->gt_doc WHERE docnum IN lr_docs_cancelados.
+
+    IF me->gt_doc IS INITIAL.
+      IF 1 = 2. MESSAGE i006(zmm). ENDIF. " Nenhum registro foi encontrado.
+
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 006 ).
+    ENDIF.
+
+  ENDMETHOD. " REMOVER_DOCUMENTOS_CANCELADOS
+
+  METHOD buscar_componentes_material.
+    DATA:
+      ls_topmat      TYPE cstmat,
+      lt_stb         TYPE STANDARD TABLE OF stpox,
+      lt_componentes TYPE gtt_componentes.
+
+    LOOP AT me->gt_mat_prod_int INTO DATA(lw_mat_prod_int).
+
+      me->progress_indicator( iv_text = 'Buscando componentes dos Materiais...' iv_perc       = me->calcular_percentual(
+                                                                                iv_posicao    = sy-tabix
+                                                                                iv_quantidade = lines( me->gt_mat_prod_int ) ) ).
+
+      FREE: lt_stb.
+      CLEAR: ls_topmat.
+
+      CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+        EXPORTING
+          aumgb                 = 'X'
+          capid                 = 'PP01'
+          datuv                 = lw_mat_prod_int-pstdat " sy-datum
+          ehndl                 = '1'
+          mktls                 = 'X'
+          mehrs                 = 'X'
+          mmory                 = '1'
+          mtnrv                 = lw_mat_prod_int-matnr
+          svwvo                 = 'X'
+          werks                 = lw_mat_prod_int-bwkey
+          vrsvo                 = 'X'
+        IMPORTING
+          topmat                = ls_topmat
+        TABLES
+          stb                   = lt_stb
+        EXCEPTIONS
+          alt_not_found         = 1
+          call_invalid          = 2
+          material_not_found    = 3
+          missing_authorization = 4
+          no_bom_found          = 5
+          no_plant_data         = 6
+          no_suitable_bom_found = 7
+          conversion_error      = 8
+          OTHERS                = 9.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+      DATA(lt_comp_temp) = VALUE gtt_componentes( FOR lw_stb_for IN lt_stb (
+        matnr_sup = lw_mat_prod_int-matnr
+        bwkey_sup = lw_mat_prod_int-bwkey
+        matnr     = lw_stb_for-idnrk
+        werks     = lw_stb_for-werks
+        mngko     = COND #( WHEN ls_topmat-bmeng > 1 THEN lw_stb_for-mngko / ls_topmat-bmeng ELSE lw_stb_for-mngko )
+*        mngko     = lw_stb_for-mngko
+        meins     = lw_stb_for-meins
+        pstdat    = lw_mat_prod_int-pstdat
+      ) ).
+
+      APPEND LINES OF lt_comp_temp TO lt_componentes.
+
+      FREE lt_comp_temp.
+
+    ENDLOOP.
+
+    CHECK lt_componentes IS NOT INITIAL.
+
+    SELECT matnr, werks
+      FROM marc
+      FOR ALL ENTRIES IN @lt_componentes
+      WHERE matnr = @lt_componentes-matnr
+        AND werks = @lt_componentes-werks
+        AND beskz = 'F'
+      ORDER BY PRIMARY KEY
+    INTO TABLE @DATA(lt_marc).
+
+    me->gt_componentes = VALUE #(
+      FOR lw_marc_for IN lt_marc
+      FOR lw_comp_for IN lt_componentes
+        WHERE ( matnr = lw_marc_for-matnr AND werks = lw_marc_for-werks )
+    ( lw_comp_for ) ).
+
+    SORT me->gt_componentes BY matnr_sup bwkey_sup matnr werks.
+
+  ENDMETHOD. " BUSCAR_COMPONENTES_MATERIAL
+
+  METHOD buscar_ultima_compra.
+    TYPES:
+      BEGIN OF lty_mseg_key,
+        matnr TYPE mseg-matnr,
+        werks TYPE mseg-werks,
+      END OF lty_mseg_key,
+      ltt_mseg_key TYPE STANDARD TABLE OF lty_mseg_key WITH EMPTY KEY.
+
+    DATA:
+      lt_mseg_key TYPE ltt_mseg_key.
+
+    me->progress_indicator( iv_text = 'Buscando dados da Ultima Compra...' iv_perc = 50 ).
+
+*   " Recupera a chave referente aos componentes produzidos internamente.
+    DATA(lt_mseg_key_int) = VALUE ltt_mseg_key(
+      FOR lw_comp_for IN me->gt_componentes
+      FOR lw_prod_int IN me->gt_mat_prod_int WHERE ( matnr = lw_comp_for-matnr_sup )
+
+      ( matnr = lw_comp_for-matnr werks = lw_prod_int-bwkey )
+    ).
+
+*   " Recupera a chave dos materiais Comprados.
+    DATA(lt_mseg_key_comp) = VALUE ltt_mseg_key(
+      FOR lw_comprado IN me->gt_mat_comprado ( matnr = lw_comprado-matnr werks = lw_comprado-bwkey ) ).
+
+    APPEND LINES OF lt_mseg_key_int  TO lt_mseg_key.
+    APPEND LINES OF lt_mseg_key_comp TO lt_mseg_key.
+
+    SELECT mblnr, mjahr, zeile, matnr, a~werks, budat_mkpf, a~lifnr, regio
+      FROM mseg AS a
+        LEFT OUTER JOIN lfa1 AS b ON b~lifnr = a~lifnr
+      FOR ALL ENTRIES IN @lt_mseg_key
+      WHERE a~matnr       = @lt_mseg_key-matnr
+        AND a~werks       = @lt_mseg_key-werks
+        AND a~bwart       = '101'
+        AND a~budat_mkpf IN @me->gr_ultimo_ano
+    INTO TABLE @DATA(lt_mseg).
+
+    CHECK lt_mseg IS NOT INITIAL.
+
+    SORT lt_mseg BY mblnr mjahr zeile.
+
+*   " Busca pelos registros de Materiais Nacionais
+    DATA(lt_ultima_compra_nac) = me->buscar_ultima_compra_nac( it_mseg_comp = VALUE #(
+      FOR lw_mseg_for IN lt_mseg WHERE ( regio <> 'EX' ) ( lw_mseg_for )
+    ) ).
+
+*   " Busca pelos registros de Materiais Importados
+    DATA(lt_ultima_compra_ext) = me->buscar_ultima_compra_ext( it_mseg_comp = VALUE #(
+      FOR lw_mseg_for IN lt_mseg WHERE ( regio = 'EX' ) ( lw_mseg_for )
+    ) ).
+
+    APPEND LINES OF lt_ultima_compra_nac TO me->gt_ultima_compra.
+    APPEND LINES OF lt_ultima_compra_ext TO me->gt_ultima_compra.
+
+    SORT me->gt_ultima_compra BY matnr werks docnum itmnum.
+
+  ENDMETHOD. " BUSCAR_ULTIMA_COMPRA
+
+  METHOD buscar_ultima_compra_nac.
+    TYPES:
+      BEGIN OF lty_lin_key,
+        refkey TYPE j_1bnflin-refkey,
+        refitm TYPE j_1bnflin-refitm,
+        matnr  TYPE j_1bnflin-matnr,
+      END OF lty_lin_key,
+      ltt_lin_key TYPE STANDARD TABLE OF lty_lin_key WITH EMPTY KEY.
+
+    DATA:
+      lt_mseg TYPE gtt_mseg_comp.
+
+    CHECK it_mseg_comp IS NOT INITIAL.
+
+    me->progress_indicator( iv_text = 'Buscando dados de Componentes Nacionais...' iv_perc = 50 ).
+
+    lt_mseg = it_mseg_comp.
+
+    SELECT rbkp~belnr, rbkp~gjahr, buzei, budat, rbkp~xblnr, matnr, bwkey, lfbnr, lfgja, lfpos
+      FROM rseg
+        INNER JOIN rbkp ON rbkp~belnr = rseg~belnr AND rbkp~gjahr = rseg~gjahr
+      FOR ALL ENTRIES IN @lt_mseg
+      WHERE lfbnr = @lt_mseg-mblnr
+        AND lfgja = @lt_mseg-mjahr
+        AND lfpos = @lt_mseg-zeile
+        AND stblg = @abap_false
+    INTO TABLE @DATA(lt_rseg).
+
+    CHECK lt_rseg IS NOT INITIAL.
+
+    SORT lt_rseg BY lfbnr lfgja lfpos.
+    SORT lt_mseg BY werks matnr ASCENDING budat_mkpf DESCENDING mjahr DESCENDING mblnr DESCENDING zeile DESCENDING.
+
+*   " Fluxo para recuperar o ultimo registro da MSEG por DATA.
+    LOOP AT lt_mseg INTO DATA(lw_mseg_grp)
+      GROUP BY ( werks = lw_mseg_grp-werks matnr = lw_mseg_grp-matnr )
+      ASSIGNING FIELD-SYMBOL(<fs_mseg_grp>).
+
+      LOOP AT GROUP <fs_mseg_grp> INTO DATA(lw_mseg).
+        READ TABLE lt_rseg WITH KEY lfbnr = lw_mseg-mblnr
+                                    lfgja = lw_mseg-mjahr
+                                    lfpos = lw_mseg-zeile  INTO DATA(lw_rseg).
+        CHECK sy-subrc = 0.
+
+        APPEND CORRESPONDING #( lw_rseg ) TO me->gt_rseg.
+
+        EXIT.
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+    SORT me->gt_rseg BY gjahr belnr.
+
+    DATA(lt_lin_key) = VALUE ltt_lin_key(
+      FOR lw_rseg_for IN me->gt_rseg ( refkey = |{ lw_rseg_for-belnr }{ lw_rseg_for-gjahr }| refitm = lw_rseg_for-buzei matnr = lw_rseg_for-matnr )
+    ).
+
+    CHECK lt_lin_key IS NOT INITIAL.
+
+    SELECT lin~docnum, lin~itmnum, lin~netpr, lin~meins, lin~nbm, lin~werks, stx~rate, stx~taxtyp,
+           lin~refkey, lin~refitm, lin~matnr, doc~nfenum, doc~series
+      FROM j_1bnflin AS lin
+        INNER JOIN j_1bnfstx AS stx ON stx~docnum = lin~docnum
+                                   AND stx~itmnum = lin~itmnum
+                                   AND stx~taxtyp IN ( 'ICM0', 'ICM1', 'ICM2' )
+        INNER JOIN j_1bnfdoc AS doc ON doc~docnum = lin~docnum
+      FOR ALL ENTRIES IN @lt_lin_key
+      WHERE refkey = @lt_lin_key-refkey
+        AND refitm = @lt_lin_key-refitm
+        AND matnr  = @lt_lin_key-matnr
+    INTO TABLE @rt_ultima_compra.
+
+  ENDMETHOD. " BUSCAR_ULTIMA_COMPRA_NAC
+
+  METHOD buscar_ultima_compra_ext.
+    TYPES:
+      BEGIN OF lty_tnfk_key,
+        sbeln TYPE /xeit/tnfk-sbeln,
+        matnr TYPE /xeit/tnfp-matnr,
+      END OF lty_tnfk_key,
+      ltt_tnfk_key TYPE STANDARD TABLE OF lty_tnfk_key WITH EMPTY KEY.
+
+    DATA:
+      lt_mseg TYPE gtt_mseg_comp.
+
+    CHECK it_mseg_comp IS NOT INITIAL.
+
+    me->progress_indicator( iv_text = 'Buscando dados de Componentes Importados...' iv_perc = 50 ).
+
+    lt_mseg = it_mseg_comp.
+
+*   " Busca os dados da Entrada do Material na Empresa
+    SELECT gr_docto, gr_mjahr, sbeln
+      FROM /xeit/tgrvk
+      FOR ALL ENTRIES IN @lt_mseg
+      WHERE gr_docto = @lt_mseg-mblnr
+        AND gr_mjahr = @lt_mseg-mjahr
+        AND cancel   = @abap_false
+    INTO TABLE @DATA(lt_tgrvk).
+
+    DATA(lt_tnfk_key) = VALUE ltt_tnfk_key(
+      FOR lw_mseg_for  IN lt_mseg
+      FOR lw_tgrvk_for IN lt_tgrvk WHERE ( gr_docto = lw_mseg_for-mblnr AND gr_mjahr = lw_mseg_for-mjahr )
+      (
+        sbeln = lw_tgrvk_for-sbeln
+        matnr = lw_mseg_for-matnr
+       )
+    ).
+
+    CHECK lt_tnfk_key IS NOT INITIAL.
+    SORT lt_tnfk_key BY sbeln matnr.
+
+*   " Busca os dados da Nota Fiscal de entrada do material na empresa.
+    SELECT a~docnum, b~itmnum, a~sbeln, b~matnr, b~werks, a~pstdat
+      FROM /xeit/tnfk AS a
+        INNER JOIN /xeit/tnfp AS b ON b~docnum = a~docnum
+      FOR ALL ENTRIES IN @lt_tnfk_key
+      WHERE a~sbeln = @lt_tnfk_key-sbeln
+        AND b~matnr = @lt_tnfk_key-matnr
+    INTO TABLE @DATA(lt_tnfk).
+
+    CHECK lt_tnfk IS NOT INITIAL.
+
+    SORT lt_tnfk BY werks matnr ASCENDING pstdat DESCENDING docnum DESCENDING itmnum DESCENDING.
+
+    LOOP AT lt_tnfk INTO DATA(lw_tnfk_grp)
+      GROUP BY ( werks = lw_tnfk_grp-werks matnr = lw_tnfk_grp-matnr )
+      ASSIGNING FIELD-SYMBOL(<fs_tnfk_grp>).
+
+      LOOP AT GROUP <fs_tnfk_grp> INTO DATA(lw_tnfk).
+
+        APPEND lw_tnfk TO me->gt_tnfk.
+        EXIT.
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+    CHECK me->gt_tnfk IS NOT INITIAL.
+
+    SORT me->gt_tnfk BY docnum itmnum.
+
+    SELECT lin~docnum, lin~itmnum, lin~netpr, lin~meins, lin~nbm, lin~werks, stx~rate, stx~taxtyp,
+           lin~refkey, lin~refitm, lin~matnr, doc~nfenum, doc~series
+      FROM j_1bnflin AS lin
+        INNER JOIN j_1bnfstx AS stx ON stx~docnum = lin~docnum
+                                   AND stx~itmnum = lin~itmnum
+                                   AND stx~taxtyp IN ( 'ICM0', 'ICM1', 'ICM2' )
+        INNER JOIN j_1bnfdoc AS doc ON doc~docnum = lin~docnum
+      FOR ALL ENTRIES IN @me->gt_tnfk
+      WHERE lin~docnum = @me->gt_tnfk-docnum
+        AND lin~itmnum = @me->gt_tnfk-itmnum
+    INTO TABLE @rt_ultima_compra.
+
+  ENDMETHOD. " BUSCAR_ULTIMA_COMPRA_EXT
+
+  METHOD buscar_documentos_contab.
+
+    me->progress_indicator( iv_text = 'Buscando Documentos Contabilizados...' iv_perc = 1 ).
+
+*   " Selecionar documentos contabilização.
+    SELECT *
+      FROM zmmt117
+      FOR ALL ENTRIES IN @me->gt_doc
+      WHERE docnum = @me->gt_doc-docnum
+        AND itmnum = @me->gt_doc-itmnum
+    INTO TABLE @DATA(lt_zmmt117).
+
+    CHECK lt_zmmt117 IS NOT INITIAL.
+
+    me->progress_indicator( iv_text = 'Buscando Documentos Contabilizados...' iv_perc = 50 ).
+
+    SELECT *
+      FROM bkpf
+      FOR ALL ENTRIES IN @lt_zmmt117
+      WHERE bukrs = @lt_zmmt117-bukrs
+        AND belnr = @lt_zmmt117-belnr
+        AND gjahr = @lt_zmmt117-gjahr
+        AND stblg = @space " Não foram estornados
+    INTO TABLE @DATA(lt_bkpf).
+
+    CHECK lt_bkpf IS NOT INITIAL.
+
+    me->gt_zmmt117 = VALUE #(
+      FOR lw_bkpf_for IN lt_bkpf
+      FOR lw_t117_for IN lt_zmmt117 WHERE ( bukrs = lw_bkpf_for-bukrs
+                                        AND belnr = lw_bkpf_for-belnr
+                                        AND gjahr = lw_bkpf_for-gjahr )
+      ( lw_t117_for )
+    ).
+
+  ENDMETHOD. " BUSCAR_DOCUMENTOS_CONTAB
+
+  METHOD gerar_dados_alv_sintetico.
+    DATA:
+      lw_rel_sintetico LIKE LINE OF me->gt_rel_sintetico.
+
+    SORT me->gt_componentes  BY matnr_sup bwkey_sup pstdat matnr werks.
+    SORT me->gt_mat_comprado BY matnr bwkey.
+    SORT me->gt_zmmt117 BY docnum itmnum bukrs belnr gjahr.
+
+    LOOP AT me->gt_doc INTO DATA(lw_doc).
+
+      me->progress_indicator( iv_text = 'Montando relatórios...' iv_perc       = me->calcular_percentual(
+                                                                 iv_posicao    = sy-tabix
+                                                                 iv_quantidade = lines( me->gt_doc ) ) ).
+
+      READ TABLE me->gt_mseg WITH KEY mblnr = lw_doc-refkey(10)
+                                      mjahr = lw_doc-refkey+10(4) INTO DATA(lw_mseg).
+      CHECK sy-subrc = 0.
+
+      READ TABLE me->gt_zmmt117 WITH KEY docnum = lw_doc-docnum
+                                         itmnum = lw_doc-itmnum INTO DATA(lw_zmmt117) BINARY SEARCH.
+
+      lw_rel_sintetico = VALUE #(
+        nfenum       = lw_doc-nfenum
+        docnum       = lw_doc-docnum
+        itmnum       = lw_doc-itmnum
+        pstdat       = lw_doc-pstdat
+        matnr        = lw_doc-matnr
+        nbm          = lw_doc-nbm
+        werks        = lw_mseg-werks
+        umwrk        = lw_mseg-umwrk
+        menge        = lw_doc-menge
+        meins        = lw_doc-meins
+        bukrs_contab = lw_zmmt117-bukrs
+        belnr_contab = lw_zmmt117-belnr
+        gjahr_contab = lw_zmmt117-gjahr
+      ).
+
+      me->gerar_dados_alv_analitico(
+        EXPORTING
+          is_doc = lw_doc
+        CHANGING
+          cs_alv_sintetico = lw_rel_sintetico
+      ).
+
+      APPEND lw_rel_sintetico TO me->gt_rel_sintetico.
+
+      CLEAR: lw_rel_sintetico, lw_mseg, lw_zmmt117.
+    ENDLOOP.
+
+  ENDMETHOD. " GERAR_DADOS_ALV_SINTETICO
+
+  METHOD gerar_dados_alv_analitico.
+    DATA:
+      lv_doc_menge     TYPE f,
+      lw_rel_analitico LIKE LINE OF me->gt_rel_analitico,
+      lw_ultima_compra LIKE LINE OF me->gt_ultima_compra,
+      lw_rseg          LIKE LINE OF me->gt_rseg,
+      lw_tnfk          LIKE LINE OF me->gt_tnfk.
+
+*   " Dados referentes aos materiais produzidos internamente.
+    READ TABLE me->gt_componentes WITH KEY matnr_sup = is_doc-matnr bwkey_sup = is_doc-bwkey pstdat = is_doc-pstdat TRANSPORTING NO FIELDS.
+    LOOP AT me->gt_componentes INTO DATA(lw_componentes) FROM sy-tabix.
+      IF lw_componentes-matnr_sup <> is_doc-matnr OR lw_componentes-bwkey_sup <> is_doc-bwkey OR lw_componentes-pstdat <> is_doc-pstdat.
+        EXIT.
+      ENDIF.
+
+      CLEAR: lw_rel_analitico, lw_ultima_compra, lw_rseg, lw_tnfk, lv_doc_menge.
+
+*     " Fluxo de Compras Nacionais.
+      READ TABLE me->gt_rseg WITH KEY matnr = lw_componentes-matnr
+                                      bwkey = lw_componentes-bwkey_sup INTO lw_rseg.
+
+*     " Fluxo de Compras Internacionais.
+      READ TABLE me->gt_tnfk WITH KEY matnr = lw_componentes-matnr
+                                      werks = lw_componentes-bwkey_sup INTO lw_tnfk.
+
+*     " Verifica se a ultima compra foi Nacional ou Internacional.
+      IF lw_tnfk-pstdat > lw_rseg-budat.
+        CLEAR lw_rseg.
+
+        READ TABLE me->gt_ultima_compra WITH KEY docnum = lw_tnfk-docnum
+                                                 itmnum = lw_tnfk-itmnum INTO lw_ultima_compra.
+      ELSE.
+        READ TABLE me->gt_ultima_compra WITH KEY matnr        = lw_rseg-matnr
+                                                 refkey(10)   = lw_rseg-belnr
+                                                 refkey+10(4) = lw_rseg-gjahr INTO lw_ultima_compra.
+      ENDIF.
+
+      CHECK lw_ultima_compra IS NOT INITIAL.
+
+      lw_rel_analitico = VALUE #(
+        xblnr            = COND #( WHEN lw_rseg-xblnr IS INITIAL
+                                      THEN |{ lw_ultima_compra-nfenum }{ COND #( WHEN lw_ultima_compra-series IS NOT INITIAL THEN |-{ lw_ultima_compra-series }| ) }|
+                                   ELSE lw_rseg-xblnr )
+        docnum           = lw_ultima_compra-docnum
+        itmnum           = lw_ultima_compra-itmnum
+        docnum_sup       = is_doc-docnum
+        itmnum_sup       = is_doc-itmnum
+        budat            = COND #( WHEN lw_rseg IS INITIAL THEN lw_tnfk-pstdat ELSE lw_rseg-budat )
+        matnr_sup        = lw_componentes-matnr_sup
+        matnr            = lw_componentes-matnr
+        nbm              = lw_ultima_compra-nbm
+        werks            = lw_ultima_compra-werks
+        mngko            = lw_componentes-mngko
+        menge            = is_doc-menge * lw_componentes-mngko " lw_componentes-menge
+        meins            = lw_componentes-meins " lw_ultima_compra-meins
+        vl_unit_ult_comp = lw_ultima_compra-netpr
+        icms_ult_comp    = COND #( WHEN lw_ultima_compra-taxtyp = 'ICM1' THEN lw_ultima_compra-rate ELSE 0 )
+      ).
+
+      CALL FUNCTION 'UNIT_CONVERSION_SIMPLE'
+        EXPORTING
+          input                = lw_componentes-mngko
+          unit_in              = lw_componentes-meins
+          unit_out             = lw_ultima_compra-meins
+        IMPORTING
+          output               = lv_doc_menge
+        EXCEPTIONS
+          conversion_not_found = 1
+          division_by_zero     = 2
+          input_invalid        = 3
+          output_invalid       = 4
+          overflow             = 5
+          type_invalid         = 6
+          units_missing        = 7
+          unit_in_not_found    = 8
+          unit_out_not_found   = 9
+          OTHERS               = 10.
+      IF sy-subrc <> 0.
+
+        lv_doc_menge = me->convert_material_unit(
+          EXPORTING
+            iv_matnr      = lw_componentes-matnr
+            iv_in_meins   = lw_componentes-meins
+            iv_out_meins  = lw_ultima_compra-meins
+            iv_menge      = lw_componentes-mngko
+        ).
+
+        IF lv_doc_menge IS INITIAL.
+          lv_doc_menge = lw_componentes-mngko.
+        ENDIF.
+
+      ENDIF.
+
+      lw_rel_analitico-vl_tt_merc_trans   = lw_ultima_compra-netpr * ( is_doc-menge *  lv_doc_menge ).
+
+      lw_rel_analitico-icms_estornar      = COND #( WHEN lw_ultima_compra-taxtyp = 'ICM1'
+                                                    THEN lw_rel_analitico-vl_tt_merc_trans * ( lw_ultima_compra-rate / 100 ) ELSE 0 ).
+
+      APPEND lw_rel_analitico TO me->gt_rel_analitico.
+
+      IF lw_ultima_compra-taxtyp = 'ICM1'.
+
+*     " ARMAZENA OS VALORES DO RELATORIO SINTETICO.
+        cs_alv_sintetico-vl_mercadoria    = cs_alv_sintetico-vl_mercadoria    + lw_rel_analitico-vl_tt_merc_trans.
+        cs_alv_sintetico-icms_tt_estornar = cs_alv_sintetico-icms_tt_estornar + lw_rel_analitico-icms_estornar.
+
+      ENDIF.
+
+    ENDLOOP.
+
+*   " Dados referentes aos materiais COMPRADOS
+    READ TABLE me->gt_mat_comprado WITH KEY matnr = is_doc-matnr
+                                            bwkey = is_doc-bwkey TRANSPORTING NO FIELDS.
+    LOOP AT me->gt_mat_comprado INTO DATA(lw_mat_comprado) FROM sy-tabix.
+      IF lw_mat_comprado-matnr <> is_doc-matnr OR lw_mat_comprado-bwkey <> is_doc-bwkey.
+        EXIT.
+      ENDIF.
+
+      READ TABLE me->gt_rseg WITH KEY matnr = lw_mat_comprado-matnr
+                                      bwkey = lw_mat_comprado-bwkey INTO lw_rseg.
+      CHECK sy-subrc = 0.
+
+      READ TABLE me->gt_ultima_compra WITH KEY matnr        = lw_rseg-matnr
+                                               refkey(10)   = lw_rseg-belnr
+                                               refkey+10(4) = lw_rseg-gjahr INTO lw_ultima_compra.
+      CHECK sy-subrc = 0.
+
+      lw_rel_analitico = VALUE #(
+        xblnr            = lw_rseg-xblnr
+        docnum           = lw_ultima_compra-docnum
+        itmnum           = lw_ultima_compra-itmnum
+        docnum_sup       = is_doc-docnum
+        itmnum_sup       = is_doc-itmnum
+        budat            = lw_rseg-budat
+        matnr            = lw_mat_comprado-matnr
+        nbm              = lw_ultima_compra-nbm
+        werks            = lw_ultima_compra-werks
+        menge            = is_doc-menge
+        meins            = is_doc-meins
+        vl_unit_ult_comp = lw_ultima_compra-netpr
+        icms_ult_comp    = COND #( WHEN lw_ultima_compra-taxtyp = 'ICM1' THEN lw_ultima_compra-rate ELSE 0 )
+      ).
+
+      lw_rel_analitico-vl_tt_merc_trans   = lw_ultima_compra-netpr * lw_rel_analitico-menge.
+
+
+      lw_rel_analitico-icms_estornar      = COND #( WHEN lw_ultima_compra-taxtyp = 'ICM1'
+                                                    THEN lw_rel_analitico-vl_tt_merc_trans * ( lw_ultima_compra-rate / 100 ) ELSE 0 ).
+
+      APPEND lw_rel_analitico TO me->gt_rel_analitico.
+
+      IF lw_ultima_compra-taxtyp = 'ICM1'.
+
+*     " ARMAZENA OS VALORES DO RELATORIO SINTETICO.
+        cs_alv_sintetico-vl_mercadoria    = cs_alv_sintetico-vl_mercadoria    + lw_rel_analitico-vl_tt_merc_trans.
+        cs_alv_sintetico-icms_tt_estornar = cs_alv_sintetico-icms_tt_estornar + lw_rel_analitico-icms_estornar.
+
+      ENDIF.
+
+      CLEAR: lw_rel_analitico, lw_rseg, lw_ultima_compra.
+    ENDLOOP.
+
+  ENDMETHOD. " GERAR_DADOS_ALV_ANALITICO
+
+  METHOD gerar_alv_sintetico.
+
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = me->go_alv_sintetico
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
+
+    IF me->go_alv_sintetico IS BOUND.
+
+      me->go_alv_sintetico->set_screen_status(
+        pfstatus      = 'SALV_STANDARD'
+        report        = sy-cprog
+        set_functions = me->go_alv_sintetico->c_functions_all ).
+
+      TRY .
+
+*       " Insere todos as funcionalidades existentes no ALV OO.
+          DATA(lo_function) = me->go_alv_sintetico->get_functions( ).
+          lo_function->set_all( abap_true ).
+
+*         " Ajusta os dados das colunas
+          DATA(lo_columns) = me->go_alv_sintetico->get_columns( ).
+          lo_columns->set_optimize( abap_true ).
+
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+        CATCH cx_salv_wrong_call .
+        CATCH cx_salv_existing .
+      ENDTRY.
+
+      DATA(lo_events) = me->go_alv_sintetico->get_event( ).
+      SET HANDLER me->on_double_click   FOR lo_events.
+      SET HANDLER me->on_link_click_si  FOR lo_events.
+      SET HANDLER me->on_user_command   FOR lo_events.
+
+      DATA(lo_selections) = me->go_alv_sintetico->get_selections( ).
+      lo_selections->set_selection_mode( if_salv_c_selection_mode=>row_column ).
+
+      DATA(lo_display) = me->go_alv_sintetico->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( |Relatório Sintético| ).
+
+      me->go_alv_sintetico->display( ).
+    ENDIF.
+
+  ENDMETHOD. " GERAR_ALV_SINTETICO
+
+  METHOD gerar_alv_analitico.
+
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = DATA(lo_salv_table)
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+      SET HANDLER me->on_link_click_an FOR lo_events.
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( |Relatório Analítico Material { ct_table[ 1 ]-matnr_sup ALPHA = OUT }| ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD. " GERAR_ALV_ANALITICO
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+      CASE <fs_columns>-columnname.
+        WHEN 'DOCNUM' OR 'BELNR_CONTAB'.
+          lo_column_table->set_cell_type( value = if_salv_c_cell_type=>hotspot ).
+
+        WHEN OTHERS.
+          CONTINUE.
+      ENDCASE.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    DATA(lv_estrutura) = lo_tabdescr->get_relative_name( ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' OR 'DOCNUM_SUP' OR 'ITMNUM_SUP' OR 'BUKRS_CONTAB' OR 'GJAHR_CONTAB'.
+          DELETE rt_fieldcat INDEX lv_tabix.
+
+*" CAMPOS ALV SINTETICO
+        WHEN 'NFENUM'.
+          dfcat_texto <fl_fcat> 'NF Transf' 'NF de Transferência' 'Nota Fiscal de Transferência' <fl_fcat>-outputlen.
+        WHEN 'MATNR'.
+          dfcat_texto <fl_fcat> 'Material'  'Material Transferido' 'Material Transferido' <fl_fcat>-outputlen.
+        WHEN 'NBM'.
+          dfcat_texto <fl_fcat> 'NCM'  'NCM' 'NCM' <fl_fcat>-outputlen.
+        WHEN 'WERKS'.
+          IF lv_estrutura = 'GTY_REL_SINTETICO'.
+            dfcat_texto <fl_fcat> 'Centro Ori'  'Centro de Origem' 'Centro de Origem' <fl_fcat>-outputlen.
+          ENDIF.
+        WHEN 'UMWRK'.
+          dfcat_texto <fl_fcat> 'Centro Des'  'Centro de Destino' 'Centro de Destino' <fl_fcat>-outputlen.
+        WHEN 'MENGE'.
+          dfcat_texto <fl_fcat> 'Qtd Transf' 'Qtd de Transferência' 'Quantidade de Transferência' <fl_fcat>-outputlen.
+        WHEN 'VL_MERCADORIA'.
+          dfcat_texto <fl_fcat> 'Vlr.Mercad' 'Valor da Mercadoria' 'Valor da Mercadoria (Última entrada)' <fl_fcat>-outputlen.
+        WHEN 'ICMS_TT_ESTORNAR'.
+          dfcat_texto <fl_fcat> 'TtICMS Est' 'Total ICMS Estornado' 'Total ICMS a ser estornado' <fl_fcat>-outputlen.
+        WHEN 'BELNR_CONTAB'.
+          dfcat_texto <fl_fcat> 'Documento' 'Documento contab.' 'Documento gerado na contabilização' <fl_fcat>-outputlen.
+
+*" CAMPOS ALV ANALITICO
+        WHEN 'XBLNR'.
+          dfcat_texto <fl_fcat> 'NF Entrada' 'NF de Entrada' 'Nota Fiscal de Entrada' <fl_fcat>-outputlen.
+        WHEN 'MATNR_SUP'.
+          dfcat_texto <fl_fcat> 'MaterialSu' 'Material Superior' 'Material Superior' <fl_fcat>-outputlen.
+        WHEN 'VL_UNIT_ULT_COMP'.
+          dfcat_texto <fl_fcat> 'Vlr.Unit' 'Valor Unit Últ Compra' 'Valor Unitário Última Compra' <fl_fcat>-outputlen.
+        WHEN 'VL_TT_MERC_TRANS'.
+          dfcat_texto <fl_fcat> 'Vlr Total' 'Vlr Tot.Merc.Transf' 'Valor Total Da Mercadoria Transferida' <fl_fcat>-outputlen.
+        WHEN 'ICMS_ULT_COMP'.
+          dfcat_texto <fl_fcat> 'Aliq.ICMS' 'Aliq.ICMS Últ Compra' 'Alíquota ICMS Última Compra' <fl_fcat>-outputlen.
+        WHEN 'ICMS_ESTORNAR'.
+          dfcat_texto <fl_fcat> 'ICMS Est.' 'ICMS a ser Estornado' 'ICMS a ser Estornado' <fl_fcat>-outputlen.
+        WHEN 'MNGKO'.
+          dfcat_texto <fl_fcat> 'Qtd Unit.' 'Qtd Unitária' 'Quantidade Unitária' <fl_fcat>-outputlen.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+  METHOD on_double_click.
+
+    READ TABLE me->gt_rel_sintetico ASSIGNING FIELD-SYMBOL(<fs_rel_sintetico>) INDEX row.
+    CHECK <fs_rel_sintetico> IS ASSIGNED.
+
+    me->gt_rel_analitico_comp = VALUE gtt_rel_analitico(
+      FOR lw_rel_analit_for IN me->gt_rel_analitico WHERE ( docnum_sup = <fs_rel_sintetico>-docnum AND itmnum_sup = <fs_rel_sintetico>-itmnum ) ( lw_rel_analit_for )
+    ).
+
+    CHECK me->gt_rel_analitico_comp IS NOT INITIAL.
+
+    SORT me->gt_rel_analitico_comp BY docnum itmnum.
+
+    me->gerar_alv_analitico(
+      CHANGING
+        ct_table = me->gt_rel_analitico_comp[]
+    ).
+
+  ENDMETHOD. " ON_DOUBLE_CLICK
+
+  METHOD on_link_click_si.
+
+    READ TABLE me->gt_rel_sintetico ASSIGNING FIELD-SYMBOL(<fs_rel_sintetico>) INDEX row.
+    CASE column.
+      WHEN 'DOCNUM'.
+
+        me->display_j1b3n_shdb( iv_docnum = <fs_rel_sintetico>-docnum  ).
+
+      WHEN 'BELNR_CONTAB'.
+
+        me->display_fb03_shdb(
+          EXPORTING
+            iv_bukrs = <fs_rel_sintetico>-bukrs_contab
+            iv_belnr = <fs_rel_sintetico>-belnr_contab
+            iv_gjahr = <fs_rel_sintetico>-gjahr_contab
+        ).
+
+      WHEN OTHERS.
+        EXIT.
+    ENDCASE.
+
+  ENDMETHOD. " ON_LINK_CLICK_SI
+
+  METHOD on_link_click_an.
+
+    READ TABLE me->gt_rel_analitico_comp ASSIGNING FIELD-SYMBOL(<fs_rel_analitico>) INDEX row.
+    CASE column.
+      WHEN 'DOCNUM'.
+
+        me->display_j1b3n_shdb( iv_docnum = <fs_rel_analitico>-docnum  ).
+
+      WHEN OTHERS.
+        EXIT.
+    ENDCASE.
+
+  ENDMETHOD. " ON_LINK_CLICK_AN
+
+  METHOD on_user_command.
+
+    TRY .
+
+        CASE e_salv_function.
+          WHEN '&ZCONTAB'.
+
+            me->executar_contabilizacao( ).
+
+          WHEN OTHERS.
+            EXIT.
+        ENDCASE.
+
+      CATCH cx_idm_error INTO DATA(ol_exc).
+        MESSAGE ID ol_exc->message-id TYPE 'S'
+           NUMBER ol_exc->message-number
+             WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+               DISPLAY LIKE ol_exc->message-type.
+    ENDTRY.
+
+  ENDMETHOD. " ON_USER_COMMAND
+
+  METHOD progress_indicator.
+    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+      EXPORTING
+        percentage = iv_perc
+        text       = iv_text.
+  ENDMETHOD. " PROGRESS_INDICATOR
+
+  METHOD calcular_percentual.
+
+    rv_percentual = ( 100 * iv_posicao ) / iv_quantidade.
+
+  ENDMETHOD. " CALCULAR_PERCENTUAL
+
+  METHOD executar_contabilizacao.
+    DATA:
+      lt_contabilizados   TYPE gtt_rel_sintetico,
+      lv_icms_tt_estornar TYPE gty_rel_sintetico-icms_tt_estornar.
+
+    DATA(lo_selections) = me->go_alv_sintetico->get_selections( ).
+    DATA(lt_rows) = lo_selections->get_selected_rows( ).
+
+    IF lines( lt_rows ) = 0.
+      MESSAGE 'Selecione uma linha.' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    LOOP AT lt_rows INTO DATA(lw_rows).
+
+      READ TABLE me->gt_rel_sintetico INTO DATA(lw_rel_sintetico) INDEX lw_rows.
+      CHECK sy-subrc = 0.
+
+      IF lw_rel_sintetico-belnr_contab IS NOT INITIAL.
+        CLEAR lv_icms_tt_estornar.
+
+        MESSAGE s013(zmm) DISPLAY LIKE 'E'. " Documentos contabilizados não podem ser selecionados.
+
+        EXIT.
+      ENDIF.
+
+      lv_icms_tt_estornar = lv_icms_tt_estornar + lw_rel_sintetico-icms_tt_estornar.
+
+      APPEND lw_rel_sintetico TO lt_contabilizados.
+
+    ENDLOOP.
+
+    IF lv_icms_tt_estornar IS NOT INITIAL.
+
+      me->validar_periodo_execucao( iv_werks = lw_rel_sintetico-werks ).
+
+      me->contabilizar_documento(
+        EXPORTING
+          iv_icms_tt_estornar = lv_icms_tt_estornar
+          it_contabilizados   = lt_contabilizados
+        IMPORTING
+          ev_bukrs            = DATA(lv_bukrs)
+          ev_belnr            = DATA(lv_belnr)
+          ev_gjahr            = DATA(lv_gjahr)
+      ).
+
+      CHECK lv_belnr IS NOT INITIAL.
+
+      LOOP AT lt_rows INTO lw_rows.
+
+        READ TABLE me->gt_rel_sintetico ASSIGNING FIELD-SYMBOL(<fs_rel_sintetico>) INDEX lw_rows.
+        CHECK sy-subrc = 0 AND <fs_rel_sintetico> IS ASSIGNED.
+
+        <fs_rel_sintetico>-bukrs_contab = lv_bukrs.
+        <fs_rel_sintetico>-belnr_contab = lv_belnr.
+        <fs_rel_sintetico>-gjahr_contab = lv_gjahr.
+
+      ENDLOOP.
+
+      me->go_alv_sintetico->refresh(
+        EXPORTING
+          s_stable     = VALUE #( row = 'X' col = 'x' )
+          refresh_mode = if_salv_c_refresh=>soft
+      ).
+
+    ENDIF.
+
+  ENDMETHOD. " EXECUTAR_CONTABILIZACAO
+
+  METHOD contabilizar_documento.
+    DATA:
+      lv_obj_key TYPE bapiache09-obj_key,
+      lt_bapiret TYPE bapiret2_t.
+
+    DATA(ls_documentheader) = VALUE bapiache09(
+      username   = sy-uname
+      header_txt = 'Estorno de créditos Extrema'
+      comp_code  = me->gr_bukrs[ 1 ]-low
+      doc_date   = sy-datum
+      pstng_date = me->gv_ultimo_dia_periodo " sy-datum
+      fisc_year  = me->gr_gjahr[ 1 ]-low
+      fis_period = me->gr_monat[ 1 ]-low
+      doc_type   = 'SA'
+    ).
+
+    DATA(lt_accountgl) = VALUE bapiacgl09_tab(
+      (
+        itemno_acc = 1
+        gl_account = '0021302009'
+        item_text  = 'Estorno de créditos Extrema'
+        comp_code  = ls_documentheader-comp_code
+        fis_period = ls_documentheader-fis_period
+        fisc_year  = ls_documentheader-fisc_year
+        pstng_date = ls_documentheader-pstng_date
+        alloc_nmbr = 'RS000013'
+
+      )
+      (
+        itemno_acc = 2
+        gl_account = '0048101026'
+        item_text  = 'Estorno de créditos Extrema'
+        comp_code  = ls_documentheader-comp_code
+        fis_period = ls_documentheader-fis_period
+        fisc_year  = ls_documentheader-fisc_year
+        pstng_date = ls_documentheader-pstng_date
+        alloc_nmbr = 'RS000013'
+      )
+    ).
+
+    DATA(lt_currencyamount) = VALUE bapiaccr09_tab(
+      (
+        itemno_acc = 1
+        currency   = 'BRL'
+        amt_doccur = ( iv_icms_tt_estornar * -1 )
+      )
+      (
+        itemno_acc = 2
+        currency   = 'BRL'
+        amt_doccur = iv_icms_tt_estornar
+      )
+    ).
+
+    DATA(lt_extension2) = VALUE bapiparex_tab(
+      (
+        structure = 'BUPLA_ITM'
+        valuepart1 = 1
+        valuepart2 = me->gr_branch[ 1 ]-low
+       )
+      (
+        structure = 'BUPLA_ITM'
+        valuepart1 = 2
+        valuepart2 = me->gr_branch[ 1 ]-low
+       )
+    ).
+
+    CALL FUNCTION 'BAPI_ACC_DOCUMENT_POST'
+      EXPORTING
+        documentheader = ls_documentheader
+      IMPORTING
+        obj_key        = lv_obj_key
+      TABLES
+        accountgl      = lt_accountgl
+        currencyamount = lt_currencyamount
+        extension2     = lt_extension2
+        return         = lt_bapiret.
+
+    READ TABLE lt_bapiret WITH KEY type = 'E' TRANSPORTING NO FIELDS.
+    IF sy-subrc <> 0 AND lv_obj_key IS NOT INITIAL.
+      ev_bukrs = lv_obj_key+10(4).
+      ev_belnr = lv_obj_key(10).
+      ev_gjahr = lv_obj_key+14(4).
+
+      DATA(lt_zmmt117) = VALUE gtt_zmmt117(
+        FOR lw_contabilizados_for IN it_contabilizados
+        (
+          docnum = lw_contabilizados_for-docnum
+          itmnum = lw_contabilizados_for-itmnum
+          bukrs  = ev_bukrs
+          belnr  = ev_belnr
+          gjahr  = ev_gjahr
+        )
+      ).
+
+      INSERT zmmt117 FROM TABLE lt_zmmt117.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = abap_true.
+
+      MESSAGE s009(zmm) WITH lv_obj_key. " Contabilização realizada com sucesso. Documento &1
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK' .
+
+      CALL FUNCTION 'RSCRMBW_DISPLAY_BAPIRET2'
+        TABLES
+          it_return = lt_bapiret.
+
+      MESSAGE s010(zmm) DISPLAY LIKE 'E'. " Ocorreram erros ao executar a contabilização.
+    ENDIF.
+
+  ENDMETHOD. " CONTABILIZAR_DOCUMENTO
+
+  METHOD display_j1b3n_shdb.
+
+    CHECK iv_docnum IS NOT INITIAL.
+
+    SET PARAMETER ID 'JEF' FIELD iv_docnum.
+    CALL TRANSACTION 'J1B3N' AND SKIP FIRST SCREEN.
+
+  ENDMETHOD. " DISPLAY_J1B3N_SHDB
+
+  METHOD display_fb03_shdb.
+
+    CHECK iv_bukrs IS NOT INITIAL AND
+          iv_belnr IS NOT INITIAL AND
+          iv_gjahr IS NOT INITIAL .
+
+    SET PARAMETER ID 'BUK' FIELD iv_bukrs.
+    SET PARAMETER ID 'BLN' FIELD iv_belnr.
+    SET PARAMETER ID 'GJR' FIELD iv_gjahr.
+    CALL TRANSACTION 'FB03' AND SKIP FIRST SCREEN.
+
+  ENDMETHOD. " DISPLAY_FB03_SHDB
+
+  METHOD convert_material_unit.
+    DATA:
+      lv_doc_menge_in  TYPE ekpo-menge,
+      lv_doc_menge_out TYPE ekpo-menge.
+
+*   " Faz o calculo considerando 1 UNIDADE da MEDIDA.
+*   " Em casos com mais de 3 casas decimais, os valores calculados estavam com grande diferença.
+    lv_doc_menge_in = 1. " iv_menge.
+
+    CALL FUNCTION 'MD_CONVERT_MATERIAL_UNIT'
+      EXPORTING
+        i_matnr              = iv_matnr
+        i_in_me              = iv_in_meins
+        i_out_me             = iv_out_meins
+        i_menge              = lv_doc_menge_in
+      IMPORTING
+        e_menge              = lv_doc_menge_out
+      EXCEPTIONS
+        error_in_application = 1
+        error                = 2
+        OTHERS               = 3.
+    IF sy-subrc = 0.
+      rv_menge = iv_menge * lv_doc_menge_out.
+*      lv_doc_menge = lv_doc_menge_matnr.
+    ENDIF.
+
+  ENDMETHOD. " CONVERT_MATERIAL_UNIT
+ENDCLASS.
+
+*&---------------------------------------------------------------------*
+*&      Form  SEARCH_HELP_YEAR
+*&---------------------------------------------------------------------*
+FORM search_help_year  CHANGING cv_gjahr.
+  TYPES:
+    BEGIN OF lty_date,
+      pdate TYPE apyear,
+    END OF lty_date.
+
+  DATA:
+    lt_date   TYPE STANDARD TABLE OF lty_date,
+    lt_return TYPE STANDARD TABLE OF ddshretval.
+
+  DATA(lv_gjahr) = CONV gjahr( |{ sy-datum(4) - 10 }| ).
+
+  DO 20 TIMES.
+    APPEND VALUE #( pdate = lv_gjahr ) TO lt_date.
+    ADD 1 TO lv_gjahr.
+  ENDDO.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield    = 'PDATE'
+      dynpprog    = sy-repid
+      dynpnr      = sy-dynnr
+      dynprofield = 'CRID'
+      value_org   = 'S'
+    TABLES
+      value_tab   = lt_date
+      return_tab  = lt_return.
+
+  READ TABLE lt_return INTO DATA(lw_return) INDEX 1.
+  cv_gjahr = lw_return-fieldval.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SEARCH_HELP_MONTH
+*&---------------------------------------------------------------------*
+FORM search_help_month CHANGING cv_monat.
+  TYPES:
+    BEGIN OF lty_month,
+      monat TYPE monat,
+    END OF lty_month.
+
+  DATA:
+    lt_month  TYPE STANDARD TABLE OF lty_month,
+    lt_return TYPE STANDARD TABLE OF ddshretval.
+
+  DATA(lv_monat) = CONV monat( 1 ).
+  DO 12 TIMES.
+    APPEND VALUE #( monat = lv_monat ) TO lt_month.
+    ADD 1 TO lv_monat.
+  ENDDO.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield    = 'MONAT'
+      dynpprog    = sy-repid
+      dynpnr      = sy-dynnr
+      dynprofield = 'CRID'
+      value_org   = 'S'
+    TABLES
+      value_tab   = lt_month
+      return_tab  = lt_return.
+
+  READ TABLE lt_return INTO DATA(lw_return) INDEX 1.
+  cv_monat = lw_return-fieldval.
+
+ENDFORM.
