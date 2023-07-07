@@ -1,0 +1,442 @@
+VARIAVEIS:
+    TYPES:
+      gtv_percent TYPE p LENGTH 5 DECIMALS 2.
+
+    DATA:
+      go_docking TYPE REF TO cl_gui_docking_container,
+      go_alv     TYPE REF TO cl_gui_alv_grid.
+
+DEFINIÇOES:
+      start_alv_execution,
+
+      free_alv_class,
+
+      progress_indicator
+        IMPORTING
+          !iv_text TYPE text200
+          !iv_perc TYPE p OPTIONAL,
+
+      calculate_percentage
+        IMPORTING
+          !iv_pos              TYPE sy-tabix
+          !iv_quant            TYPE sy-tabix
+        RETURNING
+          VALUE(rv_percentage) TYPE gtv_percent,
+      create_dynamic_container,
+
+      create_alv
+        CHANGING
+          !co_alv TYPE REF TO cl_gui_alv_grid,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      generate_fieldcat_struct
+        IMPORTING
+          !iv_structure      TYPE dd02l-tabname
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      handle_data_changed
+          FOR EVENT data_changed OF cl_gui_alv_grid
+        IMPORTING
+          !er_data_changed
+          !e_ucomm
+          !e_onf4
+          !e_onf4_before
+          !e_onf4_after,
+
+      delete_functions_alv
+        IMPORTING
+          !iv_bloq            TYPE abap_bool OPTIONAL
+        RETURNING
+          VALUE(rt_functions) TYPE ui_functions.
+
+IMPLEMENTAÇOES:
+
+  METHOD free_alv_class.
+
+    IF me->go_alv IS BOUND.
+      me->go_alv->free( ).
+    ENDIF.
+
+    IF me->go_docking IS BOUND.
+      me->go_docking->free( ).
+    ENDIF.
+
+    FREE: me->go_alv, me->go_docking .
+
+  ENDMETHOD. " FREE_ALV_CLASS
+
+  METHOD start_alv_execution.
+
+    IF me->go_alv IS BOUND.
+      me->go_alv->refresh_table_display(
+        EXPORTING
+          i_soft_refresh = abap_true
+      ).
+    ELSE.
+      me->create_alv(
+        CHANGING
+          co_alv = me->go_alv
+      ).
+    ENDIF.
+
+  ENDMETHOD. " START_ALV_EXECUTION
+
+  METHOD create_dynamic_container.
+    cl_gui_cfw=>flush( ).
+
+    me->go_docking = NEW cl_gui_docking_container(
+                      parent = cl_gui_container=>default_screen" screen0
+                      ratio  = 90 ).
+
+    me->go_docking->set_extension( 99999 ).
+
+  ENDMETHOD. " CREATE_DYNAMIC_CONTAINER
+
+  METHOD create_alv.
+
+    cl_gui_cfw=>flush( ).
+
+    me->create_dynamic_container( ).
+
+    co_alv = NEW cl_gui_alv_grid( i_parent = me->go_docking ).
+
+    SET HANDLER me->handle_data_changed FOR co_alv.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat_struct( iv_structure = 'ZFI_SPED_014' ).
+    DATA(lt_excl_fn)  = me->delete_functions_alv( ).
+*
+    DATA(ls_layout) = VALUE lvc_s_layo(
+      zebra       = abap_true
+*      box_fname   = 'MARK'
+    ).
+
+    co_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
+
+    co_alv->set_table_for_first_display(
+      EXPORTING
+        is_variant            = VALUE #( report    = sy-cprog
+                                         username  = sy-uname )
+        i_save                = 'A' "'U'
+        it_toolbar_excluding  = lt_excl_fn
+        is_layout             = ls_layout
+      CHANGING
+        it_fieldcatalog       = lt_fieldcat
+        it_outtab             = me->gt_sped_014[] ).
+
+    co_alv->set_toolbar_interactive( ).
+*
+*    IF gv_read_only = abap_true.
+*      co_alv->set_ready_for_input( i_ready_for_input = 0 ).
+*    ELSE.
+    co_alv->set_ready_for_input( i_ready_for_input = 1 ).
+*    ENDIF.
+
+  ENDMETHOD. " CREATE_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' .
+          DELETE rt_fieldcat INDEX lv_tabix.
+        WHEN 'SEQ'.
+          dfcat_texto <fl_fcat> 'SeqNumber' 'Sequential Number' 'Sequential Number' <fl_fcat>-outputlen.
+*        WHEN ''.
+*          dfcat_texto <fl_fcat> '' '' '' <fl_fcat>-outputlen.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+  METHOD generate_fieldcat_struct.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+
+    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+      EXPORTING
+        i_structure_name = iv_structure
+      CHANGING
+        ct_fieldcat      = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fs_fieldcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fs_fieldcat>-fieldname.
+        WHEN 'MANDT'.
+          DELETE rt_fieldcat INDEX lv_tabix.
+
+        WHEN 'AUFNR' OR 'ZFATHER' OR 'GMNGA' OR 'LABST'.
+          <fs_fieldcat>-edit = abap_true.
+
+        WHEN 'SEQ'.
+          dfcat_texto <fs_fieldcat> 'SeqNumber' 'Sequential Number' 'Sequential Number' <fs_fieldcat>-outputlen.
+
+*        WHEN ''.
+*          <fs_fieldcat>-key         = abap_true.
+*          <fs_fieldcat>-fix_column  = abap_true.
+*        WHEN ''.
+*          <fs_fieldcat>-outputlen   = 10.
+*          <fs_fieldcat>-checktable  = '!'.
+*          <fs_fieldcat>-edit        = abap_true.
+*        WHEN ''.
+*          <fs_fieldcat>-outputlen   = 10.
+*          <fs_fieldcat>-edit        = abap_true.
+*          <fs_fieldcat>-checkbox    = abap_true.
+        WHEN OTHERS.
+
+          CONTINUE.
+
+      ENDCASE.
+    ENDLOOP.
+
+    SORT rt_fieldcat BY col_pos.
+
+  ENDMETHOD. " GENERATE_FIELDCAT_STRUCT
+
+  METHOD handle_data_changed.
+
+*   " Treatment for INSERTED rows
+    FIELD-SYMBOLS <ft_data> TYPE gtt_sped_014.
+    ASSIGN er_data_changed->mp_mod_rows->* TO <ft_data>.
+
+    LOOP AT er_data_changed->mt_inserted_rows ASSIGNING FIELD-SYMBOL(<inserted_rows>).
+
+      READ TABLE <ft_data> ASSIGNING FIELD-SYMBOL(<fs_inserted>) INDEX sy-tabix.
+      IF <fs_inserted> IS ASSIGNED.
+*        ADD 10 TO lv_ebelp.
+*        <fs_inserted>-ebelp = lv_ebelp.
+      ENDIF.
+      UNASSIGN <fs_inserted>.
+
+    ENDLOOP.
+
+*   " Treatment for CHANGED rows.
+    FIELD-SYMBOLS: <campo>   TYPE any.
+
+**********************************************************************
+*   " Update the fields in the report's global table.
+**********************************************************************
+    LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<good_cells>).
+
+      READ TABLE me->gt_sped_014 ASSIGNING FIELD-SYMBOL(<fs_modified>) INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        ASSIGN COMPONENT <good_cells>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+        IF <campo> IS ASSIGNED.
+          <campo> = <good_cells>-value.
+        ENDIF.
+      ENDIF.
+
+      UNASSIGN: <fs_modified>, <campo>.
+
+    ENDLOOP.
+
+***********************************************************************
+**   " Modify auto-populated fields
+***********************************************************************
+*    LOOP AT er_data_changed->mt_good_cells ASSIGNING <good_cells>.
+*
+*      READ TABLE gt_sped_014 ASSIGNING <fs_modified> INDEX <good_cells>-row_id.
+*      IF <fs_modified> IS ASSIGNED.
+*        SELECT SINGLE mara~matnr, meins, matkl, maktx
+*          FROM mara
+*          INNER JOIN makt ON makt~matnr = mara~matnr
+*          WHERE mara~matnr = @<fs_modified>-matnr
+*        INTO @DATA(ls_mara).
+*
+*        IF sy-subrc = 0.
+*          <fs_modified>-maktx = ls_mara-maktx.
+*          <fs_modified>-meins = ls_mara-meins.
+*          <fs_modified>-matkl = ls_mara-matkl.
+*        ENDIF.
+*
+*        LOOP AT er_data_changed->mt_fieldcatalog ASSIGNING FIELD-SYMBOL(<fieldcat>).
+*          READ TABLE er_data_changed->mt_good_cells WITH KEY row_id = <good_cells>-row_id fieldname = <fieldcat>-fieldname TRANSPORTING NO FIELDS.
+*          IF sy-subrc NE 0.
+*            ASSIGN COMPONENT <fieldcat>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+*            IF <campo> IS ASSIGNED.
+*              er_data_changed->modify_cell(
+*                EXPORTING i_row_id    = <good_cells>-row_id
+*                          i_fieldname = <fieldcat>-fieldname
+*                          i_value     = <campo> ).
+*            ENDIF.
+*            UNASSIGN <campo>.
+*
+*          ENDIF.
+*        ENDLOOP.
+*
+*      ENDIF.
+*
+*      UNASSIGN: <fs_modified>, <campo>.
+*    ENDLOOP.
+
+  ENDMETHOD. "  HANDLE_DATA_CHANGED
+
+  METHOD delete_functions_alv.
+    IF iv_bloq EQ abap_true.
+      rt_functions = VALUE #( ( cl_gui_alv_grid=>mc_fc_excl_all ) ). "// Remove all functions
+
+      RETURN.
+    ENDIF.
+
+    rt_functions = VALUE #(
+          ( cl_gui_alv_grid=>mc_fc_auf                     )
+          ( cl_gui_alv_grid=>mc_fc_average                 )
+          ( cl_gui_alv_grid=>mc_fc_back_classic            )
+          ( cl_gui_alv_grid=>mc_fc_call_abc                )
+          ( cl_gui_alv_grid=>mc_fc_call_chain              )
+          ( cl_gui_alv_grid=>mc_fc_call_crbatch            )
+          ( cl_gui_alv_grid=>mc_fc_call_crweb              )
+          ( cl_gui_alv_grid=>mc_fc_call_lineitems          )
+          ( cl_gui_alv_grid=>mc_fc_call_master_data        )
+          ( cl_gui_alv_grid=>mc_fc_call_more               )
+          ( cl_gui_alv_grid=>mc_fc_call_report             )
+          ( cl_gui_alv_grid=>mc_fc_call_xint               )
+          ( cl_gui_alv_grid=>mc_fc_call_xml_export         )
+          ( cl_gui_alv_grid=>mc_fc_call_xxl                )
+          ( cl_gui_alv_grid=>mc_fc_check                   )
+          ( cl_gui_alv_grid=>mc_fc_col_invisible           )
+          ( cl_gui_alv_grid=>mc_fc_col_optimize            )
+          ( cl_gui_alv_grid=>mc_fc_count                   )
+          ( cl_gui_alv_grid=>mc_fc_data_save               )
+          ( cl_gui_alv_grid=>mc_fc_detail                  )
+          ( cl_gui_alv_grid=>mc_fc_expcrdata               )
+          ( cl_gui_alv_grid=>mc_fc_expcrdesig              )
+          ( cl_gui_alv_grid=>mc_fc_expcrtempl              )
+          ( cl_gui_alv_grid=>mc_fc_expmdb                  )
+          ( cl_gui_alv_grid=>mc_fc_extend                  )
+          ( cl_gui_alv_grid=>mc_fc_f4                      )
+          ( cl_gui_alv_grid=>mc_fc_filter                  )
+          ( cl_gui_alv_grid=>mc_fc_delete_filter           )
+          ( cl_gui_alv_grid=>mc_fc_fix_columns             )
+          ( cl_gui_alv_grid=>mc_fc_graph                   )
+          ( cl_gui_alv_grid=>mc_fc_help                    )
+          ( cl_gui_alv_grid=>mc_fc_html                    )
+          ( cl_gui_alv_grid=>mc_fc_info                    )
+          ( cl_gui_alv_grid=>mc_fc_loc_copy                )
+*          ( cl_gui_alv_grid=>mc_fc_loc_copy_row            )
+          ( cl_gui_alv_grid=>mc_fc_loc_cut                 )
+          ( cl_gui_alv_grid=>mc_fc_loc_move_row            )
+          ( cl_gui_alv_grid=>mc_fc_loc_paste               )
+          ( cl_gui_alv_grid=>mc_fc_loc_paste_new_row       )
+*          ( cl_gui_alv_grid=>mc_fc_loc_undo                )
+*          ( cl_gui_alv_grid=>mc_fc_loc_delete_row          )
+          ( cl_gui_alv_grid=>mc_fc_loc_insert_row          )
+          ( cl_gui_alv_grid=>mc_fc_loc_append_row          )
+          ( cl_gui_alv_grid=>mc_fc_maximum                 )
+          ( cl_gui_alv_grid=>mc_fc_minimum                 )
+          ( cl_gui_alv_grid=>mc_fc_pc_file                 )
+          ( cl_gui_alv_grid=>mc_fc_print                   )
+          ( cl_gui_alv_grid=>mc_fc_print_back              )
+          ( cl_gui_alv_grid=>mc_fc_print_prev              )
+          ( cl_gui_alv_grid=>mc_fc_refresh                 )
+          ( cl_gui_alv_grid=>mc_fc_reprep                  )
+          ( cl_gui_alv_grid=>mc_fc_send                    )
+*          ( cl_gui_alv_grid=>mc_fc_separator               )
+          ( cl_gui_alv_grid=>mc_fc_subtot                  )
+          ( cl_gui_alv_grid=>mc_fc_sum                     )
+          ( cl_gui_alv_grid=>mc_fc_to_office               )
+          ( cl_gui_alv_grid=>mc_fc_to_rep_tree             )
+          ( cl_gui_alv_grid=>mc_fc_unfix_columns           )
+          ( cl_gui_alv_grid=>mc_fc_url_copy_to_clipboard   )
+          ( cl_gui_alv_grid=>mc_fc_maintain_variant        )
+          ( cl_gui_alv_grid=>mc_fc_variant_admin           )
+          ( cl_gui_alv_grid=>mc_fc_save_variant            )
+          ( cl_gui_alv_grid=>mc_fc_load_variant            )
+          ( cl_gui_alv_grid=>mc_fc_current_variant         )
+          ( cl_gui_alv_grid=>mc_fc_views                   )
+          ( cl_gui_alv_grid=>mc_fc_view_crystal            )
+          ( cl_gui_alv_grid=>mc_fc_view_excel              )
+          ( cl_gui_alv_grid=>mc_fc_view_grid               )
+          ( cl_gui_alv_grid=>mc_fc_view_lotus              )
+          ( cl_gui_alv_grid=>mc_fc_word_processor          )
+          ( cl_gui_alv_grid=>mc_fc_sort                    )
+          ( cl_gui_alv_grid=>mc_fc_sort_asc                )
+          ( cl_gui_alv_grid=>mc_fc_sort_dsc                )
+          ( cl_gui_alv_grid=>mc_fc_find                    )
+          ( cl_gui_alv_grid=>mc_fc_find_more               )
+        ).
+  ENDMETHOD. "  DELETE_FUNCTIONS_ALV
