@@ -1,0 +1,54 @@
+PROCESS BEFORE OUTPUT.
+  MODULE status_9001.
+  MODULE run_alv.
+
+PROCESS AFTER INPUT.
+  MODULE user_command_9001.
+
+DATA:
+  gv_okcode_9001 TYPE sy-ucomm.
+
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_9001  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE status_9001 OUTPUT.
+  SET PF-STATUS 'STATUS_9001'.
+  SET TITLEBAR 'T9001'.
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*&      Module  RUN_ALV  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE run_alv OUTPUT.
+
+  go_report->start_alv_execution( ).
+
+ENDMODULE. " RUN_ALV
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9001  INPUT
+*&---------------------------------------------------------------------*
+MODULE user_command_9001 INPUT.
+  CASE gv_okcode_9001.
+    WHEN 'BACK' OR 'RETURN' OR 'CANCEL'.
+      go_report->free_alv_class( ).
+
+      LEAVE TO SCREEN 0.
+
+    WHEN 'SAVE'.
+
+      TRY .
+
+          go_report->save_data( ).
+
+          MESSAGE 'Data successfully saved.' TYPE 'S'.
+
+        CATCH cx_idm_error INTO lo_exc.
+          MESSAGE ID lo_exc->message-id TYPE 'S'
+             NUMBER lo_exc->message-number
+               WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+                 DISPLAY LIKE lo_exc->message-type.
+      ENDTRY.
+
+  ENDCASE.
+ENDMODULE. " USER_COMMAND_9001
