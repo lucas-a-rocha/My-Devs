@@ -7,9 +7,9 @@ VARIAVEIS:
       go_alv     TYPE REF TO cl_gui_alv_grid.
 
 DEFINIÇOES:
-      start_alv_execution,
-
       free_alv_class,
+
+      start_alv_execution,
 
       progress_indicator
         IMPORTING
