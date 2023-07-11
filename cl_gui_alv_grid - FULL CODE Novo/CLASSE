@@ -7,9 +7,9 @@ VARIAVEIS:
       go_alv     TYPE REF TO cl_gui_alv_grid.
 
 DEFINIÇOES:
-      free_alv_class,
-
       start_alv_execution,
+
+      free_alv_class.
 
       progress_indicator
         IMPORTING
@@ -22,6 +22,7 @@ DEFINIÇOES:
           !iv_quant            TYPE sy-tabix
         RETURNING
           VALUE(rv_percentage) TYPE gtv_percent,
+
       create_dynamic_container,
 
       create_alv
@@ -47,6 +48,12 @@ DEFINIÇOES:
         RETURNING
           VALUE(rt_fieldcat) TYPE lvc_t_fcat,
 
+      delete_functions_alv
+        IMPORTING
+          !iv_bloq            TYPE abap_bool OPTIONAL
+        RETURNING
+          VALUE(rt_functions) TYPE ui_functions,
+
       handle_data_changed
           FOR EVENT data_changed OF cl_gui_alv_grid
         IMPORTING
@@ -56,13 +63,14 @@ DEFINIÇOES:
           !e_onf4_before
           !e_onf4_after,
 
-      delete_functions_alv
-        IMPORTING
-          !iv_bloq            TYPE abap_bool OPTIONAL
-        RETURNING
-          VALUE(rt_functions) TYPE ui_functions.
+      handle_toolbar FOR EVENT toolbar OF cl_gui_alv_grid
+        IMPORTING e_object e_interactive,
+
+      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid
+        IMPORTING e_ucomm.
 
 IMPLEMENTAÇOES:
+
 
   METHOD free_alv_class.
 
@@ -114,6 +122,8 @@ IMPLEMENTAÇOES:
     co_alv = NEW cl_gui_alv_grid( i_parent = me->go_docking ).
 
     SET HANDLER me->handle_data_changed FOR co_alv.
+    SET HANDLER me->handle_toolbar FOR co_alv.
+    SET HANDLER me->handle_user_command FOR co_alv.
 
     DATA(lt_fieldcat) = me->generate_fieldcat_struct( iv_structure = 'ZFI_SPED_014' ).
     DATA(lt_excl_fn)  = me->delete_functions_alv( ).
@@ -206,8 +216,6 @@ IMPLEMENTAÇOES:
       CASE <fl_fcat>-fieldname.
         WHEN 'MANDT' .
           DELETE rt_fieldcat INDEX lv_tabix.
-        WHEN 'SEQ'.
-          dfcat_texto <fl_fcat> 'SeqNumber' 'Sequential Number' 'Sequential Number' <fl_fcat>-outputlen.
 *        WHEN ''.
 *          dfcat_texto <fl_fcat> '' '' '' <fl_fcat>-outputlen.
 
@@ -276,84 +284,6 @@ IMPLEMENTAÇOES:
     SORT rt_fieldcat BY col_pos.
 
   ENDMETHOD. " GENERATE_FIELDCAT_STRUCT
-
-  METHOD handle_data_changed.
-
-*   " Treatment for INSERTED rows
-    FIELD-SYMBOLS <ft_data> TYPE gtt_sped_014.
-    ASSIGN er_data_changed->mp_mod_rows->* TO <ft_data>.
-
-    LOOP AT er_data_changed->mt_inserted_rows ASSIGNING FIELD-SYMBOL(<inserted_rows>).
-
-      READ TABLE <ft_data> ASSIGNING FIELD-SYMBOL(<fs_inserted>) INDEX sy-tabix.
-      IF <fs_inserted> IS ASSIGNED.
-*        ADD 10 TO lv_ebelp.
-*        <fs_inserted>-ebelp = lv_ebelp.
-      ENDIF.
-      UNASSIGN <fs_inserted>.
-
-    ENDLOOP.
-
-*   " Treatment for CHANGED rows.
-    FIELD-SYMBOLS: <campo>   TYPE any.
-
-**********************************************************************
-*   " Update the fields in the report's global table.
-**********************************************************************
-    LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<good_cells>).
-
-      READ TABLE me->gt_sped_014 ASSIGNING FIELD-SYMBOL(<fs_modified>) INDEX <good_cells>-row_id.
-      IF <fs_modified> IS ASSIGNED.
-        ASSIGN COMPONENT <good_cells>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
-        IF <campo> IS ASSIGNED.
-          <campo> = <good_cells>-value.
-        ENDIF.
-      ENDIF.
-
-      UNASSIGN: <fs_modified>, <campo>.
-
-    ENDLOOP.
-
-***********************************************************************
-**   " Modify auto-populated fields
-***********************************************************************
-*    LOOP AT er_data_changed->mt_good_cells ASSIGNING <good_cells>.
-*
-*      READ TABLE gt_sped_014 ASSIGNING <fs_modified> INDEX <good_cells>-row_id.
-*      IF <fs_modified> IS ASSIGNED.
-*        SELECT SINGLE mara~matnr, meins, matkl, maktx
-*          FROM mara
-*          INNER JOIN makt ON makt~matnr = mara~matnr
-*          WHERE mara~matnr = @<fs_modified>-matnr
-*        INTO @DATA(ls_mara).
-*
-*        IF sy-subrc = 0.
-*          <fs_modified>-maktx = ls_mara-maktx.
-*          <fs_modified>-meins = ls_mara-meins.
-*          <fs_modified>-matkl = ls_mara-matkl.
-*        ENDIF.
-*
-*        LOOP AT er_data_changed->mt_fieldcatalog ASSIGNING FIELD-SYMBOL(<fieldcat>).
-*          READ TABLE er_data_changed->mt_good_cells WITH KEY row_id = <good_cells>-row_id fieldname = <fieldcat>-fieldname TRANSPORTING NO FIELDS.
-*          IF sy-subrc NE 0.
-*            ASSIGN COMPONENT <fieldcat>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
-*            IF <campo> IS ASSIGNED.
-*              er_data_changed->modify_cell(
-*                EXPORTING i_row_id    = <good_cells>-row_id
-*                          i_fieldname = <fieldcat>-fieldname
-*                          i_value     = <campo> ).
-*            ENDIF.
-*            UNASSIGN <campo>.
-*
-*          ENDIF.
-*        ENDLOOP.
-*
-*      ENDIF.
-*
-*      UNASSIGN: <fs_modified>, <campo>.
-*    ENDLOOP.
-
-  ENDMETHOD. "  HANDLE_DATA_CHANGED
 
   METHOD delete_functions_alv.
     IF iv_bloq EQ abap_true.
@@ -440,3 +370,120 @@ IMPLEMENTAÇOES:
           ( cl_gui_alv_grid=>mc_fc_find_more               )
         ).
   ENDMETHOD. "  DELETE_FUNCTIONS_ALV
+
+  METHOD handle_data_changed.
+
+*   " Treatment for INSERTED rows
+    FIELD-SYMBOLS <ft_data> TYPE gtt_sped_014.
+    ASSIGN er_data_changed->mp_mod_rows->* TO <ft_data>.
+
+    LOOP AT er_data_changed->mt_inserted_rows ASSIGNING FIELD-SYMBOL(<inserted_rows>).
+
+      READ TABLE <ft_data> ASSIGNING FIELD-SYMBOL(<fs_inserted>) INDEX sy-tabix.
+      IF <fs_inserted> IS ASSIGNED.
+*        ADD 10 TO lv_ebelp.
+*        <fs_inserted>-ebelp = lv_ebelp.
+      ENDIF.
+      UNASSIGN <fs_inserted>.
+
+    ENDLOOP.
+
+*   " Treatment for CHANGED rows.
+    FIELD-SYMBOLS: <campo>   TYPE any.
+
+**********************************************************************
+*   " Update the fields in the report's global table.
+**********************************************************************
+    LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<good_cells>).
+
+      READ TABLE me->gt_sped_014 ASSIGNING FIELD-SYMBOL(<fs_modified>) INDEX <good_cells>-row_id.
+      IF <fs_modified> IS ASSIGNED.
+        ASSIGN COMPONENT <good_cells>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+        IF <campo> IS ASSIGNED.
+          <campo> = <good_cells>-value.
+        ENDIF.
+      ENDIF.
+
+      UNASSIGN: <fs_modified>, <campo>.
+
+    ENDLOOP.
+
+***********************************************************************
+**   " Modify auto-populated fields
+***********************************************************************
+*    LOOP AT er_data_changed->mt_good_cells ASSIGNING <good_cells>.
+*
+*      READ TABLE gt_sped_014 ASSIGNING <fs_modified> INDEX <good_cells>-row_id.
+*      IF <fs_modified> IS ASSIGNED.
+*        SELECT SINGLE mara~matnr, meins, matkl, maktx
+*          FROM mara
+*          INNER JOIN makt ON makt~matnr = mara~matnr
+*          WHERE mara~matnr = @<fs_modified>-matnr
+*        INTO @DATA(ls_mara).
+*
+*        IF sy-subrc = 0.
+*          <fs_modified>-maktx = ls_mara-maktx.
+*          <fs_modified>-meins = ls_mara-meins.
+*          <fs_modified>-matkl = ls_mara-matkl.
+*        ENDIF.
+*
+*        LOOP AT er_data_changed->mt_fieldcatalog ASSIGNING FIELD-SYMBOL(<fieldcat>).
+*          READ TABLE er_data_changed->mt_good_cells WITH KEY row_id = <good_cells>-row_id fieldname = <fieldcat>-fieldname TRANSPORTING NO FIELDS.
+*          IF sy-subrc NE 0.
+*            ASSIGN COMPONENT <fieldcat>-fieldname OF STRUCTURE <fs_modified> TO <campo>.
+*            IF <campo> IS ASSIGNED.
+*              er_data_changed->modify_cell(
+*                EXPORTING i_row_id    = <good_cells>-row_id
+*                          i_fieldname = <fieldcat>-fieldname
+*                          i_value     = <campo> ).
+*            ENDIF.
+*            UNASSIGN <campo>.
+*
+*          ENDIF.
+*        ENDLOOP.
+*
+*      ENDIF.
+*
+*      UNASSIGN: <fs_modified>, <campo>.
+*    ENDLOOP.
+
+  ENDMETHOD. "  HANDLE_DATA_CHANGED
+
+  METHOD handle_toolbar.
+
+    APPEND VALUE #(
+      function   = 'ZREPROCESS'
+      icon       = icon_refresh
+      quickinfo  = 'Reprocess ALV data'
+      butn_type  = 0
+      text       = 'Reprocess'
+*      DISABLED   = abap_false
+*      CHECKED    = abap_false
+    ) TO e_object->mt_toolbar.
+
+  ENDMETHOD. " HANDLE_TOOLBAR
+
+  METHOD handle_user_command.
+
+    TRY .
+
+        CASE e_ucomm.
+          WHEN 'ZREPROCESS'.
+
+            me->start_new_process( ).
+
+            me->start_alv_execution( ).
+
+          WHEN OTHERS.
+            RETURN.
+
+        ENDCASE.
+
+      CATCH cx_idm_error INTO DATA(lo_exc).
+        MESSAGE ID lo_exc->message-id TYPE 'S'
+           NUMBER lo_exc->message-number
+             WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+               DISPLAY LIKE lo_exc->message-type.
+    ENDTRY.
+
+  ENDMETHOD. " HANDLE_USER_COMMAND
