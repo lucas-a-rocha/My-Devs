@@ -1556,6 +1556,10 @@ CLASS lcl_relatorio IMPLEMENTATION.
       EXPORTING
         percentage = iv_perc
         text       = iv_text.
+*cl_progress_indicator=>progress_indicate(
+*    i_text = |Processing: { current_record }/{ total_records }|
+*    i_output_immediately = abap_true ).
+
   ENDMETHOD. " PROGRESS_INDICATOR
 
   METHOD calcular_percentual.
