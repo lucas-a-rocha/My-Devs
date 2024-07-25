@@ -1,0 +1,913 @@
+REPORT zsd_upload_goods_issue.
+
+TABLES: sscrfields.
+
+SELECTION-SCREEN FUNCTION KEY 1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+
+PARAMETERS:
+  p_file TYPE string.
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+INITIALIZATION.
+  sscrfields-functxt_01 = zcl_string_utilities=>get_report_excel_button_data( ).
+
+CLASS lcl_goods_issue DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_excel,
+        a TYPE string,
+        b TYPE string,
+        c TYPE string,
+        d TYPE string,
+        e TYPE string,
+        f TYPE string,
+        g TYPE string,
+        h TYPE string,
+        i TYPE string,
+        j TYPE string,
+        k TYPE string,
+        l TYPE string,
+        m TYPE string,
+        n TYPE string,
+      END OF gty_excel,
+
+      gtt_excel TYPE STANDARD TABLE OF gty_excel WITH EMPTY KEY,
+
+      BEGIN OF gty_list,
+        icon    TYPE icon_d,
+        row     TYPE /aif/lfa_excel_row_e,
+        vbeln   TYPE likp-vbeln,
+        werks   TYPE lips-werks,
+        kunnr   TYPE likp-kunnr,
+        ernam   TYPE likp-ernam,
+        lfdat   TYPE likp-lfdat,
+        matnr   TYPE lips-matnr,
+        lfimg   TYPE lips-lfimg,
+        meins   TYPE lips-meins,
+        conqty  TYPE ze_conf_delivery_qty,
+        loaddt  TYPE ze_delivery_load_date,
+
+        type    TYPE bapiret2-type,
+        message TYPE string,
+      END OF gty_list,
+
+      gtt_list TYPE STANDARD TABLE OF gty_list WITH EMPTY KEY.
+
+    CLASS-DATA: go_office TYPE REF TO zcl_office_integration_service.
+
+    CLASS-METHODS:
+      display_local_directory
+        CHANGING cv_dir TYPE string,
+
+      display_example_document,
+
+      free_objects.
+
+    METHODS:
+      execute
+        RAISING cx_idm_error.
+
+  PRIVATE SECTION.
+    DATA:
+      gt_excel TYPE gtt_excel,
+      gt_list  TYPE gtt_list,
+      go_goods TYPE REF TO cl_salv_table.
+
+    METHODS:
+      get_excel_data
+        RAISING cx_idm_error,
+
+      get_icon
+        IMPORTING
+          !iv_type       TYPE gty_list-type
+        RETURNING
+          VALUE(rv_icon) TYPE gty_list-icon,
+
+      convert_excel_data,
+
+      check_before_post
+        RAISING cx_idm_error,
+
+      post_excel_data
+        RAISING cx_idm_error,
+
+      post_delivery
+        IMPORTING
+          !iv_vbeln          TYPE gty_list-vbeln
+          !iv_commit         TYPE flag
+        RETURNING
+          VALUE(rt_messages) TYPE bapiret2_t,
+
+      display_alv
+        CHANGING
+          ct_table TYPE ANY TABLE,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function.
+
+ENDCLASS.
+
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'FC01'.
+      CALL SCREEN 9001.
+    WHEN OTHERS.
+  ENDCASE.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  lcl_goods_issue=>display_local_directory(
+    CHANGING
+      cv_dir = p_file
+  ).
+
+START-OF-SELECTION.
+
+  TRY .
+
+      NEW lcl_goods_issue( )->execute( ).
+
+    CATCH cx_idm_error INTO DATA(lo_exc).
+
+      MESSAGE ID lo_exc->message-id TYPE 'S'
+         NUMBER lo_exc->message-number
+           WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+             DISPLAY LIKE lo_exc->message-type.
+
+  ENDTRY.
+
+CLASS lcl_goods_issue IMPLEMENTATION.
+
+  METHOD execute.
+
+    CHECK p_file IS NOT INITIAL.
+
+*   " Get the excel and convert into internal table.
+    me->get_excel_data( ).
+
+*   " Convert the excel internal table into the mapped table.
+    me->convert_excel_data( ).
+
+*   " Display execution log.
+    IF me->gt_list IS NOT INITIAL.
+      me->display_alv(
+        CHANGING
+          ct_table = me->gt_list[]
+      ).
+    ENDIF.
+
+  ENDMETHOD. "execute
+
+  METHOD get_excel_data.
+
+    DATA:
+      lt_records       TYPE solix_tab,
+      lv_headerxstring TYPE xstring,
+      lv_filelength    TYPE i.
+
+    FIELD-SYMBOLS: <gt_data_h> TYPE ANY TABLE.
+
+    CALL FUNCTION 'GUI_UPLOAD'
+      EXPORTING
+        filename                = p_file
+        filetype                = 'BIN'
+      IMPORTING
+        filelength              = lv_filelength
+        header                  = lv_headerxstring
+      TABLES
+        data_tab                = lt_records
+      EXCEPTIONS
+        file_open_error         = 1
+        file_read_error         = 2
+        no_batch                = 3
+        gui_refuse_filetransfer = 4
+        invalid_type            = 5
+        no_authority            = 6
+        unknown_error           = 7
+        bad_data_format         = 8
+        header_not_allowed      = 9
+        separator_not_allowed   = 10
+        header_too_long         = 11
+        unknown_dp_error        = 12
+        access_denied           = 13
+        dp_out_of_memory        = 14
+        disk_full               = 15
+        dp_timeout              = 16
+        OTHERS                  = 17.
+
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            type = sy-msgty number = sy-msgno message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4
+          ).
+    ENDIF.
+
+    CALL FUNCTION 'SCMS_BINARY_TO_XSTRING'
+      EXPORTING
+        input_length = lv_filelength
+      IMPORTING
+        buffer       = lv_headerxstring
+      TABLES
+        binary_tab   = lt_records
+      EXCEPTIONS
+        failed       = 1
+        OTHERS       = 2.
+
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #(
+            type = sy-msgty number = sy-msgno message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4
+          ).
+    ENDIF.
+
+    DATA:
+      lo_excel_ref TYPE REF TO cl_fdt_xl_spreadsheet .
+
+    TRY .
+        lo_excel_ref = NEW cl_fdt_xl_spreadsheet(
+                                document_name = p_file
+                                xdocument     = lv_headerxstring ) .
+      CATCH cx_fdt_excel_core.
+    ENDTRY .
+
+    IF lo_excel_ref IS BOUND.
+*--Get List of Worksheets
+      lo_excel_ref->if_fdt_doc_spreadsheet~get_worksheet_names(
+        IMPORTING
+          worksheet_names = DATA(lt_worksheets) ).
+
+      IF NOT lt_worksheets IS INITIAL.
+
+*-- Header Tab
+        READ TABLE lt_worksheets INTO DATA(lv_woksheetname) INDEX 1.
+
+        DATA(lo_data_ref) = lo_excel_ref->if_fdt_doc_spreadsheet~get_itab_from_worksheet( lv_woksheetname ).
+        ASSIGN lo_data_ref->* TO <gt_data_h>.
+        APPEND LINES OF <gt_data_h> TO me->gt_excel.
+
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD. "GET_EXCEL_DATA
+
+  METHOD get_icon.
+    CASE iv_type.
+      WHEN 'S'.
+        rv_icon = icon_green_light.
+      WHEN 'E'.
+        rv_icon = icon_red_light.
+      WHEN 'W'.
+        rv_icon = icon_yellow_light.
+      WHEN OTHERS.
+*        rv_icon = icon_green_light.
+
+    ENDCASE.
+  ENDMETHOD. "GET_ICON
+
+  METHOD convert_excel_data.
+    DATA:
+      lv_excel_row TYPE i,
+      lv_day_month TYPE n LENGTH 2,
+      lw_list      LIKE LINE OF me->gt_list,
+      lv_meins     TYPE string.
+
+    DELETE me->gt_excel WHERE a IS INITIAL AND b IS INITIAL.
+
+    LOOP AT me->gt_excel INTO DATA(lw_excel).
+      CLEAR: lw_list.
+
+      lv_excel_row = sy-tabix.
+
+      IF lw_excel-a CS 'Delivery'. "Ignore first line
+        CONTINUE.
+      ENDIF.
+
+      lw_list = VALUE #(
+        icon    = me->get_icon( 'W' )
+        row     = lv_excel_row
+        vbeln   = |{ lw_excel-a ALPHA = IN }|
+        werks   = |{ lw_excel-b ALPHA = IN }|
+        kunnr   = |{ lw_excel-e ALPHA = IN }|
+        ernam   = lw_excel-h
+*        lfdat   = condense( val = replace( val = lw_excel-i regex = '\-' with = '' occ = 0 ) )
+        matnr   = |{ lw_excel-j ALPHA = IN }|
+        lfimg   = lw_excel-k
+*        meins   = lw_excel-l
+        conqty   = lw_excel-m
+*        loaddt   = lw_excel-n
+        type    = 'W'
+      ).
+
+      IF lw_excel-i CS '-'.
+        lw_list-lfdat = condense( val = replace( val = lw_excel-i regex = '\-' with = '' occ = 0 ) ).
+      ELSEIF lw_excel-i CS '/'.
+        SPLIT lw_excel-i AT '/' INTO TABLE DATA(lt_lfdat_split).
+        LOOP AT lt_lfdat_split INTO DATA(lw_lfdat_split).
+          lv_day_month = lw_lfdat_split.
+
+          CASE sy-tabix.
+            WHEN 1. lw_list-lfdat+6 = lv_day_month.
+            WHEN 2. lw_list-lfdat+4(2) = lv_day_month.
+            WHEN 3. lw_list-lfdat(4) = lw_lfdat_split.
+          ENDCASE.
+
+        ENDLOOP.
+
+      ENDIF.
+
+      IF lw_excel-n CS '-'.
+        lw_list-loaddt = condense( val = replace( val = lw_excel-n regex = '\-' with = '' occ = 0 ) ).
+      ELSEIF lw_excel-n CS '/'.
+        SPLIT lw_excel-n AT '/' INTO TABLE lt_lfdat_split.
+        LOOP AT lt_lfdat_split INTO lw_lfdat_split.
+          lv_day_month = lw_lfdat_split.
+
+          CASE sy-tabix.
+            WHEN 1. lw_list-loaddt+6 = lv_day_month.
+            WHEN 2. lw_list-loaddt+4(2) = lv_day_month.
+            WHEN 3. lw_list-loaddt(4) = lw_lfdat_split.
+          ENDCASE.
+
+        ENDLOOP.
+
+      ENDIF.
+
+      lv_meins = lw_excel-l.
+
+      SELECT COUNT(*)
+        FROM t006
+        WHERE msehi = @lv_meins.
+
+      IF sy-subrc = 0.
+        lw_list-meins = lv_meins.
+      ELSE.
+
+        SELECT SINGLE t006~msehi, mseh3
+          FROM t006
+            INNER JOIN t006a ON t006a~msehi = t006~msehi AND spras = @sy-langu
+          WHERE mseh3 = @lv_meins
+        INTO @DATA(ls_t006).
+
+        IF sy-subrc = 0.
+          lw_list-meins = ls_t006-msehi.
+        ENDIF.
+
+      ENDIF.
+
+      APPEND lw_list TO me->gt_list.
+
+      CLEAR: ls_t006.
+    ENDLOOP.
+
+  ENDMETHOD. "CONVERT_EXCEL_DATA
+
+  METHOD check_before_post.
+    DATA:
+      lv_type     TYPE gty_list-type,
+      lv_message  TYPE gty_list-message,
+      lv_fail     TYPE flag,
+      lt_messages TYPE bapiret2_t.
+
+    LOOP AT me->gt_list INTO DATA(lw_list_grp)
+      GROUP BY (
+        vbeln = lw_list_grp-vbeln
+        size  = GROUP SIZE
+        index = GROUP INDEX
+      ) ASSIGNING FIELD-SYMBOL(<fs_list_grp>).
+
+      CLEAR: lv_type, lv_message, lv_fail.
+      FREE: lt_messages.
+
+      SELECT vbeln, posnr, matnr, lfimg
+        FROM lips
+        WHERE vbeln = @<fs_list_grp>-vbeln
+      INTO TABLE @DATA(lt_lips).
+
+*     " Validate all data.
+      IF sy-subrc <> 0.
+        lv_fail = abap_true.
+        lv_type = 'E'.
+        lv_message = |Delivery { <fs_list_grp>-vbeln ALPHA = OUT } has no items to post.|.
+      ELSE.
+
+        IF lines( lt_lips ) <> <fs_list_grp>-size.
+          lv_fail = abap_true.
+          lv_type = 'E'.
+          lv_message = |The specified items do not match all items in the Delivery.|.
+        ENDIF.
+
+      ENDIF.
+
+      IF lv_type IS INITIAL.
+
+*       " Validate Quantity.
+        LOOP AT GROUP <fs_list_grp> ASSIGNING FIELD-SYMBOL(<fs_list>).
+
+          READ TABLE lt_lips INTO DATA(lw_lips) WITH KEY vbeln = <fs_list>-vbeln
+                                                         matnr = <fs_list>-matnr.
+          IF sy-subrc <> 0.
+            lv_fail = abap_true.
+            <fs_list>-type = 'E'.
+            <fs_list>-icon = me->get_icon( <fs_list>-type ).
+
+            <fs_list>-message = |The delivery { <fs_list>-vbeln ALPHA = OUT } with the material { condense( val = |{ <fs_list>-matnr ALPHA = OUT }| ) } was not found.|.
+          ELSE.
+
+            IF <fs_list>-conqty <> lw_lips-lfimg.
+
+              lv_fail = abap_true.
+              <fs_list>-type = 'E'.
+              <fs_list>-icon = me->get_icon( <fs_list>-type ).
+
+              <fs_list>-message = |The quantity provided { <fs_list>-conqty } does not match the quantity { lw_lips-lfimg } in the delivery.|.
+
+            ENDIF.
+
+          ENDIF.
+
+          CLEAR: lw_lips.
+        ENDLOOP.
+
+      ENDIF.
+
+      IF lv_fail = abap_false.
+        lt_messages = me->post_delivery(
+          EXPORTING
+            iv_vbeln    = <fs_list_grp>-vbeln
+            iv_commit   = abap_false
+        ).
+
+        READ TABLE lt_messages INTO DATA(lw_message) INDEX 1.
+        IF sy-subrc = 0.
+
+          lv_fail = abap_true.
+          lv_type = 'E'.
+          MESSAGE ID lw_message-id TYPE lw_message-type NUMBER lw_message-number
+            WITH lw_message-message_v1 lw_message-message_v2 lw_message-message_v3 lw_message-message_v4 INTO lv_message.
+
+        ELSE.
+          lv_type = 'S'.
+        ENDIF.
+      ENDIF.
+
+      LOOP AT GROUP <fs_list_grp> ASSIGNING <fs_list>.
+        IF lv_type IS NOT INITIAL.
+          <fs_list>-type = lv_type.
+          <fs_list>-icon = me->get_icon( <fs_list>-type ).
+        ENDIF.
+
+        IF lv_message IS NOT INITIAL.
+          <fs_list>-message = lv_message.
+        ENDIF.
+      ENDLOOP.
+
+      FREE: lt_lips.
+    ENDLOOP.
+
+    me->go_goods->refresh( ).
+
+    MESSAGE 'Simulation completed.'(m03) TYPE 'S'.
+
+  ENDMETHOD. "CHECK_BEFORE_POST
+
+  METHOD post_excel_data.
+    DATA:
+      lt_messages TYPE bapiret2_t.
+
+    IF line_exists( me->gt_list[ type = 'W' ] ).
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'SD' number = 024 message_v1 = 'You need to simulate before posting.'(m01) ).
+      RETURN.
+    ENDIF.
+
+    IF line_exists( me->gt_list[ type = 'E' ] ).
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'SD' number = 024 message_v1 = 'To post, there must be no errors in the list.'(m02) ).
+      RETURN.
+    ENDIF.
+
+    LOOP AT me->gt_list INTO DATA(lw_list_grp)
+      GROUP BY ( vbeln = lw_list_grp-vbeln ) ASSIGNING FIELD-SYMBOL(<fs_list_grp>).
+
+      FREE: lt_messages.
+
+      lt_messages = me->post_delivery(
+        EXPORTING
+          iv_vbeln    = <fs_list_grp>-vbeln
+          iv_commit   = abap_true
+      ).
+
+    ENDLOOP.
+
+    MESSAGE 'Execution completed.'(m04) TYPE 'S'.
+
+  ENDMETHOD. "POST_EXCEL_DATA
+
+  METHOD post_delivery.
+    DATA:
+      ls_vbkok TYPE vbkok,
+      lt_prott TYPE STANDARD TABLE OF prott.
+
+    ls_vbkok = VALUE #(
+      vbeln_vl = iv_vbeln
+      wabuc    = 'X'
+    ).
+
+    SET UPDATE TASK LOCAL.
+    CALL FUNCTION 'WS_DELIVERY_UPDATE'
+      EXPORTING
+        vbkok_wa                 = ls_vbkok
+        synchron                 = 'X'
+        no_messages_update       = ' '
+        update_picking           = 'X'
+        commit                   = ' '
+        delivery                 = iv_vbeln
+        nicht_sperren            = 'X'
+        if_error_messages_send_0 = 'X'
+      TABLES
+        prot                     = lt_prott
+      EXCEPTIONS
+        error_message            = 1
+        OTHERS                   = 2.
+
+    IF sy-subrc <> 0.
+      APPEND VALUE #(
+        type        = sy-msgty
+        id          = sy-msgid
+        number      = sy-msgno
+        message_v1  = sy-msgv1
+        message_v2  = sy-msgv2
+        message_v3  = sy-msgv3
+        message_v4  = sy-msgv4
+      ) TO rt_messages.
+
+    ELSE.
+      LOOP AT lt_prott INTO DATA(lw_prott) WHERE msgty CA 'EA'.
+        APPEND VALUE #(
+          type        = lw_prott-msgty
+          id          = lw_prott-msgid
+          number      = lw_prott-msgno
+          message_v1  = lw_prott-msgv1
+          message_v2  = lw_prott-msgv2
+          message_v3  = lw_prott-msgv3
+          message_v4  = lw_prott-msgv4
+        ) TO rt_messages.
+      ENDLOOP.
+    ENDIF.
+
+    IF rt_messages IS NOT INITIAL OR iv_commit = abap_false.
+      ROLLBACK WORK.
+    ELSE.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
+  ENDMETHOD. "POST_DELIVERY
+
+  METHOD display_local_directory.
+    DATA:
+      lv_dir     TYPE string,
+      lv_usr_act TYPE i.
+
+    zcl_gui_frontend_services=>get_saved_directory_name(
+      EXPORTING
+        ini_section    = sy-repid
+        ini_value      = 'DIRECTORY'
+      IMPORTING
+        directory_name = lv_dir
+    ).
+
+    zcl_gui_frontend_services=>get_filename(
+      EXPORTING
+        file_filter        = '(*.XLSX)|*.XLSX|(*.XLS)|*.XLS|'
+        window_title       = CONV #( sy-title )
+        initial_directory  = lv_dir
+        ini_section        = CONV #( sy-repid )
+        use_saved_filename = 'X'
+      IMPORTING
+        user_action        = lv_usr_act
+        file_specification = cv_dir
+     ).
+
+  ENDMETHOD. "DISPLAY_LOCAL_DIRECTORY
+
+  METHOD display_example_document.
+    DATA:
+      lt_fieldlist TYPE STANDARD TABLE OF ztext_struktur.
+
+*"Create table document.
+    APPEND VALUE #(
+      f01 = 'Lieferung / Delivery'
+      f02 = 'Versandstelle / Plant'
+      f03 = 'Supplier Name'
+      f04 = 'Location Name'
+      f05 = 'Auftraggeber / Ship to'
+      f06 = 'Name 1'
+      f07 = 'Ort des Warenempfängers / Location'
+      f08 = 'Angelegt von / Created by'
+      f09 = 'Liefertermin / Delivery date'
+      f10 = 'Material'
+      f11 = 'Liefermenge / Qty'
+      f12 = 'Basismengeneinheit / Unit of Measure'
+      f13 = 'Liefermenge Bestätigt / Confirmed delivery Qty'
+      f14 = 'Ladung Datum / Loading date'
+    ) TO lt_fieldlist.
+
+    free_objects( ).
+
+    IF lcl_goods_issue=>go_office IS NOT BOUND .
+      lcl_goods_issue=>go_office = zcl_office_integration_service=>create( ).
+    ENDIF.
+
+    IF lcl_goods_issue=>go_office->obj_custom_container IS INITIAL.
+
+      lcl_goods_issue=>go_office = zcl_office_integration_service=>create( ).
+
+      lcl_goods_issue=>go_office->create_excel_sheet(
+        EXPORTING
+          container_name        = 'CC_9001'
+          r3_application_name   = sy-repid
+          document_title        = sy-title
+        IMPORTING
+          obj_doi_spreadsheet   = lcl_goods_issue=>go_office->obj_doi_spreadsheet
+      ).
+
+      lcl_goods_issue=>go_office->obj_doi_spreadsheet->insert_range_dim(
+        EXPORTING
+          name      = sy-repid          " Name of Range
+          left      = 1                 " Top Left-Hand Corner
+          top       = 2                 " Top Left-Hand Corner
+          rows      = 50                " Rows
+          columns   = 14                " Columns
+        IMPORTING
+          error     = lcl_goods_issue=>go_office->obj_error                 " Errors?
+*        retcode   =                  " text
+      ).
+
+      lcl_goods_issue=>go_office->display_error_msg( 8 ).
+
+      lcl_goods_issue=>go_office->insert_table_data_into_excel(
+        EXPORTING
+          ddic_structure_name = 'ZTEXT_STRUKTUR'
+          itab                = lt_fieldlist
+          obj_doi_spreadsheet = lcl_goods_issue=>go_office->obj_doi_spreadsheet
+          rangename           = 'TOP_LINE'
+          colums_filled       = 14
+          start_at_line       = 1
+          start_at_column     = 1
+      ).
+
+      lcl_goods_issue=>go_office->obj_doi_spreadsheet->set_color(
+        EXPORTING
+          rangename = 'TOP_LINE'                 " Name of Range
+          front     = 1                 " Foreground color
+          back      = 15                 " Background color
+      ).
+
+      lcl_goods_issue=>go_office->display_error_msg( 0 ).
+
+    ENDIF.
+
+  ENDMETHOD. "DISPLAY_EXAMPLE_DOCUMENT
+
+  METHOD free_objects.
+
+    CHECK lcl_goods_issue=>go_office IS NOT INITIAL.
+    CHECK lcl_goods_issue=>go_office->obj_doi_document IS NOT INITIAL.
+    lcl_goods_issue=>go_office->obj_doi_document->close_document( ).
+    lcl_goods_issue=>go_office->obj_doi_document->release_document( ).
+    FREE lcl_goods_issue=>go_office->obj_doi_document.
+
+* Zentrales Verwaltungsobjekt für DOI ---------------------------------*
+    lcl_goods_issue=>go_office->obj_doi_control->destroy_control( ).
+    FREE lcl_goods_issue=>go_office->obj_doi_control.
+
+* Container Control ---------------------------------------------------*
+    lcl_goods_issue=>go_office->obj_custom_container->free(
+      EXCEPTIONS
+        cntl_error        = 1
+        cntl_system_error = 2
+        OTHERS            = 3 ).
+    IF sy-subrc <> 0.
+      MESSAGE a011(zobjects) WITH sy-subrc.
+    ENDIF.
+    FREE lcl_goods_issue=>go_office->obj_doi_spreadsheet.
+    FREE lcl_goods_issue=>go_office->obj_custom_container.
+    FREE lcl_goods_issue=>go_office.
+
+* Synchronisieren der Automation Queue
+    cl_gui_cfw=>flush(
+      EXCEPTIONS
+        cntl_system_error = 1
+        cntl_error        = 2
+        OTHERS            = 3 ).
+    IF sy-subrc <> 0.
+      MESSAGE a012(zobjects) WITH sy-subrc.
+    ENDIF.
+
+  ENDMETHOD. "FREE_OBJECTS
+
+  METHOD display_alv .
+
+    IF me->go_goods IS BOUND.
+      me->go_goods->close_screen( ).
+      FREE me->go_goods.
+    ENDIF.
+
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = me->go_goods
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
+
+    IF me->go_goods IS BOUND.
+
+      me->go_goods->set_screen_status(
+        pfstatus      = 'SALV_STANDARD'
+        report        = sy-cprog
+        set_functions = me->go_goods->c_functions_all ).
+
+      DATA(lo_function) = me->go_goods->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+      DATA(lo_columns) = me->go_goods->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = me->go_goods->get_event( ).
+*      SET HANDLER me->on_double_click   FOR lo_events.
+*      SET HANDLER me->on_link_click_si  FOR lo_events.
+      SET HANDLER me->on_user_command   FOR lo_events.
+
+      DATA(lo_display) = me->go_goods->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( sy-title ).
+
+      me->go_goods->display( ).
+    ENDIF.
+
+  ENDMETHOD . " DISPLAY_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' .
+          DELETE rt_fieldcat INDEX lv_tabix.
+        WHEN 'ICON'.
+          dfcat_texto <fl_fcat> 'Status'(t01) 'Status'(t01) 'Status'(t01) 10.
+        WHEN 'MESSAGE'.
+          dfcat_texto <fl_fcat> 'Message'(t02) 'Message'(t02) 'Message'(t02) 100.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+  METHOD on_user_command.
+    TRY .
+
+        CASE e_salv_function.
+          WHEN 'SIMULATE'.
+
+            me->check_before_post( ).
+
+          WHEN 'EXECUTE'.
+
+            me->post_excel_data( ).
+
+          WHEN OTHERS.
+            EXIT.
+        ENDCASE.
+
+      CATCH cx_idm_error INTO DATA(ol_exc).
+        MESSAGE ID ol_exc->message-id TYPE 'S'
+           NUMBER ol_exc->message-number
+             WITH ol_exc->message-message_v1 ol_exc->message-message_v2 ol_exc->message-message_v3 ol_exc->message-message_v4
+               DISPLAY LIKE ol_exc->message-type.
+    ENDTRY.
+  ENDMETHOD . " ON_USER_COMMAND
+
+ENDCLASS.
+
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_9001  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE status_9001 OUTPUT.
+  SET PF-STATUS 'STATUS_9001'.
+*  SET TITLEBAR 'xxx'.
+ENDMODULE. " STATUS_9001
+
+*&---------------------------------------------------------------------*
+*&      Module  INITIALIZE  OUTPUT
+*&---------------------------------------------------------------------*
+MODULE initialize OUTPUT.
+
+  lcl_goods_issue=>display_example_document( ).
+  LEAVE TO SCREEN 0.
+
+ENDMODULE. " INITIALIZE
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9001  INPUT
+*&---------------------------------------------------------------------*
+MODULE user_command_9001 INPUT.
+
+  CASE sy-ucomm..
+    WHEN 'EXIT' OR 'BACK' OR 'RETURN'.
+      LEAVE TO SCREEN 0.
+    WHEN OTHERS.
+  ENDCASE.
+
+ENDMODULE. " USER_COMMAND_9001
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_EXIT_9001  INPUT
+*&---------------------------------------------------------------------*
+MODULE user_exit_9001 INPUT.
+  LEAVE TO SCREEN 0.
+ENDMODULE.
