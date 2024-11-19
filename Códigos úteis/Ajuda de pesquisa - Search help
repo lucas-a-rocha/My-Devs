@@ -1,0 +1,63 @@
+MODULE zsearch_help_grund INPUT.
+
+  DATA:
+    lt_return TYPE STANDARD TABLE OF ddshretval.
+
+  IF sy-tcode = 'ZMMU940'.
+
+    SELECT grund, grtxt
+      FROM t157e
+      WHERE spras = @sy-langu
+        AND bwart = @z205-bwart
+        AND grund NOT IN ( '3089', '3090' )
+    INTO TABLE @DATA(lt_t157).
+
+    CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+      EXPORTING
+        retfield        = 'GRUND'
+        dynpprog        = sy-repid
+        dynpnr          = sy-dynnr
+        dynprofield     = 'ZTCLAIM-BNAME'
+        value_org       = 'S'
+      TABLES
+        value_tab       = lt_t157
+        return_tab      = lt_return
+      EXCEPTIONS
+        parameter_error = 1
+        no_values_found = 2
+        OTHERS          = 3.
+
+  ELSE.
+
+    DATA: ls_shlp TYPE shlp_descr .
+    CALL FUNCTION 'F4IF_GET_SHLP_DESCR'
+      EXPORTING
+        shlpname = 'H_T157D'
+*       SHLPTYPE = 'SH'
+      IMPORTING
+        shlp     = ls_shlp.
+
+    LOOP AT ls_shlp-interface INTO DATA(lw_wa) WHERE shlpfield  EQ 'BWART'.
+      lw_wa-value = z205-bwart.
+      MODIFY ls_shlp-interface FROM lw_wa.
+    ENDLOOP.
+
+    LOOP AT ls_shlp-interface INTO lw_wa WHERE shlpfield  EQ 'GRUND'.
+      lw_wa-valfield = abap_true.
+      MODIFY ls_shlp-interface FROM lw_wa.
+    ENDLOOP.
+
+    CALL FUNCTION 'F4IF_START_VALUE_REQUEST'
+      EXPORTING
+        shlp          = ls_shlp
+      TABLES
+        return_values = lt_return.
+
+  ENDIF.
+
+  READ TABLE lt_return INTO DATA(lw_return) INDEX 1.
+  z205-grund = lw_return-fieldval.
+
+  CLEAR: ls_shlp, lw_return.
+  FREE: lt_t157, lt_return.
+ENDMODULE. "ZSEARCH_HELP_GRUND INPUT
