@@ -5,17 +5,24 @@
 
       columns_edit
         IMPORTING
-          !it_table   TYPE ANY TABLE
-          !io_columns TYPE REF TO cl_salv_columns_table
+          !it_table     TYPE ANY TABLE
+          !io_columns   TYPE REF TO cl_salv_columns_table
+          !iv_structure TYPE dd02l-tabname OPTIONAL
         RAISING
-          cx_salv_data_error ,
+          cx_salv_data_error,
 
       generate_fieldcat
         IMPORTING
           !it_table          TYPE ANY TABLE
         RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      generate_fieldcat_struct
+        IMPORTING
+          !iv_structure      TYPE dd02l-tabname
+        RETURNING
           VALUE(rt_fieldcat) TYPE lvc_t_fcat.
-  
+
   METHOD display_alv .
 
     TRY .
@@ -30,11 +37,10 @@
 
     IF lo_salv_table IS BOUND.
 
-*     " Insere todos as funcionalidades existentes no ALV OO.
+*     " Insert or remove all functions from ALV
       DATA(lo_function) = lo_salv_table->get_functions( ).
       lo_function->set_all( abap_true ).
 
-*     " Ajusta os dados das colunas
       DATA(lo_columns) = lo_salv_table->get_columns( ).
       lo_columns->set_optimize( abap_true ).
 
@@ -59,7 +65,11 @@
 
   METHOD columns_edit.
 
-    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+    IF iv_structure IS NOT INITIAL.
+      DATA(lt_fieldcat) = me->generate_fieldcat_struct( iv_structure = iv_structure ).
+    ELSE.
+      lt_fieldcat = me->generate_fieldcat( it_table = it_table ).
+    ENDIF.
 
     DATA(lt_columns) = io_columns->get( ).
     DATA lo_column_table TYPE REF TO cl_salv_column_table.
@@ -125,3 +135,54 @@
     ENDLOOP.
 
   ENDMETHOD. " GENERATE_FIELDCAT
+
+  METHOD generate_fieldcat_struct.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+      EXPORTING
+        i_structure_name = iv_structure
+      CHANGING
+        ct_fieldcat      = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fs_fieldcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fs_fieldcat>-fieldname.
+        WHEN 'MANDT'.
+          DELETE rt_fieldcat INDEX lv_tabix.
+*        WHEN ''.
+*          dfcat_texto <fs_fieldcat> '' '' '' <fs_fieldcat>-outputlen.
+*          <fs_fieldcat>-edit = abap_true.
+*        WHEN ''.
+*          <fs_fieldcat>-key         = abap_true.
+*          <fs_fieldcat>-fix_column  = abap_true.
+*        WHEN ''.
+*          <fs_fieldcat>-outputlen   = 10.
+*          <fs_fieldcat>-checktable  = '!'.
+*          <fs_fieldcat>-edit        = abap_true.
+        WHEN OTHERS.
+
+          CONTINUE.
+
+      ENDCASE.
+    ENDLOOP.
+
+    SORT rt_fieldcat BY col_pos.
+
+  ENDMETHOD. " GENERATE_FIELDCAT_STRUCT
