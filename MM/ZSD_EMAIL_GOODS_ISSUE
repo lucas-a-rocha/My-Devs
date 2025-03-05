@@ -1,0 +1,563 @@
+************************************************************************
+* Progamm: ZSD_EMAIL_GOODS_ISSUE   Version: 01     Datum: 24.07.2024   *
+* Transaktionscode:                                                    *
+************************************************************************
+* Autor     : Lucas Rocha                                              *
+* Abteilung : IFCO SAP / Phoron                                        *
+*                                                                      *
+************************************************************************
+* Programmbeschreibung:                                                *
+* Email Program for Pending Deliveries List                            *
+*                                                                      *
+************************************************************************
+* 24.07.2024, PHORON_DEV1, CR2300002124 - 12196 -  Warenausgang        *
+*                        -> Program Creation                           *
+************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZSD_EMAIL_GOODS_ISSUE
+*&---------------------------------------------------------------------*
+REPORT zsd_email_goods_issue.
+
+TABLES: lips.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+
+SELECT-OPTIONS:
+  s_werks FOR lips-werks,
+  s_lgort FOR lips-lgort,
+  s_erdat FOR lips-erdat .
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+CLASS lcl_goods_issue DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_deliveries,
+        vbeln   TYPE lips-vbeln,            "a  "a  "a
+        posnr   TYPE lips-posnr,            "b  "b  "b
+        werks   TYPE lips-werks,            "c  "c  "c
+        lgort   TYPE lips-lgort,            "d  "d  "d
+*        name1   TYPE t001w-name1,          "e  "e
+*        lgobe   TYPE t001l-lgobe,          "f  "f
+*        kunnr   TYPE likp-kunnr,           "g
+        k_name  TYPE kna1-name1,            "h  "g  "e
+        ort01   TYPE kna1-ort01,            "i  "h  "f
+*        ernam   TYPE lips-ernam,           "j  "i
+*        lfdat   TYPE likp-lfdat,           "k  "j
+        matnr   TYPE lips-matnr,            "l  "k  "g
+        lfimg   TYPE lips-lfimg,
+        lfimg_i TYPE ze_lfimg_i,            "m  "l  "h
+        meins   TYPE lips-meins,            "n  "m  "i
+        erdat   TYPE likp-erdat,            "o  "n
+        conqty  TYPE ze_conf_delivery_qty,  "p  "o  "j
+        loaddt  TYPE ze_delivery_load_date, "q  "p  "k
+
+      END OF gty_deliveries,
+
+      BEGIN OF gty_excel,
+        werks TYPE zsdt_deliv_notif-werks,
+        lgort TYPE zsdt_deliv_notif-lgort,
+        erdat TYPE likp-erdat,
+        xml   TYPE xstring,
+      END OF gty_excel.
+
+    METHODS:
+      execute
+        RAISING cx_idm_error.
+
+  PRIVATE SECTION.
+    DATA:
+      gt_email_list TYPE STANDARD TABLE OF zsdt_deliv_notif,
+      gt_deliveries TYPE STANDARD TABLE OF gty_deliveries,
+      gt_excel      TYPE STANDARD TABLE OF gty_excel.
+
+    DATA:
+      gr_erdat TYPE RANGE OF lips-erdat.
+
+    METHODS:
+      get_email_data
+        RAISING cx_idm_error,
+
+      get_pending_deliveries
+        RAISING cx_idm_error,
+
+      create_excel_documents
+        RAISING cx_idm_error,
+
+      create_excel_from_alv
+        EXPORTING
+          !ev_xml  TYPE xstring
+        CHANGING
+          ct_table TYPE ANY TABLE,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      send_email_list
+        RAISING cx_idm_error,
+
+      send_email
+        IMPORTING
+          iv_email        TYPE zsdt_deliv_notif-email
+          iv_email_sender TYPE adr6-smtp_addr
+          iv_erdat        TYPE likp-erdat
+          iv_subject      TYPE so_obj_des
+          iv_xml          TYPE xstring
+        RAISING
+          cx_idm_error,
+
+      create_email_body
+        RETURNING
+          VALUE(rt_body) TYPE bcsy_text
+        RAISING
+          cx_idm_error.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+  TRY .
+
+      NEW lcl_goods_issue( )->execute( ).
+
+      MESSAGE 'Execution finished.'(m05) TYPE 'S'.
+
+    CATCH cx_idm_error INTO DATA(lo_exc).
+
+      MESSAGE ID lo_exc->message-id TYPE 'S'
+         NUMBER lo_exc->message-number
+           WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+             DISPLAY LIKE lo_exc->message-type.
+
+  ENDTRY.
+
+CLASS lcl_goods_issue IMPLEMENTATION.
+  METHOD execute.
+
+    IF s_erdat IS INITIAL.
+      APPEND VALUE #( sign = 'I' option = 'EQ' low = sy-datum - 1 ) TO me->gr_erdat.
+    ELSE.
+      me->gr_erdat[] = s_erdat[].
+    ENDIF.
+
+    me->get_email_data( ).
+
+    me->get_pending_deliveries( ).
+
+    me->create_excel_documents( ).
+
+    CHECK me->gt_excel IS NOT INITIAL.
+
+    me->send_email_list( ).
+
+  ENDMETHOD. "EXECUTE
+
+  METHOD get_email_data.
+
+    SELECT *
+      FROM zsdt_deliv_notif
+      WHERE werks IN @s_werks
+        AND lgort IN @s_lgort
+        AND email <> @space
+    INTO TABLE @me->gt_email_list.
+
+    IF me->gt_email_list IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'SD' number = 024 message_v1 = 'No records were found in the Master Data.'(m01) ).
+    ENDIF.
+
+  ENDMETHOD. "GET_EMAIL_DATA
+
+  METHOD get_pending_deliveries.
+
+    SELECT a~vbeln, a~posnr, a~werks, a~lgort, w~name1, l~lgobe, b~kunnr, k~name1 AS k_name, k~ort01, a~ernam, b~lfdat, a~matnr, a~lfimg, a~meins, b~erdat
+      FROM likp AS b
+        INNER JOIN vbuk AS v ON v~vbeln = b~vbeln
+                            AND v~wbstk = 'A'
+        INNER JOIN lips AS a ON a~vbeln = b~vbeln
+        INNER JOIN t001w AS w ON w~werks = a~werks
+        INNER JOIN t001l AS l ON l~werks = a~werks
+                             AND l~lgort = a~lgort
+        INNER JOIN kna1 AS k ON k~kunnr = b~kunnr
+      FOR ALL ENTRIES IN @me->gt_email_list
+      WHERE b~erdat IN @me->gr_erdat
+        AND a~werks  = @me->gt_email_list-werks
+        AND a~lgort  = @me->gt_email_list-lgort
+        AND a~pstyv IN ( 'ZAQ', 'NLN' )"Insert the same condition in the program ZSD_UPLOAD_GOODS_ISSUE
+    INTO CORRESPONDING FIELDS OF TABLE @me->gt_deliveries.
+
+    IF me->gt_deliveries IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'SD' number = 024 message_v1 = 'No deliveries were found for the period.'(m02) ).
+    ENDIF.
+
+    SORT me->gt_deliveries BY vbeln posnr.
+
+  ENDMETHOD. "GET_PENDING_DELIVERIES
+
+  METHOD create_excel_documents.
+
+    DATA:
+      lt_deliveries TYPE STANDARD TABLE OF gty_deliveries,
+      lw_excel      LIKE LINE OF me->gt_excel.
+
+    LOOP AT me->gt_deliveries INTO DATA(lw_deliveries_grp)
+      GROUP BY (
+        werks = lw_deliveries_grp-werks
+        lgort = lw_deliveries_grp-lgort
+        erdat = lw_deliveries_grp-erdat
+      ) ASSIGNING FIELD-SYMBOL(<fs_deliveries_grp>).
+
+      CLEAR: lw_excel.
+      FREE: lt_deliveries.
+
+      lw_excel = VALUE #(
+        werks = <fs_deliveries_grp>-werks
+        lgort = <fs_deliveries_grp>-lgort
+        erdat = <fs_deliveries_grp>-erdat
+      ).
+
+      LOOP AT GROUP <fs_deliveries_grp> INTO DATA(lw_deliveries).
+
+        lw_deliveries-lfimg_i = lw_deliveries-lfimg.
+        APPEND lw_deliveries TO lt_deliveries.
+      ENDLOOP.
+
+      me->create_excel_from_alv(
+        IMPORTING
+          ev_xml = lw_excel-xml
+        CHANGING
+          ct_table = lt_deliveries
+      ).
+
+      APPEND lw_excel TO me->gt_excel.
+
+    ENDLOOP.
+
+  ENDMETHOD. "CREATE_EXCEL_DOCUMENTS
+
+  METHOD create_excel_from_alv .
+
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = DATA(lo_salv_table)
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
+
+    IF lo_salv_table IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = lo_salv_table->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( sy-title ).
+
+      ev_xml = lo_salv_table->to_xml( xml_type = if_salv_bs_xml=>c_type_xlsx ).
+
+    ENDIF.
+
+  ENDMETHOD . " CREATE_EXCEL_FROM_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' OR 'ERDAT' OR 'LFIMG'. "OR 'LGORT'.
+          DELETE rt_fieldcat INDEX lv_tabix.
+        WHEN 'VBELN'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Lieferung / Delivery' <fl_fcat>-outputlen.
+        WHEN 'WERKS'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Versandstelle / Plant' <fl_fcat>-outputlen.
+        WHEN 'NAME1'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Supplier Name' <fl_fcat>-outputlen.
+        WHEN 'LGOBE'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Location Name' <fl_fcat>-outputlen.
+        WHEN 'KUNNR'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Auftraggeber / Ship to' <fl_fcat>-outputlen.
+*        WHEN 'K_NAME'.
+*          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m '' <fl_fcat>-outputlen.
+        WHEN 'ORT01'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Ort des Warenempfängers / Location' <fl_fcat>-outputlen.
+        WHEN 'ERNAM'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Angelegt von / Created by' <fl_fcat>-outputlen.
+        WHEN 'LFDAT'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Liefertermin / Delivery date' <fl_fcat>-outputlen.
+*        WHEN 'MATNR'.
+*          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m '' <fl_fcat>-outputlen.
+        WHEN 'LFIMG_I'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Liefermenge / Qty' <fl_fcat>-outputlen.
+        WHEN 'MEINS'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Basismengeneinheit / Unit of Measure' <fl_fcat>-outputlen.
+        WHEN 'CONQTY'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Confirmed delivery Qty' <fl_fcat>-outputlen.
+        WHEN 'LOADDT'.
+          dfcat_texto <fl_fcat> <fl_fcat>-scrtext_s <fl_fcat>-scrtext_m 'Ladung Datum / Loading date' <fl_fcat>-outputlen.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+
+  METHOD send_email_list.
+    DATA:
+      lv_subject      TYPE so_obj_des,
+      lv_datum_s      TYPE c LENGTH 10,
+      lv_email_sender TYPE adr6-smtp_addr.
+
+    SELECT SINGLE low
+      FROM tvarvc
+      WHERE name = 'ZGOODS_ISSUE_EMAIL_SENDER'
+    INTO @lv_email_sender.
+
+    IF lv_email_sender IS INITIAL.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'SD' number = 024 message_v1 = 'The email sender has not been registered.'(m03) message_v2 = 'STVARV ZGOODS_ISSUE_EMAIL_SENDER'(m04) ).
+    ENDIF.
+
+    LOOP AT me->gt_excel INTO DATA(lw_excel).
+
+      READ TABLE me->gt_email_list WITH KEY werks = lw_excel-werks
+                                            lgort = lw_excel-lgort INTO DATA(lw_email).
+      CHECK lw_email IS NOT INITIAL.
+
+*      WRITE me->gr_erdat[ 1 ]-low TO lv_datum_s.
+      WRITE lw_excel-erdat TO lv_datum_s.
+      lv_subject = |Pending Deliveries Notification { lv_datum_s }|.
+
+      me->send_email(
+        iv_email          = lw_email-email
+        iv_email_sender   = lv_email_sender
+        iv_erdat          = lw_excel-erdat
+        iv_subject        = lv_subject
+        iv_xml            = lw_excel-xml ).
+
+      CLEAR: lw_email.
+
+    ENDLOOP.
+
+  ENDMETHOD. "SEND_EMAIL_LIST
+
+  METHOD send_email.
+
+    DATA:
+      lv_type      TYPE so_obj_tp VALUE 'HTM',
+      lv_file_name TYPE sood-objdes,
+      lt_solix     TYPE solix_tab,
+      lv_len       TYPE i.
+
+*    lv_file_name = |Goods Issue { me->gr_erdat[ 1 ]-low }|.
+    lv_file_name = |Goods Issue { iv_erdat }|.
+
+    TRY .
+
+        DATA(lo_email) = cl_bcs=>create_persistent( ).
+
+        DATA(lt_body_text) = me->create_email_body(  ).
+
+        DATA(lo_body) = cl_document_bcs=>create_document( i_type    = lv_type
+                                                          i_text    = lt_body_text
+                                                          i_subject = iv_subject ).
+
+*"Create excel file
+        DATA(lt_att_head) = VALUE soli_tab( ( line = |&SO_FILENAME={ lv_file_name }.xlsx| ) ).
+
+        CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+          EXPORTING
+            buffer        = iv_xml
+          IMPORTING
+            output_length = lv_len
+          TABLES
+            binary_tab    = lt_solix.
+
+        lo_body->add_attachment(
+          i_attachment_type    = 'XLS'
+          i_attachment_subject = lv_file_name
+          i_attachment_size    = CONV so_obj_len( lv_len )
+          i_att_content_hex    = lt_solix
+          i_attachment_header  = lt_att_head ).
+
+        lo_email->set_document( lo_body ).
+
+        DATA(lo_sender) = cl_cam_address_bcs=>create_internet_address( iv_email_sender ).
+        lo_email->set_sender( i_sender = lo_sender ).
+
+        SPLIT iv_email AT ';' INTO TABLE DATA(lt_email).
+
+        LOOP AT lt_email INTO DATA(lw_email).
+          DATA(lo_recipient) = cl_cam_address_bcs=>create_internet_address( CONV #( lw_email ) ).
+          lo_email->add_recipient( i_recipient = lo_recipient i_express = abap_true ) .
+        ENDLOOP.
+
+        DATA(lv_ok) = lo_email->send( ).
+
+        IF lv_ok = abap_true.
+          COMMIT WORK AND WAIT.
+        ENDIF.
+
+      CATCH cx_document_bcs.
+      CATCH cx_send_req_bcs.
+      CATCH cx_address_bcs.
+      CATCH cx_idm_error INTO DATA(lo_idm_error).
+
+    ENDTRY.
+
+  ENDMETHOD. "SEND_EMAIL
+
+  METHOD create_email_body.
+    DATA:
+      lt_lines TYPE STANDARD TABLE OF tline,
+      lw_body  LIKE LINE OF rt_body.
+
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        id                      = 'ST'
+        language                = 'E'
+        name                    = 'ZSF_GOODS_ISSUE_EMAIL_BODY_TEXT'
+        object                  = 'TEXT'
+      TABLES
+        lines                   = lt_lines
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+    ENDIF.
+
+    APPEND VALUE #( line = |<html>| ) TO rt_body.
+    APPEND VALUE #( line = |<style type="text/css">| ) TO rt_body.
+    APPEND VALUE #( line = |body \{ background-color: #FFFFE0; \}| ) TO rt_body.
+    APPEND VALUE #( line = |</style>| ) TO rt_body.
+    APPEND VALUE #( line = |<body>| ) TO rt_body.
+
+    IF lt_lines IS INITIAL.
+      APPEND VALUE #( line = |<p>The Standard Text Name: "ZSF_GOODS_ISSUE_EMAIL_BODY_TEXT" was missing!</p>| ) TO rt_body.
+      APPEND VALUE #( line = |<p>Therefore that  text has been created automatically for Text  ID: ST</p>| ) TO rt_body.
+      APPEND VALUE #( line = |<p>and Language: EN. Please use TRANSACTION So10 to enter a business text or to clear that text.</p>| ) TO rt_body.
+    ELSE.
+
+      LOOP AT lt_lines INTO DATA(lw_lines).
+        DATA(lv_line) = sy-tabix.
+
+        ADD 1 TO lv_line.
+        READ TABLE lt_lines INTO DATA(lw_next_line) INDEX lv_line.
+
+*        lw_body-= VALUE #( line = |{ COND #( WHEN lw_lines-tdformat = '*' THEN '<p>' ELSE '&nbsp;' ) }{ lw_lines-tdline }| &&
+*                                  |{ COND #( WHEN lw_next_line-tdformat = '*' OR lw_next_line IS INITIAL THEN '</p>' ELSE '' ) }| ).
+        lw_body-line = lw_lines-tdline.
+
+        IF lw_lines-tdformat = '*'.
+          lw_body-line = |<p>{ lw_body-line }|.
+        ELSE.
+          lw_body-line = |&nbsp;{ lw_body-line }|.
+        ENDIF.
+
+        IF lw_next_line-tdformat = '*'.
+          lw_body-line = |{ lw_body-line }</p>|.
+        ENDIF.
+
+        APPEND lw_body TO rt_body.
+
+        CLEAR: lw_next_line, lw_body.
+      ENDLOOP.
+
+    ENDIF.
+
+    APPEND VALUE #( line = |<br/>| ) TO rt_body.
+
+    APPEND VALUE #( line = |</body></html>| ) TO rt_body.
+
+  ENDMETHOD. " CREATE_EMAIL_BODY
+ENDCLASS.
