@@ -1,0 +1,719 @@
+************************************************************************
+* Progamm: ZMM_ESG_REPORT          Version: 01     Datum: 20.08.2024   *
+* Transaktionscode:                                                    *
+************************************************************************
+* Autor     : Lucas Rocha                                              *
+* Abteilung : IFCO SAP / Phoron                                        *
+*                                                                      *
+************************************************************************
+* Programmbeschreibung:                                                *
+* List purchases by sub category                                       *
+*                                                                      *
+************************************************************************
+* 20.08.2024, PHORON_DEV1, CR2300002072: 12178 - Changes for ESG reporting *
+*                        -> Program Creation                           *
+************************************************************************
+*&---------------------------------------------------------------------*
+*& Report ZMM_ESG_REPORT
+*&---------------------------------------------------------------------*
+REPORT zmm_esg_report.
+
+TABLES: ekko, ekpo, mkpf.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+
+SELECT-OPTIONS:
+  s_ekorg FOR ekko-ekorg OBLIGATORY,
+  s_ekgrp FOR ekko-ekgrp OBLIGATORY,
+  s_aedat FOR ekko-aedat OBLIGATORY,
+  s_bsart FOR ekko-bsart OBLIGATORY,
+  s_matnr FOR ekpo-matnr,
+  s_lifnr FOR ekko-lifnr,
+  s_werks FOR ekpo-werks .
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+CLASS lcl_report DEFINITION.
+
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF gty_ekpo, "material, scheduling agreement,sub category, weight, quantity  and plant?
+        ebeln    TYPE ekko-ebeln,
+        ebelp    TYPE ekpo-ebelp,
+        matnr    TYPE ekpo-matnr,
+        zzsubcat TYPE ekpo-zzsubcat,
+        werks    TYPE ekpo-werks,
+        ktmng    TYPE ekpo-ktmng,
+        menge    TYPE ekpo-menge,
+        brgew    TYPE mara-brgew,
+        ekorg    TYPE ekko-ekorg,
+      END OF gty_ekpo,
+
+      BEGIN OF gty_mseg, "LAR-2300002753-New Type
+        mblnr    TYPE mkpf-mblnr,
+        mjahr    TYPE mkpf-mjahr,
+        zeile    TYPE mseg-zeile,
+        matnr    TYPE mseg-matnr,
+        zzsubcat TYPE mseg-zzsubcat,
+        werks    TYPE mseg-werks,
+        menge    TYPE mseg-menge,
+        brgew    TYPE mara-brgew,
+        ebeln    TYPE mseg-ebeln,
+        ebelp    TYPE mseg-ebelp,
+        ekorg    TYPE t024e-ekorg,
+      END OF gty_mseg,
+
+      BEGIN OF gty_esg,
+        zzsubcat  TYPE ekpo-zzsubcat,
+        unit      TYPE ekpo-ktmng,
+        wght_kg   TYPE ekpo-ktmng,
+        wght_reus TYPE ekpo-ktmng,
+        virg_mat  TYPE ekpo-ktmng,
+        regrind   TYPE ekpo-ktmng,
+      END OF gty_esg,
+
+      BEGIN OF gty_alv_esg,
+        production TYPE text100,
+      END OF gty_alv_esg,
+
+      BEGIN OF gty_detail,
+        matnr    TYPE ekpo-matnr,
+        zzsubcat TYPE ekpo-zzsubcat,
+        brgew    TYPE mara-brgew,
+        ktmng    TYPE ekpo-ktmng,
+        menge    TYPE ekpo-menge,
+        werks    TYPE ekpo-werks,
+        zzdiv    TYPE zmmt_subcat-zzdiv,
+      END OF gty_detail,
+
+      BEGIN OF gty_subcat_key,
+        ekorg    TYPE zmmt_subcat-ekorg,
+        zzsubcat TYPE zmmt_subcat-zzsubcat,
+      END OF gty_subcat_key.
+
+    CONSTANTS:
+      gc_empty_category TYPE ekpo-zzsubcat VALUE 'ZZ',
+      gc_total_category TYPE ekpo-zzsubcat VALUE 'ZT'.
+
+    METHODS:
+      execute
+        RAISING
+          cx_idm_error
+          cx_salv_msg.
+
+  PRIVATE SECTION.
+    DATA:
+      gt_zmmt_subcat TYPE STANDARD TABLE OF zmmt_subcat,
+      gt_subcat_key  TYPE STANDARD TABLE OF gty_subcat_key,
+      gt_ekpo        TYPE STANDARD TABLE OF gty_ekpo,
+      gt_mseg        TYPE STANDARD TABLE OF gty_mseg, "LAR-2300002753-New table
+      gt_esg         TYPE STANDARD TABLE OF gty_esg.
+
+    DATA:
+      go_alv_detail TYPE REF TO cl_salv_table,
+      got_esg_dyn   TYPE REF TO cl_abap_tabledescr,
+      go_ref_table  TYPE REF TO data,
+      gt_components TYPE abap_component_tab.
+
+    METHODS:
+      select_esg_data
+        RAISING
+          cx_idm_error,
+
+      calculate_esg_data,
+
+      calculate_esg_data_mseg,
+
+      create_dynamic_table,
+
+      fill_dynamic_table,
+
+      display_alv_esg
+        RAISING cx_salv_msg,
+
+      display_alv_detail
+        CHANGING
+                 ct_table TYPE ANY TABLE
+        RAISING  cx_salv_msg,
+
+      columns_edit
+        IMPORTING
+          !it_table   TYPE ANY TABLE
+          !io_columns TYPE REF TO cl_salv_columns_table
+        RAISING
+          cx_salv_data_error ,
+
+      generate_fieldcat
+        IMPORTING
+          !it_table          TYPE ANY TABLE
+        RETURNING
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      on_link_click FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+  TRY .
+
+      NEW lcl_report( )->execute( ).
+
+*      MESSAGE 'Execution finished.'(m05) TYPE 'S'.
+
+    CATCH cx_idm_error INTO DATA(lo_exc).
+
+      MESSAGE ID lo_exc->message-id TYPE 'S'
+         NUMBER lo_exc->message-number
+           WITH lo_exc->message-message_v1 lo_exc->message-message_v2 lo_exc->message-message_v3 lo_exc->message-message_v4
+             DISPLAY LIKE lo_exc->message-type.
+
+  ENDTRY.
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD execute.
+
+    me->select_esg_data( ).
+
+*    me->calculate_esg_data( ).
+
+    me->calculate_esg_data_mseg( ). "LAR-2300002753-New Method
+
+    me->create_dynamic_table( ).
+
+    me->fill_dynamic_table( ).
+
+    me->display_alv_esg( ).
+
+  ENDMETHOD. "EXECUTE
+
+  METHOD select_esg_data.
+
+    SELECT *
+      FROM zmmt_subcat
+      WHERE ekorg IN @s_ekorg
+    INTO TABLE @me->gt_zmmt_subcat.
+
+    IF me->gt_zmmt_subcat IS INITIAL.
+      IF 1 = 2. MESSAGE i999(zmm). ENDIF.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 999 message_v1 = 'No records were found in the Master Data.'(m01) ).
+    ENDIF.
+
+    APPEND VALUE #(
+      spras       = sy-langu
+      zzsubcat    = me->gc_empty_category
+      description = 'No subcategory defined.'
+    ) TO me->gt_zmmt_subcat.
+
+    APPEND VALUE #(
+      spras       = sy-langu
+      zzsubcat    = me->gc_total_category
+      description = 'Total'
+    ) TO me->gt_zmmt_subcat.
+
+    me->gt_subcat_key = VALUE #( FOR lw_zmmt_subcat_for IN me->gt_zmmt_subcat ( CORRESPONDING #( lw_zmmt_subcat_for ) ) ).
+*    SORT me->gt_subcat_key.
+    DELETE ADJACENT DUPLICATES FROM me->gt_subcat_key COMPARING ALL FIELDS.
+
+    FREE me->gt_ekpo.
+
+    SELECT ekko~ebeln, ebelp, ekpo~matnr, zzsubcat, werks, ktmng, menge, mara~brgew, ekorg
+      FROM ekko
+        INNER JOIN ekpo ON ekpo~ebeln = ekko~ebeln
+        INNER JOIN mara ON mara~matnr = ekpo~matnr
+      WHERE ekko~ekorg IN @s_ekorg
+        AND ekko~ekgrp IN @s_ekgrp
+        AND ekko~bsart IN @s_bsart
+        AND ekko~aedat IN @s_aedat
+        AND ekko~lifnr IN @s_lifnr
+        AND ekpo~matnr IN @s_matnr
+        AND ekpo~werks IN @s_werks
+    ORDER BY ekko~ebeln, ebelp
+    INTO TABLE @me->gt_ekpo.
+
+*"LAR-SELECT CREATED-2300002753
+    SELECT mkpf~mblnr, mkpf~mjahr, mseg~zeile, mseg~matnr, zzsubcat, werks, menge, mara~brgew, mseg~ebeln, mseg~ebelp
+      FROM mkpf
+        INNER JOIN mseg ON mseg~mblnr = mkpf~mblnr
+                       AND mseg~mjahr = mkpf~mjahr
+        INNER JOIN mara ON mara~matnr = mseg~matnr
+      FOR ALL ENTRIES IN @me->gt_ekpo
+      WHERE ebeln = @me->gt_ekpo-ebeln
+        AND ebelp = @me->gt_ekpo-ebelp
+    INTO CORRESPONDING FIELDS OF TABLE @me->gt_mseg.
+
+    IF me->gt_mseg IS INITIAL.
+      IF 1 = 2. MESSAGE i999(zmm). ENDIF.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = 'E' id = 'ZMM' number = 999 message_v1 = 'No records were found.'(m02) ).
+    ENDIF.
+
+  ENDMETHOD. "SELECT_ESG_DATA
+
+  METHOD calculate_esg_data.
+    DATA:
+      lw_esg      LIKE LINE OF me->gt_esg,
+      lv_quantity TYPE ekpo-ktmng.
+
+    LOOP AT me->gt_ekpo INTO DATA(lw_ekpo_grp)
+      GROUP BY ( ekorg    = lw_ekpo_grp-ekorg
+                 zzsubcat = lw_ekpo_grp-zzsubcat )
+      ASSIGNING FIELD-SYMBOL(<fs_ekpo_grp>).
+
+      READ TABLE me->gt_zmmt_subcat WITH KEY ekorg = <fs_ekpo_grp>-ekorg
+                                          zzsubcat = <fs_ekpo_grp>-zzsubcat INTO DATA(lw_subcat).
+      IF lw_subcat-zzdiv IS INITIAL.
+        lw_subcat-zzdiv = 100.
+      ENDIF.
+
+      IF lw_subcat-zzsubcat IS INITIAL.
+        lw_subcat-zzsubcat = me->gc_empty_category.
+      ENDIF.
+
+      LOOP AT GROUP <fs_ekpo_grp> INTO DATA(lw_ekpo).
+        CLEAR: lv_quantity.
+
+        IF lw_ekpo-ktmng IS INITIAL.
+          lv_quantity = lw_ekpo-menge .
+        ELSE.
+          lv_quantity = lw_ekpo-ktmng.
+        ENDIF.
+
+        lw_esg = VALUE #(
+          zzsubcat = lw_subcat-zzsubcat
+          unit     = lv_quantity
+          wght_kg  = lv_quantity * lw_ekpo-brgew
+        ).
+
+        lw_esg-wght_reus = lw_esg-wght_kg * ( lw_subcat-zzdiv / 100 ).
+*        lw_esg-wght_reus = lw_esg-wght_kg / lw_subcat-zzdiv.
+        lw_esg-virg_mat  = lw_esg-wght_kg - lw_esg-wght_reus.
+*        lw_esg-regrind = lw_esg-wght_kg / lw_esg-wght_reus.
+
+        COLLECT lw_esg INTO me->gt_esg.
+
+      ENDLOOP.
+
+      CLEAR: lw_subcat.
+    ENDLOOP.
+
+    DATA lw_esg_total LIKE LINE OF me->gt_esg.
+    LOOP AT me->gt_esg INTO lw_esg WHERE zzsubcat <> me->gc_empty_category.
+      lw_esg_total-unit       = lw_esg_total-unit + lw_esg-unit.
+      lw_esg_total-wght_kg    = lw_esg_total-wght_kg + lw_esg-wght_kg.
+      lw_esg_total-wght_reus  = lw_esg_total-wght_reus + lw_esg-wght_reus.
+    ENDLOOP.
+
+    IF lw_esg_total IS NOT INITIAL.
+      lw_esg_total-regrind = lw_esg_total-wght_reus / lw_esg_total-wght_kg * 100.
+      lw_esg_total-virg_mat = lw_esg_total-wght_kg - lw_esg_total-wght_reus.
+
+      lw_esg_total-zzsubcat = me->gc_total_category.
+      APPEND lw_esg_total TO me->gt_esg.
+    ENDIF.
+  ENDMETHOD. "CALCULATE_ESG_DATA
+
+  METHOD calculate_esg_data_mseg.
+
+    DATA:
+      lw_esg      LIKE LINE OF me->gt_esg,
+      lv_quantity TYPE mseg-menge.
+
+    LOOP AT me->gt_mseg INTO DATA(lw_mseg_grp)
+      GROUP BY ( ekorg    = lw_mseg_grp-ekorg
+                 zzsubcat = lw_mseg_grp-zzsubcat
+                 ebeln    = lw_mseg_grp-ebeln
+                 ebelp    = lw_mseg_grp-ebelp
+               )
+      ASSIGNING FIELD-SYMBOL(<fs_mseg_grp>).
+
+      READ TABLE me->gt_ekpo INTO DATA(lw_ekpo) WITH KEY ebeln = <fs_mseg_grp>-ebeln ebelp = <fs_mseg_grp>-ebelp.
+
+      READ TABLE me->gt_zmmt_subcat WITH KEY ekorg = lw_ekpo-ekorg
+                                          zzsubcat = <fs_mseg_grp>-zzsubcat INTO DATA(lw_subcat).
+      IF lw_subcat-zzdiv IS INITIAL.
+        lw_subcat-zzdiv = 100.
+      ENDIF.
+
+      IF lw_subcat-zzsubcat IS INITIAL.
+        lw_subcat-zzsubcat = me->gc_empty_category.
+      ENDIF.
+
+      LOOP AT GROUP <fs_mseg_grp> INTO DATA(lw_mseg).
+        CLEAR: lv_quantity.
+
+        lv_quantity = lw_mseg-menge .
+
+        lw_esg = VALUE #(
+          zzsubcat = lw_subcat-zzsubcat
+          unit     = lv_quantity
+          wght_kg  = lv_quantity * lw_mseg-brgew
+        ).
+
+        lw_esg-wght_reus = lw_esg-wght_kg * ( lw_subcat-zzdiv / 100 ).
+*        lw_esg-wght_reus = lw_esg-wght_kg / lw_subcat-zzdiv.
+        lw_esg-virg_mat  = lw_esg-wght_kg - lw_esg-wght_reus.
+*        lw_esg-regrind = lw_esg-wght_kg / lw_esg-wght_reus.
+
+        COLLECT lw_esg INTO me->gt_esg.
+
+      ENDLOOP.
+
+      CLEAR: lw_subcat, lw_ekpo.
+    ENDLOOP.
+
+    DATA lw_esg_total LIKE LINE OF me->gt_esg.
+    LOOP AT me->gt_esg INTO lw_esg WHERE zzsubcat <> me->gc_empty_category.
+      lw_esg_total-unit       = lw_esg_total-unit + lw_esg-unit.
+      lw_esg_total-wght_kg    = lw_esg_total-wght_kg + lw_esg-wght_kg.
+      lw_esg_total-wght_reus  = lw_esg_total-wght_reus + lw_esg-wght_reus.
+    ENDLOOP.
+
+    IF lw_esg_total IS NOT INITIAL.
+      lw_esg_total-regrind = lw_esg_total-wght_reus / lw_esg_total-wght_kg * 100.
+      lw_esg_total-virg_mat = lw_esg_total-wght_kg - lw_esg_total-wght_reus.
+
+      lw_esg_total-zzsubcat = me->gc_total_category.
+      APPEND lw_esg_total TO me->gt_esg.
+    ENDIF.
+
+  ENDMETHOD. "CALCULATE_ESG_DATA_MSEG
+
+  METHOD display_alv_esg.
+    FIELD-SYMBOLS <t_table> TYPE STANDARD TABLE.
+    ASSIGN me->go_ref_table->* TO <t_table>.   "Dynamic table
+
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = DATA(lo_salv_table)
+      CHANGING
+        t_table      = <t_table> ).
+
+    IF lo_salv_table IS BOUND.
+
+      lo_salv_table->get_functions( )->set_all( abap_true ).
+
+      DATA(lo_columns) = lo_salv_table->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY.
+          DATA(lo_column) = CAST cl_salv_column_table( lo_columns->get_column( 'PRODUCTION' ) ).
+          lo_column->set_short_text( value = 'Production' ).
+          lo_column->set_medium_text( value = CONV scrtext_m( 'Production' ) ).
+          lo_column->set_long_text( value = CONV scrtext_l( 'Production' ) ).
+
+          LOOP AT me->gt_subcat_key INTO DATA(lw_subcat_key).
+            READ TABLE me->gt_zmmt_subcat WITH KEY ekorg    = lw_subcat_key-ekorg
+                                                   spras    = sy-langu
+                                                   zzsubcat = lw_subcat_key-zzsubcat INTO DATA(lw_subcat).
+            IF sy-subrc <> 0.
+              lw_subcat-description = lw_subcat_key-zzsubcat.
+            ENDIF.
+
+            lo_column = CAST cl_salv_column_table( lo_columns->get_column( CONV char30( lw_subcat_key-zzsubcat ) ) ) .
+            CHECK lo_column IS BOUND.
+
+            lo_column->set_short_text( value = CONV scrtext_s( lw_subcat-description ) ).
+            lo_column->set_medium_text( value = CONV scrtext_m( lw_subcat-description ) ).
+            lo_column->set_long_text( value = CONV scrtext_l( lw_subcat-description ) ).
+            lo_column->set_alignment( value = if_salv_c_alignment=>right ).
+
+            lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+            CLEAR lw_subcat.
+          ENDLOOP.
+
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      DATA(lo_events) = lo_salv_table->get_event( ).
+      SET HANDLER me->on_link_click FOR lo_events.
+
+      DATA(lo_display) = lo_salv_table->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( sy-title ).
+
+*      DATA lw_key TYPE salv_s_layout_key.
+*      DATA(lo_layout) = lo_salv_table->get_layout( ).
+*      lw_key-report = sy-repid.
+*
+*      lo_layout->set_key( lw_key ).
+*      lo_layout->set_save_restriction( if_salv_c_layout=>restrict_user_dependant ).
+*      lo_layout->set_default( if_salv_c_bool_sap=>true ).
+
+      lo_salv_table->display( ).
+    ENDIF.
+
+  ENDMETHOD. "DISPLAY_ALV_ESG
+
+  METHOD create_dynamic_table.
+    DATA:
+      lw_alv       TYPE me->gty_alv_esg,
+      lw_component LIKE LINE OF me->gt_components.
+
+    DATA(lo_ref_str) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_data( lw_alv ) ).
+    me->gt_components = lo_ref_str->get_components( ).
+
+    LOOP AT me->gt_subcat_key INTO DATA(lw_subcat).
+      READ TABLE me->gt_components WITH KEY name = lw_subcat-zzsubcat TRANSPORTING NO FIELDS.
+      CHECK sy-subrc <> 0.
+
+      lw_component-name = lw_subcat-zzsubcat.
+      lw_component-type ?= cl_abap_datadescr=>describe_by_name( 'KTMNG' ).
+
+      APPEND lw_component TO me->gt_components.
+
+    ENDLOOP.
+
+    me->got_esg_dyn = cl_abap_tabledescr=>create( p_line_type = cl_abap_structdescr=>create( me->gt_components ) ).
+    CREATE DATA me->go_ref_table TYPE HANDLE me->got_esg_dyn.
+
+  ENDMETHOD. "CREATE_DYNAMIC_TABLE
+
+  METHOD fill_dynamic_table.
+    DATA:
+      lv_production_text TYPE string,
+      lv_field_name      TYPE string.
+
+    FIELD-SYMBOLS <t_table> TYPE STANDARD TABLE.
+    ASSIGN me->go_ref_table->* TO <t_table>.   "Dynamic table
+
+    DATA(lo_structure) = me->got_esg_dyn->get_table_line_type( ).
+    DATA lo_ref_structure TYPE REF TO data.
+    CREATE DATA lo_ref_structure TYPE HANDLE lo_structure.
+    ASSIGN lo_ref_structure->* TO FIELD-SYMBOL(<s_table>). "Dyanmic Structure
+
+    FIELD-SYMBOLS:
+      <fs_value> TYPE any.
+
+    DO 5 TIMES.
+
+      CASE sy-index.
+        WHEN 1.
+          lv_production_text = 'Units'.
+          lv_field_name = 'UNIT'.
+        WHEN 2.
+          lv_production_text = 'Weight in kg'.
+          lv_field_name = 'WGHT_KG'.
+        WHEN 3.
+          lv_production_text = 'Weight reused in kg'.
+          lv_field_name = 'WGHT_REUS'.
+        WHEN 4.
+          lv_production_text = 'Virgin Material'.
+          lv_field_name = 'VIRG_MAT'.
+        WHEN 5.
+          lv_production_text = '% of regrind material'.
+          lv_field_name = 'REGRIND'.
+      ENDCASE.
+
+      ASSIGN COMPONENT 'PRODUCTION' OF STRUCTURE <s_table> TO <fs_value>.
+      <fs_value> = lv_production_text.
+      UNASSIGN <fs_value>.
+
+      LOOP AT me->gt_esg INTO DATA(lw_esg).
+        ASSIGN COMPONENT lw_esg-zzsubcat OF STRUCTURE <s_table> TO <fs_value>.
+        CHECK <fs_value> IS ASSIGNED.
+
+        CASE lv_field_name.
+          WHEN 'UNIT'.
+            <fs_value> = lw_esg-unit.
+          WHEN 'WGHT_KG'.
+            <fs_value> = lw_esg-wght_kg.
+          WHEN 'WGHT_REUS'.
+            <fs_value> = lw_esg-wght_reus.
+          WHEN 'VIRG_MAT'.
+            <fs_value> = lw_esg-virg_mat.
+          WHEN 'REGRIND'.
+            <fs_value> = lw_esg-regrind.
+        ENDCASE.
+
+        UNASSIGN <fs_value>.
+
+      ENDLOOP.
+
+      APPEND <s_table> TO <t_table>.
+      CLEAR <s_table>.
+    ENDDO.
+
+  ENDMETHOD. "FILL_DYNAMIC_TABLE
+
+  METHOD on_link_click.
+    DATA:
+      lv_category    TYPE ekpo-zzsubcat,
+      lv_sum         TYPE ekpo-ktmng,
+      lt_detail      TYPE STANDARD TABLE OF gty_detail,
+      lt_detail_sum  TYPE STANDARD TABLE OF gty_detail,
+      lw_detail_sum  LIKE LINE OF lt_detail_sum.
+
+    CASE column.
+      WHEN me->gc_empty_category.
+        lv_category = ''.
+      WHEN OTHERS.
+        lv_category = column.
+    ENDCASE.
+
+*    lt_detail = VALUE #( FOR lw_ekpo_for IN me->gt_ekpo WHERE ( zzsubcat = lv_category ) ( CORRESPONDING #( lw_ekpo_for ) ) ).
+
+*"LAR-2300002753-Begin
+    lt_detail = VALUE #( FOR lw_mseg_for IN me->gt_mseg WHERE ( zzsubcat = lv_category ) ( CORRESPONDING #( lw_mseg_for ) ) ).
+*"LAR-2300002753-End
+
+    READ TABLE me->gt_zmmt_subcat WITH KEY zzsubcat = lv_category INTO DATA(lw_zmmt_subcat).
+
+    IF lt_detail IS NOT INITIAL.
+      SORT lt_detail BY matnr werks.
+
+      LOOP AT lt_detail INTO DATA(lw_detail_grp) GROUP BY (
+        matnr = lw_detail_grp-matnr
+        werks = lw_detail_grp-werks
+      ) ASSIGNING FIELD-SYMBOL(<fs_detail_grp>).
+
+        CLEAR: lw_detail_sum, lv_sum.
+
+        LOOP AT GROUP <fs_detail_grp> INTO DATA(lw_detail).
+          IF lw_detail-ktmng IS INITIAL.
+            lv_sum = lv_sum + lw_detail-menge.
+          ELSE.
+            lv_sum = lv_sum + lw_detail-ktmng.
+          ENDIF.
+        ENDLOOP.
+
+        lw_detail_sum = lw_detail.
+        lw_detail_sum-ktmng = lv_sum.
+        lw_detail_sum-zzdiv = lw_zmmt_subcat-zzdiv.
+
+        APPEND lw_detail_sum TO lt_detail_sum.
+
+      ENDLOOP.
+
+      TRY .
+          me->display_alv_detail(
+            CHANGING
+              ct_table = lt_detail_sum
+          ).
+        CATCH cx_root.
+      ENDTRY.
+
+      IF me->go_alv_detail IS BOUND.
+        me->go_alv_detail->close_screen( ).
+        FREE me->go_alv_detail.
+      ENDIF.
+
+    ENDIF.
+
+  ENDMETHOD. "ON_LINK_CLICK
+
+  METHOD display_alv_detail .
+
+    TRY .
+        cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = me->go_alv_detail
+        CHANGING
+          t_table      = ct_table ).
+      CATCH cx_salv_msg.
+        RETURN.
+    ENDTRY.
+
+    IF me->go_alv_detail IS BOUND.
+
+*     " Insere todos as funcionalidades existentes no ALV OO.
+      DATA(lo_function) = me->go_alv_detail->get_functions( ).
+      lo_function->set_all( abap_true ).
+
+*     " Ajusta os dados das colunas
+      DATA(lo_columns) = me->go_alv_detail->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+
+      TRY .
+
+          me->columns_edit( it_table = ct_table io_columns = lo_columns ).
+
+        CATCH cx_salv_not_found .
+        CATCH cx_salv_data_error .
+      ENDTRY.
+
+      DATA(lo_events) = me->go_alv_detail->get_event( ).
+
+      DATA(lo_display) = me->go_alv_detail->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( sy-title ).
+
+      me->go_alv_detail->display( ).
+    ENDIF.
+
+  ENDMETHOD . " DISPLAY_ALV
+
+  METHOD columns_edit.
+
+    DATA(lt_fieldcat) = me->generate_fieldcat( it_table = it_table ).
+
+    DATA(lt_columns) = io_columns->get( ).
+    DATA lo_column_table TYPE REF TO cl_salv_column_table.
+
+    LOOP AT lt_columns ASSIGNING FIELD-SYMBOL(<fs_columns>).
+      lo_column_table ?= <fs_columns>-r_column.
+
+      READ TABLE lt_fieldcat WITH KEY fieldname = <fs_columns>-columnname INTO DATA(lw_fieldcat).
+      IF sy-subrc EQ 0.
+        lo_column_table->set_short_text(  value = lw_fieldcat-scrtext_s ).
+        lo_column_table->set_medium_text( value = lw_fieldcat-scrtext_m ).
+        lo_column_table->set_long_text(   value = lw_fieldcat-scrtext_l ).
+        lo_column_table->set_tooltip(     value = lw_fieldcat-tooltip ).
+      ELSE.
+        lo_column_table->set_technical( if_salv_c_bool_sap=>true ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD. " COLUMNS_EDIT
+
+  METHOD generate_fieldcat.
+    DATA ls_fieldcat TYPE lvc_s_fcat.
+    DEFINE dfcat_texto.
+
+      ls_fieldcat = CORRESPONDING #( &1 ).
+
+      ls_fieldcat-tooltip   = &4.
+      ls_fieldcat-coltext   = &3.
+
+      ls_fieldcat-scrtext_l = &4. " 40
+      ls_fieldcat-scrtext_m = &3. " 20
+      ls_fieldcat-scrtext_s = &2. " 10
+      ls_fieldcat-outputlen = &5.
+
+      &1 = CORRESPONDING #( ls_fieldcat ).
+
+    END-OF-DEFINITION.
+
+    DATA:
+      lo_data TYPE REF TO data.
+
+    CREATE DATA lo_data LIKE LINE OF it_table.
+    DATA(lo_tabdescr) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data_ref( lo_data ) ).
+    DATA(lt_dfies) = cl_salv_data_descr=>read_structdescr( lo_tabdescr ).
+
+    rt_fieldcat = CORRESPONDING #( lt_dfies ).
+
+    CALL FUNCTION 'LVC_FIELDCAT_COMPLETE'
+      CHANGING
+        ct_fieldcat = rt_fieldcat.
+
+    LOOP AT rt_fieldcat ASSIGNING FIELD-SYMBOL(<fl_fcat>).
+      DATA(lv_tabix) = sy-tabix.
+
+      CASE <fl_fcat>-fieldname.
+        WHEN 'MANDT' OR 'MENGE' .
+          DELETE rt_fieldcat INDEX lv_tabix.
+*        WHEN ''.
+*          dfcat_texto <fl_fcat> '' '' '' 10.
+
+      ENDCASE.
+
+    ENDLOOP.
+
+  ENDMETHOD. " GENERATE_FIELDCAT
+ENDCLASS.
