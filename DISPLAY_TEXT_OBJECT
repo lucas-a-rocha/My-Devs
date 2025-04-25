@@ -1,0 +1,208 @@
+*&---------------------------------------------------------------------*
+*& Report ZSD_DISPLAY_CUSTOMER_TXT
+*&---------------------------------------------------------------------*
+*& EDIT TEXT / DISPLAY TEXT
+*&---------------------------------------------------------------------*
+REPORT zsd_display_customer_txt.
+
+TABLES: rf02d.
+
+**********************************************************************
+* Selection Screen
+**********************************************************************
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE tblock1.
+
+SELECT-OPTIONS:
+  s_kunnr FOR rf02d-kunnr NO INTERVALS NO-EXTENSION OBLIGATORY,
+  s_vkorg FOR rf02d-vkorg NO INTERVALS NO-EXTENSION OBLIGATORY,
+  s_vtweg FOR rf02d-vtweg NO INTERVALS NO-EXTENSION OBLIGATORY,
+  s_spart FOR rf02d-spart NO INTERVALS NO-EXTENSION OBLIGATORY.
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    TYPES:
+      gtr_kunnr TYPE RANGE OF rf02d-kunnr,
+      gtr_vkorg TYPE RANGE OF rf02d-vkorg,
+      gtr_vtweg TYPE RANGE OF rf02d-vtweg,
+      gtr_spart TYPE RANGE OF rf02d-spart.
+
+    METHODS:
+      execute_report
+        IMPORTING
+          ir_kunnr TYPE gtr_kunnr
+          ir_vkorg TYPE gtr_vkorg
+          ir_vtweg TYPE gtr_vtweg
+          ir_spart TYPE gtr_spart
+        RAISING
+          cx_idm_error,
+
+      display_text
+        RAISING
+          cx_idm_error.
+
+  PRIVATE SECTION.
+    DATA:
+      gt_lines    TYPE STANDARD TABLE OF tline.
+
+    METHODS:
+      get_text
+        IMPORTING
+          ir_kunnr TYPE gtr_kunnr
+          ir_vkorg TYPE gtr_vkorg
+          ir_vtweg TYPE gtr_vtweg
+          ir_spart TYPE gtr_spart
+        RAISING
+          cx_idm_error.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+  TRY.
+
+      DATA(go_report) = NEW lcl_report( ).
+      go_report->execute_report(
+         EXPORTING
+           ir_kunnr = s_kunnr[]
+           ir_vkorg = s_vkorg[]
+           ir_vtweg = s_vtweg[]
+           ir_spart = s_spart[]
+       ).
+
+    CATCH cx_idm_error INTO DATA(lo_error).
+
+      MESSAGE ID lo_error->message-id TYPE 'S' NUMBER lo_error->message-number
+        WITH lo_error->message-message_v1 lo_error->message-message_v2 lo_error->message-message_v3 lo_error->message-message_v4
+        DISPLAY LIKE lo_error->message-type.
+
+  ENDTRY.
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD execute_report.
+    me->get_text(
+      EXPORTING
+        ir_kunnr = ir_kunnr
+        ir_vkorg = ir_vkorg
+        ir_vtweg = ir_vtweg
+        ir_spart = ir_spart
+    ).
+
+    IF me->gt_lines IS NOT INITIAL.
+      CALL SCREEN '0100'.
+    ENDIF.
+
+*    me->display_text( ).
+
+  ENDMETHOD.
+
+  METHOD get_text.
+    DATA:
+      lv_id       TYPE thead-tdid,
+      lv_language TYPE thead-tdspras,
+      lv_name     TYPE thead-tdname,
+      lv_object   TYPE thead-tdobject,
+      lv_kunnr    TYPE char10,
+      lt_lines    TYPE STANDARD TABLE OF tline.
+
+    lv_kunnr = |{ ir_kunnr[ 1 ]-low ALPHA = OUT }|.
+    lv_kunnr = |{ lv_kunnr ALPHA = IN }|.
+
+    lv_id       = '0002'.
+    lv_language = sy-langu.
+    lv_name     = |{ lv_kunnr }{ ir_vkorg[ 1 ]-low }{ ir_vtweg[ 1 ]-low }{ ir_spart[ 1 ]-low }|.
+    lv_object   = 'KNVV'.
+
+    FREE gt_lines.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        id                      = lv_id
+        language                = lv_language
+        name                    = lv_name
+        object                  = lv_object
+      TABLES
+        lines                   = gt_lines
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( type = sy-msgty id = sy-msgid number = sy-msgno
+                             message_v1 = sy-msgv1 message_v2 = sy-msgv2 message_v3 = sy-msgv3 message_v4 = sy-msgv4
+          ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD display_text.
+    TYPES notetab_line(30) TYPE c.
+
+    DATA:
+      lo_container TYPE REF TO cl_gui_custom_container,
+      lo_editor    TYPE REF TO cl_gui_textedit.
+
+    lo_container = NEW cl_gui_custom_container(
+      container_name          = 'CC_TEXT'
+    ).
+
+    lo_editor = NEW cl_gui_textedit(
+      wordwrap_mode              = cl_gui_textedit=>wordwrap_at_windowborder
+      wordwrap_to_linebreak_mode = cl_gui_textedit=>true
+      parent                     = lo_container
+    ).
+
+    lo_editor->set_toolbar_mode( toolbar_mode = cl_gui_textedit=>false ).
+    lo_editor->set_statusbar_mode( statusbar_mode = cl_gui_textedit=>false ).
+    lo_editor->set_readonly_mode( ).
+
+    DATA lt_text_stream TYPE STANDARD TABLE OF notetab_line.
+    CALL FUNCTION 'CONVERT_ITF_TO_STREAM_TEXT'
+      TABLES
+        itf_text    = me->gt_lines
+        text_stream = lt_text_stream.
+
+    lo_editor->set_text_as_stream(
+      EXPORTING
+        text            = lt_text_stream                 " text as stream with carrige retruns and linefeeds
+    ).
+    IF sy-subrc <> 0.
+*     MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+*       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+
+  ENDMETHOD.
+
+ENDCLASS.
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'ST_0100'.
+*  SET TITLEBAR 'xxx'.
+
+  go_report->display_text( ).
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+
+  CASE sy-ucomm.
+    WHEN 'BACK' OR 'RETURTN' OR 'CANCEL'.
+      LEAVE TO SCREEN 0.
+    WHEN OTHERS.
+  ENDCASE.
+
+ENDMODULE.
