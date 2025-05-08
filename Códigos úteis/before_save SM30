@@ -1,0 +1,39 @@
+*----------------------------------------------------------------------*
+***INCLUDE LZMM_LRKPIF01.
+*----------------------------------------------------------------------*
+FORM before_save.
+
+  DATA:
+    lw_row   TYPE zmm_lrkpi.
+
+  DATA(lo_kpi) = NEW zcl_mm_lr_kpi( iv_ekorg = space ).
+
+  LOOP AT total.
+    CLEAR: lw_row.
+    IF <vim_total_struc> IS ASSIGNED.
+      MOVE-CORRESPONDING <vim_total_struc> TO lw_row.
+    ENDIF.
+
+    CHECK <action> NE 'D' AND <action> IS NOT INITIAL AND <action> NE 'X'.
+
+*"Validate Formula
+    IF lw_row-formula IS NOT INITIAL.
+      REPLACE ALL OCCURRENCES OF zcl_mm_lr_kpi=>gc_small_box_formula IN lw_row-formula WITH '1'.
+      REPLACE ALL OCCURRENCES OF zcl_mm_lr_kpi=>gc_big_box_formula IN lw_row-formula WITH '1'.
+
+      TRY.
+          lo_kpi->eval_formula( iv_formula = lw_row-formula ).
+        CATCH cx_idm_error INTO DATA(lo_error).
+          MESSAGE ID lo_error->message-id TYPE 'S' NUMBER lo_error->message-number
+          WITH lo_error->message-message_v1 lo_error->message-message_v2 lo_error->message-message_v3 lo_error->message-message_v4
+          DISPLAY LIKE lo_error->message-type.
+
+          vim_abort_saving = 'X'.
+          EXIT.
+      ENDTRY.
+
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM. "BEFORE_SAVE
