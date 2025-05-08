@@ -6,27 +6,38 @@ methods EVAL_FORMULA
     returning
       value(RV_RESULT) type STRING .
 
-METHOD eval_formula.
+  METHOD eval_formula.
     DATA:
-      lv_js_code      TYPE string,
-      wf_retcode      TYPE sy-subrc,
-      wf_funcname(30) TYPE c,
-      wf_message(70)  TYPE c,
-      wf_pos          TYPE i.
+      lv_js_code  TYPE string,
+      lv_retcode  TYPE sy-subrc,
+      lv_funcname TYPE c LENGTH 30,
+      lv_message  TYPE c LENGTH 70,
+      lv_pos      TYPE i.
 
     CALL FUNCTION 'CHECK_FORMULA'
       EXPORTING
-        formula  = iv_formula
+        formula           = iv_formula
       IMPORTING
-        subrc    = wf_retcode
-        funcname = wf_funcname
-        message  = wf_message
-        pos      = wf_pos.
+        subrc             = lv_retcode
+        funcname          = lv_funcname
+        message           = lv_message
+        pos               = lv_pos
+      EXCEPTIONS
+        error_message     = 1
+        error_in_formula  = 2
+        missing_parameter = 3.
+
+    IF sy-subrc <> 0.
+      IF 1 = 2. MESSAGE e011(zmm_lr).ENDIF. "There's an error in the formula.
+      RAISE EXCEPTION TYPE cx_idm_error
+        EXPORTING
+          message = VALUE #( id = 'ZMM_LR' number = 011 type = 'E' ).
+    ENDIF.
 
 *--Create the script
     DATA(lo_jscript) = cl_java_script=>create( ).
     CONCATENATE
-       'var string = ' iv_formula ';'
+       'var string = ' iv_formula ';              '
        'function Set_String()                     '
        '{ string = eval(string);    '        '  } '
        'Set_String();                             '
@@ -34,5 +45,7 @@ METHOD eval_formula.
          INTO lv_js_code SEPARATED BY cl_abap_char_utilities=>cr_lf.
 
     rv_result = lo_jscript->evaluate( lv_js_code ).
+
+*    lo_jscript->last_error_message
 
   ENDMETHOD.
