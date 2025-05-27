@@ -1,0 +1,1177 @@
+class ZCL_GUI_FRONTEND_SERVICES definition
+  public
+  final
+  create public .
+
+*"* public components of class ZCL_GUI_FRONTEND_SERVICES
+*"* do not include other source files here!!!
+public section.
+  type-pools ABAP .
+  type-pools SLIS .
+
+  constants ACTION_OK type I value 0. "#EC NOTEXT
+  constants ACTION_CANCEL type I value 9. "#EC NOTEXT
+  constants ACTION_FAILED type I value 4. "#EC NOTEXT
+  constants RETURN_PATH_AND_FILE type I value 0. "#EC NOTEXT
+  constants RETURN_PATHNAME type I value 1. "#EC NOTEXT
+  constants RETURN_FILENAME type I value 2. "#EC NOTEXT
+
+  class-methods EXTRACT_FILENAME
+    importing
+      value(FILE_SPECIFICATION) type CLIKE
+    exporting
+      !FILE_NAME type CLIKE .
+  class-methods EXTRACT_PATHNAME
+    importing
+      value(FILE_SPECIFICATION) type CLIKE
+    exporting
+      value(DIRECTORY_NAME) type CLIKE .
+  class-methods GET_ANY_SAVED_VALUE
+    importing
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'WERT'
+    exporting
+      value(VALUE) type CLIKE .
+  class-methods GET_FILENAME
+    importing
+      value(DEFAULT_EXTENSION) type STRING optional
+      value(WINDOW_TITLE) type STRING optional
+      value(DEFAULT_FILENAME) type STRING optional
+      value(FILE_FILTER) type STRING default '(*.*)| *.*|'
+      value(INITIAL_DIRECTORY) type STRING optional
+      value(INI_SECTION) type STRING optional
+      value(USE_SAVED_FILENAME) type ABAP_BOOL default ABAP_FALSE
+      value(USE_SAVED_DIRECTORY_NAME) type ABAP_BOOL default ABAP_FALSE
+      value(RETURN_VALUE_CONTROL) type I default RETURN_PATH_AND_FILE
+    exporting
+      !USER_ACTION type I
+      !FILE_SPECIFICATION type STRING .
+  class-methods GET_SAVED_DIRECTORY_NAME
+    importing
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'DIRECTORY'
+    exporting
+      !DIRECTORY_NAME type CLIKE .
+  class-methods GET_SAVED_FILE_NAME
+    importing
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'FILE'
+    exporting
+      !FILE_NAME type CLIKE .
+  class-methods SAVE_ANY_VALUE
+    importing
+      value(VALUE) type CLIKE
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'WERT' .
+  class-methods SAVE_DIRECTORY_NAME
+    importing
+      value(NAME_TO_SAVE) type CLIKE
+      value(NAME_TO_SAVE_IS_A_FILENAME) type ABAP_BOOL default ABAP_TRUE
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'DIRECTORY' .
+  class-methods SAVE_FILENAME
+    importing
+      value(FILE_NAME) type CLIKE
+      value(INI_SECTION) type CLIKE
+      value(INI_VALUE) type CLIKE default 'FILE' .
+  class-methods UPLOAD_PC_DATA_WITH_DIALOG
+    importing
+      !I_TITEL type CLIKE default SPACE
+      !I_FILETYP type CLIKE default 'ASC'
+      !I_TAB_GETRENNT type BOOLEAN default 'X'
+      !I_DEFAULT_FILENAME type CLIKE default SPACE
+      !I_DEFAULT_EXTENSION type CLIKE default  '*.TXT'
+    exporting
+      !O_FILE_NAME type CLIKE
+      !E_SUBRC type SY-SUBRC
+    changing
+      !C_ITAB type ANY TABLE optional .
+  class-methods PROFILE_GET
+    importing
+      value(I_UNAME) type ZCONFIG_INI-UNAME default SY-UNAME
+      value(I_SECTION_NAME) type CLIKE
+      value(I_PARAMETERNAME) type CLIKE
+    exporting
+      !O_WERT type CLIKE
+      !O_SY_SUBRC type SY-SUBRC
+      !O_CPUDT type MKPF-CPUDT
+      !O_CPUTM type MKPF-CPUTM .
+  class-methods PROFILE_SET
+    importing
+      value(I_UNAME) type ZCONFIG_INI-UNAME default SY-UNAME
+      value(I_SECTION_NAME) type CLIKE
+      value(I_PARAMETERNAME) type CLIKE
+      value(I_WERT) type CLIKE
+    exporting
+      !O_SY_SUBRC type SY-SUBRC .
+  class-methods PROFILE_DELETE
+    importing
+      value(I_UNAME) type ZCONFIG_INI-UNAME default SPACE
+      value(I_SECTION_NAME) type ZCONFIG_INI-SECTION_NAME
+      value(I_PARAMETERNAME) type ZCONFIG_INI-PARAMETERNAME
+    exporting
+      !O_SY_SUBRC type SY-SUBRC .
+  class-methods EXTRACT_FILE_EXTENSION
+    importing
+      value(I_FILESPEC) type CLIKE
+    exporting
+      value(O_FILE_EXTENSION) type CLIKE
+      value(O_FILESPEC_NO_EXTENSION) type CLIKE .
+  class-methods PROFILE_CHECK
+    importing
+      value(I_UNAME) type ZCONFIG_INI-UNAME default SY-UNAME
+      value(I_SECTION_NAME) type CLIKE
+      value(I_PARAMETERNAME) type CLIKE
+      !I_WERT type CLIKE
+    exporting
+      !O_SY_SUBRC type SY-SUBRC .
+  class-methods GET_SERVER_FILENAME
+    importing
+      !I_FILETYPE type Z001-FILENAME_TYP1 default 'Z'
+      !I_PATHDEFINITION type Z001-PATHNAME
+      !I_FILEPREFIX type CLIKE
+      !I_FILE_EXT type CLIKE
+      !I_FILE_FILTER type STRING default '(*.*)|*.*|'
+      !I_TITEL type CLIKE default SPACE
+      !I_DRIVE_LETTER type CHAR1 default 'H'
+      !I_OPERATING_SYSTEM type SY-OPSYS default SY-OPSYS
+    exporting
+      !E_FILENAME type CLIKE
+      !E_SUBRC type SY-SUBRC .
+  class-methods CHECK_FILE_EXIST_ON_SERVER
+    importing
+      !I_PATHDEFINITION type Z001-PATHNAME
+      !I_FILENAME type CLIKE
+    exporting
+      !E_SUBRC type SY-SUBRC .
+  class-methods GUI_TEXT_UPLOAD
+    importing
+      !FILENAME type CLIKE
+      !FILETYPE type CLIKE default 'ASC'
+      !IS_TAB_SEPARATED type CHAR01 default 'X'
+    exporting
+      !FILELENGTH type I
+      !E_SUBRC type SY-SUBRC
+    changing
+      !DATA_TAB type STANDARD TABLE .
+  class-methods GUI_TEXT_DOWNLOAD
+    importing
+      !FILENAME type CLIKE
+      !FILETYPE type CLIKE default 'ASC'
+      !USE_TAB_SEPARATOR type CHAR01 default 'X'
+    exporting
+      !FILELENGTH type I
+      !E_SUBRC type SY-SUBRC
+    changing
+      !DATA_TAB type STANDARD TABLE .
+  class-methods DOWNLOAD_PC_DATA_WITH_DIALOG
+    importing
+      !FILETYPE type CLIKE default 'ASC'
+      !USE_TAB_SEPARATOR type CHAR01 default 'X'
+      !TITEL type CLIKE default SPACE
+      !DEFAULT_FILENAME type CLIKE default SPACE
+      !DEFAULT_EXTENSION type CLIKE default  '*.TXT'
+    exporting
+      !FILENAME type STRING
+      !FILELENGTH type I
+      !E_SUBRC type SY-SUBRC
+    changing
+      !DATA_TAB type STANDARD TABLE .
+  class-methods CONVERT_UNIX_PATH_TO_WIN
+    importing
+      !DRIVE_LETTER type CHAR1 default SPACE
+    changing
+      !DIRECTORY_NAME type CSEQUENCE .
+protected section.
+*"* protected components of class ZCL_GUI_FRONTEND_SERVICES
+*"* do not include other source files here!!!
+private section.
+*"* private components of class ZCL_GUI_FRONTEND_SERVICES
+*"* do not include other source files here!!!
+
+  class-data INI_FILE type RLGRAP-FILENAME .
+
+  class-methods CREATE_INI_FILENAME
+    exporting
+      !INI_FILE_NAME type RLGRAP-FILENAME .
+ENDCLASS.
+
+
+
+CLASS ZCL_GUI_FRONTEND_SERVICES IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>CHECK_FILE_EXIST_ON_SERVER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_PATHDEFINITION               TYPE        Z001-PATHNAME
+* | [--->] I_FILENAME                     TYPE        CLIKE
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD check_file_exist_on_server .
+
+  DATA lv_filespec            TYPE path-pathextern.
+
+  CALL FUNCTION 'Z_GET_DOWNLOAD_PATH'
+    EXPORTING
+      filename_typ   = 'Z'
+      pathname       = i_pathdefinition
+      prefix         = i_filename
+      extension      = space
+    IMPORTING
+      filespec       = lv_filespec
+    EXCEPTIONS
+      empty_filespec = 1
+      error          = 2
+      OTHERS         = 3.
+
+  e_subrc = sy-subrc.
+  IF e_subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    RETURN.
+  ENDIF.
+
+  OPEN DATASET lv_filespec FOR INPUT IN TEXT MODE ENCODING DEFAULT.
+  e_subrc = sy-subrc.
+  IF e_subrc = 0.
+    CLOSE DATASET lv_filespec.
+  ELSE.
+    MESSAGE i033(msgserver) WITH lv_filespec.
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>CONVERT_UNIX_PATH_TO_WIN
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] DRIVE_LETTER                   TYPE        CHAR1 (default =SPACE)
+* | [<-->] DIRECTORY_NAME                 TYPE        CSEQUENCE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD convert_unix_path_to_win.
+
+  DATA lv_pos      TYPE i.
+
+  FIND FIRST OCCURRENCE OF '/SVR04' IN directory_name IGNORING CASE
+       MATCH OFFSET lv_pos.
+  CHECK sy-subrc = 0.
+
+  IF drive_letter IS NOT INITIAL.
+    lv_pos = lv_pos + 6.
+  ENDIF.
+
+  directory_name = directory_name+lv_pos.
+  REPLACE ALL OCCURRENCES OF '/' IN directory_name WITH '\'.
+
+  IF drive_letter IS INITIAL.
+    CONCATENATE '\' directory_name INTO directory_name.
+  ELSE.
+    CONCATENATE drive_letter ':' directory_name INTO directory_name.
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Private Method ZCL_GUI_FRONTEND_SERVICES=>CREATE_INI_FILENAME
+* +-------------------------------------------------------------------------------------------------+
+* | [<---] INI_FILE_NAME                  TYPE        RLGRAP-FILENAME
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method CREATE_INI_FILENAME .
+
+* Die Datei liegt anwenderspezifisch im SUPGUI-Default Verzeichnis
+  CONCATENATE 'IFCO_' sy-uname '.INI' INTO INI_FILE_NAME.
+
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>DOWNLOAD_PC_DATA_WITH_DIALOG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILETYPE                       TYPE        CLIKE (default ='ASC')
+* | [--->] USE_TAB_SEPARATOR              TYPE        CHAR01 (default ='X')
+* | [--->] TITEL                          TYPE        CLIKE (default =SPACE)
+* | [--->] DEFAULT_FILENAME               TYPE        CLIKE (default =SPACE)
+* | [--->] DEFAULT_EXTENSION              TYPE        CLIKE (default = '*.TXT')
+* | [<---] FILENAME                       TYPE        STRING
+* | [<---] FILELENGTH                     TYPE        I
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* | [<-->] DATA_TAB                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD download_pc_data_with_dialog .
+
+  DATA lv_useraktion        TYPE i.
+  DATA lv_titel             TYPE string.
+  DATA lv_default_filename  TYPE string.
+  DATA lv_default_extension TYPE string.
+  DATA lv_filename          TYPE string.
+  DATA lv_filetype          TYPE char10.
+
+  lv_titel    = titel.
+  lv_filetype = filetype.
+  lv_default_filename  = default_filename.
+  lv_default_extension = default_extension.
+  e_subrc = 4.
+
+* Dateinamen holen
+  CALL METHOD zcl_gui_frontend_services=>get_filename
+    EXPORTING
+      default_filename   = lv_default_filename
+      default_extension  = lv_default_extension
+      window_title       = lv_titel
+    IMPORTING
+      user_action        = lv_useraktion
+      file_specification = lv_filename.
+  filename = lv_filename.
+
+  IF lv_useraktion NE 0.
+    MESSAGE i662(69).
+    EXIT.
+  ENDIF.
+
+  lv_filetype = filetype.
+
+  CALL METHOD cl_gui_frontend_services=>gui_download
+    EXPORTING
+      filename                  = lv_filename
+      filetype                  = lv_filetype
+      append                    = space
+      write_field_separator     = use_tab_separator
+      header                    = '00'
+      trunc_trailing_blanks     = space
+      write_lf                  = 'X'
+      col_select                = space
+      col_select_mask           = space
+      dat_mode                  = space
+      confirm_overwrite         = 'X'
+      no_auth_check             = 'X'
+      codepage                  = space
+      ignore_cerr               = abap_false
+      replacement               = '#'
+      write_bom                 = space
+      trunc_trailing_blanks_eol = 'X'
+      wk1_n_format              = space
+      wk1_n_size                = space
+      wk1_t_format              = space
+      wk1_t_size                = space
+    IMPORTING
+      filelength                = filelength
+    CHANGING
+      data_tab                  = data_tab
+    EXCEPTIONS
+      file_write_error          = 1
+      no_batch                  = 2
+      gui_refuse_filetransfer   = 3
+      invalid_type              = 4
+      no_authority              = 5
+      unknown_error             = 6
+      header_not_allowed        = 7
+      separator_not_allowed     = 8
+      filesize_not_allowed      = 9
+      header_too_long           = 10
+      dp_error_create           = 11
+      dp_error_send             = 12
+      dp_error_write            = 13
+      unknown_dp_error          = 14
+      access_denied             = 15
+      dp_out_of_memory          = 16
+      disk_full                 = 17
+      dp_timeout                = 18
+      file_not_found            = 19
+      dataprovider_exception    = 20
+      control_flush_error       = 21
+      not_supported_by_gui      = 22
+      error_no_gui              = 23
+      OTHERS                    = 24.
+
+  e_subrc = sy-subrc.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>EXTRACT_FILENAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILE_SPECIFICATION             TYPE        CLIKE
+* | [<---] FILE_NAME                      TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD extract_filename .
+
+CALL METHOD zcl_string_utilities=>extract_filename
+  EXPORTING
+    i_filespec = file_specification
+  IMPORTING
+    O_FILENAME = file_name.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>EXTRACT_FILE_EXTENSION
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_FILESPEC                     TYPE        CLIKE
+* | [<---] O_FILE_EXTENSION               TYPE        CLIKE
+* | [<---] O_FILESPEC_NO_EXTENSION        TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD extract_file_extension .
+
+  CALL METHOD zcl_string_utilities=>extract_file_extension
+    EXPORTING
+      i_filespec              = i_filespec
+    IMPORTING
+      o_file_extension        = o_file_extension
+      o_filespec_no_extension = o_filespec_no_extension.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>EXTRACT_PATHNAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILE_SPECIFICATION             TYPE        CLIKE
+* | [<---] DIRECTORY_NAME                 TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD extract_pathname .
+
+
+CALL METHOD zcl_string_utilities=>extract_pathname
+  EXPORTING
+    i_filespec = file_specification
+  IMPORTING
+    O_PATHNAME = directory_name.
+
+* Del HV051005
+*  DATA: icount     TYPE i VALUE 1,
+*        irecords   TYPE i,
+*        line(128)  TYPE c,
+*        array LIKE STANDARD TABLE OF line." WITH HEADER LINE.
+*
+*  SPLIT file_specification AT '\' INTO TABLE array.
+*  DESCRIBE TABLE array LINES irecords.
+*  irecords = irecords - 1.             "Dateinamen ausblenden
+*
+*  IF irecords > 0.
+*    CLEAR directory_name.
+*    DO irecords TIMES.
+*      READ TABLE array INDEX icount INTO line.
+*      CONCATENATE directory_name line '\' INTO directory_name.
+*      icount = icount + 1.
+*    ENDDO.
+*
+*  ELSE.
+*    directory_name = file_specification.
+*  ENDIF.
+*
+*  CONDENSE directory_name NO-GAPS.              "remove all gaps
+*
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GET_ANY_SAVED_VALUE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='WERT')
+* | [<---] VALUE                          TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_any_saved_value .
+
+  CALL METHOD zcl_gui_frontend_services=>get_saved_file_name
+    EXPORTING
+      ini_section = ini_section
+      ini_value   = ini_value
+    IMPORTING
+      file_name   = value.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GET_FILENAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] DEFAULT_EXTENSION              TYPE        STRING(optional)
+* | [--->] WINDOW_TITLE                   TYPE        STRING(optional)
+* | [--->] DEFAULT_FILENAME               TYPE        STRING(optional)
+* | [--->] FILE_FILTER                    TYPE        STRING (default ='(*.*)| *.*|')
+* | [--->] INITIAL_DIRECTORY              TYPE        STRING(optional)
+* | [--->] INI_SECTION                    TYPE        STRING(optional)
+* | [--->] USE_SAVED_FILENAME             TYPE        ABAP_BOOL (default =ABAP_FALSE)
+* | [--->] USE_SAVED_DIRECTORY_NAME       TYPE        ABAP_BOOL (default =ABAP_FALSE)
+* | [--->] RETURN_VALUE_CONTROL           TYPE        I (default =RETURN_PATH_AND_FILE)
+* | [<---] USER_ACTION                    TYPE        I
+* | [<---] FILE_SPECIFICATION             TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_filename .
+
+  DATA: t_files     TYPE filetable.
+  DATA: rcode       TYPE i.
+
+  IF ( NOT ini_section IS INITIAL ) AND
+     ( NOT use_saved_directory_name IS INITIAL ).
+*   Directorynamen holen, eine evtl Übergabe wird überschrieben
+    CALL METHOD get_saved_directory_name
+      EXPORTING
+        ini_section    = ini_section
+      IMPORTING
+        directory_name = initial_directory.
+  ENDIF.
+
+  IF ( NOT ini_section IS INITIAL ) AND
+     ( NOT use_saved_filename IS INITIAL ).
+*   Dateinamen holen, eine evtl Übergabe wird überschrieben
+    CALL METHOD get_saved_file_name
+      EXPORTING
+        ini_section = ini_section
+      IMPORTING
+        file_name   = default_filename.
+
+    CALL METHOD zcl_gui_frontend_services=>extract_filename
+      EXPORTING
+        file_specification = default_filename
+      IMPORTING
+        file_name          = default_filename.
+  ENDIF.
+
+
+  CALL METHOD cl_gui_frontend_services=>file_open_dialog
+    EXPORTING
+     window_title            = window_title
+     default_extension       = default_extension
+     default_filename        = default_filename
+     file_filter             = file_filter "default_extension
+     initial_directory       = initial_directory
+*    MULTISELECTION          =
+*    WITH_ENCODING           =
+    CHANGING
+      file_table              = t_files
+      rc                      = rcode
+      user_action             = user_action
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      OTHERS                  = 4.
+
+  IF sy-subrc BETWEEN 1 AND 4.
+    CLEAR file_specification.
+    user_action = action_failed.
+    IF sy-msgty IS INITIAL.
+      MESSAGE a402(brf).
+    ELSE.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                 WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+    EXIT.
+  ENDIF.
+
+  LOOP AT t_files INTO file_specification.
+    EXIT.
+  ENDLOOP.
+
+  IF  file_specification IS INITIAL.
+    user_action = action_failed.
+    EXIT.
+  ENDIF.
+
+  IF NOT ini_section IS INITIAL.
+*  save Directory
+    CALL METHOD save_directory_name
+      EXPORTING
+        name_to_save               = file_specification
+        name_to_save_is_a_filename = abap_true
+        ini_section                = ini_section.
+
+    CALL METHOD save_filename
+      EXPORTING
+        file_name   = file_specification
+        ini_section = ini_section.
+  ENDIF.
+
+  CASE return_value_control.
+    WHEN 1.
+      CALL METHOD extract_pathname
+        EXPORTING
+          file_specification = file_specification
+        IMPORTING
+          directory_name     = file_specification.
+
+    WHEN 2.
+      CALL METHOD extract_filename
+        EXPORTING
+          file_specification = file_specification
+        IMPORTING
+          file_name          = file_specification.
+  ENDCASE.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GET_SAVED_DIRECTORY_NAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='DIRECTORY')
+* | [<---] DIRECTORY_NAME                 TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_saved_directory_name .
+
+*  CALL METHOD create_ini_filename
+*    IMPORTING
+*      ini_file_name = ini_file.
+
+  CALL METHOD zcl_gui_frontend_services=>profile_get
+    EXPORTING
+      i_uname         = sy-uname
+      i_section_name  = ini_section
+      i_parametername = ini_value
+    IMPORTING
+      o_wert          = directory_name.
+
+*  CALL FUNCTION 'PROFILE_GET'
+*    EXPORTING
+*      filename = ini_file
+*      key      = ini_value
+*      section  = ini_section
+*    IMPORTING
+*      value    = directory_name
+*    EXCEPTIONS
+*      OTHERS   = 1.
+*
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GET_SAVED_FILE_NAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='FILE')
+* | [<---] FILE_NAME                      TYPE        CLIKE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_saved_file_name .
+
+*  CALL METHOD create_ini_filename
+*    IMPORTING
+*      ini_file_name = ini_file.
+
+  CALL METHOD zcl_gui_frontend_services=>profile_get
+    EXPORTING
+      i_uname         = sy-uname
+      i_section_name  = ini_section
+      i_parametername = ini_value
+    IMPORTING
+      o_wert          = file_name.
+
+*  CALL FUNCTION 'PROFILE_GET'
+*    EXPORTING
+*      filename = ini_file
+*      key      = ini_value
+*      section  = ini_section
+*    IMPORTING
+*      value    = FILE_NAME
+*    EXCEPTIONS
+*      OTHERS   = 1.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GET_SERVER_FILENAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_FILETYPE                     TYPE        Z001-FILENAME_TYP1 (default ='Z')
+* | [--->] I_PATHDEFINITION               TYPE        Z001-PATHNAME
+* | [--->] I_FILEPREFIX                   TYPE        CLIKE
+* | [--->] I_FILE_EXT                     TYPE        CLIKE
+* | [--->] I_FILE_FILTER                  TYPE        STRING (default ='(*.*)|*.*|')
+* | [--->] I_TITEL                        TYPE        CLIKE (default =SPACE)
+* | [--->] I_DRIVE_LETTER                 TYPE        CHAR1 (default ='H')
+* | [--->] I_OPERATING_SYSTEM             TYPE        SY-OPSYS (default =SY-OPSYS)
+* | [<---] E_FILENAME                     TYPE        CLIKE
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_server_filename .
+
+  DATA lv_dir                 TYPE string.
+  DATA lv_useraktion          TYPE i.
+  DATA lv_filespec            TYPE path-pathextern.
+  DATA lv_titel               TYPE string.
+  DATA lv_filespecs           TYPE string.
+
+  CALL FUNCTION 'Z_GET_DOWNLOAD_PATH'
+    EXPORTING
+      filename_typ       = i_filetype
+      pathname           = i_pathdefinition
+      prefix             = i_fileprefix
+      extension          = i_file_ext
+      i_operating_system = i_operating_system
+    IMPORTING
+      filespec           = lv_filespec
+    EXCEPTIONS
+      empty_filespec     = 1
+      error              = 2
+      OTHERS             = 3.
+
+  e_subrc = sy-subrc.
+  IF e_subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    RETURN.
+  ENDIF.
+
+  CALL METHOD zcl_gui_frontend_services=>extract_pathname
+    EXPORTING
+      file_specification = lv_filespec
+    IMPORTING
+      directory_name     = lv_dir.
+
+  CALL METHOD zcl_gui_frontend_services=>convert_unix_path_to_win
+    EXPORTING
+      drive_letter   = i_drive_letter
+    CHANGING
+      directory_name = lv_dir.
+
+  lv_titel      = i_titel.
+  lv_filespecs  = lv_filespec.
+
+* Dateinamen holen
+  CALL METHOD zcl_gui_frontend_services=>get_filename
+    EXPORTING
+      file_filter        = i_file_filter
+      window_title       = lv_titel
+      initial_directory  = lv_dir
+      use_saved_filename = space
+    IMPORTING
+      user_action        = lv_useraktion
+      file_specification = lv_filespecs.
+
+  IF lv_useraktion NE 0.
+    RETURN.
+  ENDIF.
+
+  CALL METHOD zcl_gui_frontend_services=>extract_filename
+    EXPORTING
+      file_specification = lv_filespecs
+    IMPORTING
+      file_name          = e_filename.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GUI_TEXT_DOWNLOAD
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILENAME                       TYPE        CLIKE
+* | [--->] FILETYPE                       TYPE        CLIKE (default ='ASC')
+* | [--->] USE_TAB_SEPARATOR              TYPE        CHAR01 (default ='X')
+* | [<---] FILELENGTH                     TYPE        I
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* | [<-->] DATA_TAB                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD gui_text_download .
+
+  DATA lv_filename   TYPE string.
+  DATA lv_filetype   TYPE char10.
+
+  lv_filename = filename.
+  lv_filetype = filetype.
+
+  CALL METHOD cl_gui_frontend_services=>gui_download
+    EXPORTING
+      filename                  = lv_filename
+      filetype                  = lv_filetype
+      append                    = space
+      write_field_separator     = use_tab_separator
+      header                    = '00'
+      trunc_trailing_blanks     = space
+      write_lf                  = 'X'
+      col_select                = space
+      col_select_mask           = space
+      dat_mode                  = space
+      confirm_overwrite         = 'X'
+      no_auth_check             = 'X'
+      codepage                  = space
+      ignore_cerr               = abap_false
+      replacement               = '#'
+      write_bom                 = space
+      trunc_trailing_blanks_eol = 'X'
+      wk1_n_format              = space
+      wk1_n_size                = space
+      wk1_t_format              = space
+      wk1_t_size                = space
+    IMPORTING
+      filelength                = filelength
+    CHANGING
+      data_tab                  = data_tab
+    EXCEPTIONS
+      file_write_error          = 1
+      no_batch                  = 2
+      gui_refuse_filetransfer   = 3
+      invalid_type              = 4
+      no_authority              = 5
+      unknown_error             = 6
+      header_not_allowed        = 7
+      separator_not_allowed     = 8
+      filesize_not_allowed      = 9
+      header_too_long           = 10
+      dp_error_create           = 11
+      dp_error_send             = 12
+      dp_error_write            = 13
+      unknown_dp_error          = 14
+      access_denied             = 15
+      dp_out_of_memory          = 16
+      disk_full                 = 17
+      dp_timeout                = 18
+      file_not_found            = 19
+      dataprovider_exception    = 20
+      control_flush_error       = 21
+      not_supported_by_gui      = 22
+      error_no_gui              = 23
+      OTHERS                    = 24.
+
+  e_subrc = sy-subrc.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>GUI_TEXT_UPLOAD
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILENAME                       TYPE        CLIKE
+* | [--->] FILETYPE                       TYPE        CLIKE (default ='ASC')
+* | [--->] IS_TAB_SEPARATED               TYPE        CHAR01 (default ='X')
+* | [<---] FILELENGTH                     TYPE        I
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* | [<-->] DATA_TAB                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD gui_text_upload .
+
+  DATA lv_filename   TYPE string.
+  DATA lv_filetype   TYPE char10.
+
+  lv_filename = filename.
+  lv_filetype = filetype.
+
+  CALL METHOD cl_gui_frontend_services=>gui_upload
+  EXPORTING
+    filename                = lv_filename
+    filetype                = lv_filetype
+    has_field_separator     = is_tab_separated
+    header_length           = 0
+    dat_mode                = space
+    codepage                = space
+    ignore_cerr             = abap_false
+    replacement             = '#'
+    read_by_line            = 'X'
+  IMPORTING
+    filelength              = filelength
+*    HEADER                  =
+  CHANGING
+    data_tab                = data_tab
+  EXCEPTIONS
+    file_open_error         = 1
+    file_read_error         = 2
+    no_batch                = 3
+    gui_refuse_filetransfer = 4
+    invalid_type            = 5
+    no_authority            = 6
+    unknown_error           = 7
+    bad_data_format         = 8
+    header_not_allowed      = 9
+    separator_not_allowed   = 10
+    header_too_long         = 11
+    unknown_dp_error        = 12
+    access_denied           = 13
+    dp_out_of_memory        = 14
+    disk_full               = 15
+    dp_timeout              = 16
+    not_supported_by_gui    = 17
+    error_no_gui            = 18
+    OTHERS                  = 19.
+
+  e_subrc = sy-subrc.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>PROFILE_CHECK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_UNAME                        TYPE        ZCONFIG_INI-UNAME (default =SY-UNAME)
+* | [--->] I_SECTION_NAME                 TYPE        CLIKE
+* | [--->] I_PARAMETERNAME                TYPE        CLIKE
+* | [--->] I_WERT                         TYPE        CLIKE
+* | [<---] O_SY_SUBRC                     TYPE        SY-SUBRC
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD profile_check .
+
+  DATA lv_wert   TYPE zconfig_ini-wert.
+
+  TRANSLATE i_uname TO UPPER CASE.
+  TRANSLATE i_section_name TO UPPER CASE.
+  TRANSLATE i_parametername TO UPPER CASE.
+
+  SELECT SINGLE wert
+    INTO lv_wert
+    FROM zconfig_ini
+   WHERE uname         = i_uname
+     AND section_name  = i_section_name
+     AND parametername = i_parametername
+     AND wert          = i_wert.
+  o_sy_subrc = sy-subrc.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>PROFILE_DELETE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_UNAME                        TYPE        ZCONFIG_INI-UNAME (default =SPACE)
+* | [--->] I_SECTION_NAME                 TYPE        ZCONFIG_INI-SECTION_NAME
+* | [--->] I_PARAMETERNAME                TYPE        ZCONFIG_INI-PARAMETERNAME
+* | [<---] O_SY_SUBRC                     TYPE        SY-SUBRC
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD profile_delete .
+
+  TRANSLATE i_uname TO UPPER CASE.
+  TRANSLATE i_section_name TO UPPER CASE.
+  TRANSLATE i_parametername TO UPPER CASE.
+
+  DELETE FROM zconfig_ini
+         WHERE uname         = i_uname
+           AND section_name  = i_section_name
+           AND parametername = i_parametername.
+  o_sy_subrc = sy-subrc.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>PROFILE_GET
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_UNAME                        TYPE        ZCONFIG_INI-UNAME (default =SY-UNAME)
+* | [--->] I_SECTION_NAME                 TYPE        CLIKE
+* | [--->] I_PARAMETERNAME                TYPE        CLIKE
+* | [<---] O_WERT                         TYPE        CLIKE
+* | [<---] O_SY_SUBRC                     TYPE        SY-SUBRC
+* | [<---] O_CPUDT                        TYPE        MKPF-CPUDT
+* | [<---] O_CPUTM                        TYPE        MKPF-CPUTM
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD profile_get .
+
+  DATA lv_wert   TYPE zconfig_ini-wert.
+
+  TRANSLATE i_uname TO UPPER CASE.
+  TRANSLATE i_section_name TO UPPER CASE.
+  TRANSLATE i_parametername TO UPPER CASE.
+
+  SELECT SINGLE
+         wert
+         cpudt
+         cputm
+    INTO (lv_wert, o_cpudt, o_cputm )
+    FROM zconfig_ini
+   WHERE uname         = i_uname
+     AND section_name  = i_section_name
+     AND parametername = i_parametername.
+
+  o_sy_subrc = sy-subrc.
+  IF o_sy_subrc = 0.
+    o_wert = lv_wert.
+  ELSE.
+    CLEAR: o_wert, o_cpudt, o_cputm.
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>PROFILE_SET
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_UNAME                        TYPE        ZCONFIG_INI-UNAME (default =SY-UNAME)
+* | [--->] I_SECTION_NAME                 TYPE        CLIKE
+* | [--->] I_PARAMETERNAME                TYPE        CLIKE
+* | [--->] I_WERT                         TYPE        CLIKE
+* | [<---] O_SY_SUBRC                     TYPE        SY-SUBRC
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD profile_set .
+
+  DATA wa       TYPE zconfig_ini.
+
+  TRANSLATE i_uname TO UPPER CASE.
+  TRANSLATE i_section_name TO UPPER CASE.
+  TRANSLATE i_parametername TO UPPER CASE.
+
+  wa-uname         = i_uname.
+  wa-section_name  = i_section_name.
+  wa-parametername = i_parametername.
+  wa-wert          = i_wert.
+  wa-cpudt         = sy-datum.
+  wa-cputm         = sy-uzeit.
+
+  MODIFY zconfig_ini FROM wa.
+  o_sy_subrc = sy-subrc.
+  COMMIT WORK.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>SAVE_ANY_VALUE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] VALUE                          TYPE        CLIKE
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='WERT')
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD save_any_value .
+
+  CALL METHOD zcl_gui_frontend_services=>profile_set
+    EXPORTING
+      i_uname         = sy-uname
+      i_section_name  = ini_section
+      i_parametername = ini_value
+      i_wert          = value.
+
+*  CALL METHOD save_filename
+*    EXPORTING
+*      file_name   = value
+*      ini_section = ini_section
+*      ini_value   = ini_value.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>SAVE_DIRECTORY_NAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] NAME_TO_SAVE                   TYPE        CLIKE
+* | [--->] NAME_TO_SAVE_IS_A_FILENAME     TYPE        ABAP_BOOL (default =ABAP_TRUE)
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='DIRECTORY')
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD save_directory_name .
+
+*  CALL METHOD create_ini_filename
+*    IMPORTING
+*      ini_file_name = ini_file.
+
+  IF name_to_save_is_a_filename = abap_true.
+    CALL METHOD extract_pathname
+      EXPORTING
+        file_specification = name_to_save
+      IMPORTING
+        directory_name     = name_to_save.
+  ENDIF.
+
+* Directory speichern
+CALL METHOD zcl_gui_frontend_services=>profile_set
+  EXPORTING
+    I_UNAME         = SY-UNAME
+    i_section_name  = ini_section
+    i_parametername = ini_value
+    i_wert          = name_to_save.
+
+** Dateinamen speichern
+*  CALL FUNCTION 'PROFILE_SET'
+*    EXPORTING
+*      filename = ini_file
+*      key      = ini_value
+*      section  = ini_section
+*      value    = name_to_save
+*    EXCEPTIONS
+*      OTHERS   = 1.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>SAVE_FILENAME
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] FILE_NAME                      TYPE        CLIKE
+* | [--->] INI_SECTION                    TYPE        CLIKE
+* | [--->] INI_VALUE                      TYPE        CLIKE (default ='FILE')
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD save_filename .
+
+*  CALL METHOD create_ini_filename
+*    IMPORTING
+*      ini_file_name = ini_file.
+
+* Dateinamen speichern
+  CALL METHOD zcl_gui_frontend_services=>profile_set
+    EXPORTING
+      i_uname         = sy-uname
+      i_section_name  = ini_section
+      i_parametername = ini_value
+      i_wert          = file_name.
+
+*  CALL FUNCTION 'PROFILE_SET'
+*    EXPORTING
+*      filename = ini_file
+*      key      = ini_value
+*      section  = ini_section
+*      value    = FILE_NAME
+*    EXCEPTIONS
+*      OTHERS   = 1.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_GUI_FRONTEND_SERVICES=>UPLOAD_PC_DATA_WITH_DIALOG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_TITEL                        TYPE        CLIKE (default =SPACE)
+* | [--->] I_FILETYP                      TYPE        CLIKE (default ='ASC')
+* | [--->] I_TAB_GETRENNT                 TYPE        BOOLEAN (default ='X')
+* | [--->] I_DEFAULT_FILENAME             TYPE        CLIKE (default =SPACE)
+* | [--->] I_DEFAULT_EXTENSION            TYPE        CLIKE (default = '*.TXT')
+* | [<---] O_FILE_NAME                    TYPE        CLIKE
+* | [<---] E_SUBRC                        TYPE        SY-SUBRC
+* | [<-->] C_ITAB                         TYPE        ANY TABLE(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD upload_pc_data_with_dialog .
+
+  DATA lv_useraktion        TYPE i.
+  DATA lv_titel             TYPE string.
+  DATA lv_default_filename  TYPE string.
+  DATA lv_default_extension TYPE string.
+  DATA lv_filename          TYPE string.
+  DATA lv_filetype          TYPE char10.
+
+  FIELD-SYMBOLS <itab> TYPE ANY TABLE.
+
+  ASSIGN c_itab TO <itab>.
+
+  lv_titel    = i_titel.
+  lv_filetype = i_filetyp.
+  lv_default_filename  = i_default_filename.
+  lv_default_extension = i_default_extension.
+  e_subrc = 4.
+
+* Dateinamen holen
+  CALL METHOD zcl_gui_frontend_services=>get_filename
+    EXPORTING
+      default_filename   = lv_default_filename
+      default_extension  = lv_default_extension
+      window_title       = lv_titel
+    IMPORTING
+      user_action        = lv_useraktion
+      file_specification = lv_filename.
+  o_file_name = lv_filename.
+
+  IF lv_useraktion NE 0.
+    EXIT.
+  ENDIF.
+
+* Daten in interne Tabelle laden
+  CALL METHOD cl_gui_frontend_services=>gui_upload
+    EXPORTING
+      filename            = lv_filename
+      filetype            = lv_filetype
+      has_field_separator = i_tab_getrennt
+    CHANGING
+      data_tab            = <itab>[].
+  e_subrc = sy-subrc.
+
+ENDMETHOD.
+ENDCLASS.
