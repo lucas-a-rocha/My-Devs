@@ -7,7 +7,7 @@ VARIAVEIS:
       go_alv     TYPE REF TO cl_gui_alv_grid.
 
 DEFINIÇOES:
-      start_alv_execution,
+      display_alv,
 
       free_alv_class.
 
@@ -86,7 +86,7 @@ IMPLEMENTAÇOES:
 
   ENDMETHOD. " FREE_ALV_CLASS
 
-  METHOD start_alv_execution.
+  METHOD display_alv.
 
     IF me->go_alv IS BOUND.
       me->go_alv->refresh_table_display(
@@ -100,7 +100,7 @@ IMPLEMENTAÇOES:
       ).
     ENDIF.
 
-  ENDMETHOD. " START_ALV_EXECUTION
+  ENDMETHOD. " DISPLAY_ALV
 
   METHOD create_dynamic_container.
     cl_gui_cfw=>flush( ).
