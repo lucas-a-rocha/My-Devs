@@ -21,7 +21,14 @@
         IMPORTING
           !iv_structure      TYPE dd02l-tabname
         RETURNING
-          VALUE(rt_fieldcat) TYPE lvc_t_fcat.
+          VALUE(rt_fieldcat) TYPE lvc_t_fcat,
+
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING
+          !e_salv_function,
+
+      on_link_click FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
 
   METHOD display_alv .
 
@@ -39,9 +46,15 @@
 
 *     " Insert or remove all functions from ALV
       DATA(lo_function) = lo_salv_table->get_functions( ).
-      lo_function->set_all( abap_true ).
+*      lo_function->set_all( abap_true ).
 
-      DATA(lo_selections) = go_alv->o_alv->get_selections( ).
+*      lo_salv_table->set_screen_status(
+*        EXPORTING
+*          report = sy-cprog
+*          pfstatus = 'STATUS' "Copy SALV_DEMO_TABLE_FUNCTIONS - SALV_STANDARD
+*          set_functions = o_alv->c_functions_all ).
+
+      DATA(lo_selections) = lo_salv_table->get_selections( ).
       lo_selections->set_selection_mode( if_salv_c_selection_mode=>multiple ).
 
       DATA(lo_columns) = lo_salv_table->get_columns( ).
@@ -56,6 +69,8 @@
       ENDTRY.
 
       DATA(lo_events) = lo_salv_table->get_event( ).
+*      SET HANDLER me->on_user_command FOR lo_events.
+*      SET HANDLER me->on_link_click FOR lo_events.
 
       DATA(lo_display) = lo_salv_table->get_display_settings( ).
       lo_display->set_striped_pattern( abap_true ).
@@ -189,3 +204,13 @@
     SORT rt_fieldcat BY col_pos.
 
   ENDMETHOD. " GENERATE_FIELDCAT_STRUCT
+
+  METHOD on_user_command.
+    CASE sy-ucomm.
+      WHEN '&CREATE'.
+      WHEN '&SIMULATE'.
+    ENDCASE.
+  ENDMETHOD. " ON_USER_COMMAND
+
+  METHOD on_link_click.
+  ENDMETHOD. "ON_LINK_CLICK
