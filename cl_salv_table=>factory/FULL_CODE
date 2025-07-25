@@ -41,6 +41,9 @@
       DATA(lo_function) = lo_salv_table->get_functions( ).
       lo_function->set_all( abap_true ).
 
+      DATA(lo_selections) = go_alv->o_alv->get_selections( ).
+      lo_selections->set_selection_mode( if_salv_c_selection_mode=>multiple ).
+
       DATA(lo_columns) = lo_salv_table->get_columns( ).
       lo_columns->set_optimize( abap_true ).
 
