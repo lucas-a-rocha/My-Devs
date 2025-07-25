@@ -206,6 +206,8 @@
   ENDMETHOD. " GENERATE_FIELDCAT_STRUCT
 
   METHOD on_user_command.
+    DATA(lo_selections) = me->go_alv->get_selections( ).
+    DATA(lt_rows) = lo_selections->get_selected_rows( ).
     CASE sy-ucomm.
       WHEN '&CREATE'.
       WHEN '&SIMULATE'.
